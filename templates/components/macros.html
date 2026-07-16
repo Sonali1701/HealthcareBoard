@@ -1,0 +1,44 @@
+{% macro job_card(job, employer) %}
+<a class="list-card {% if job.is_featured %}featured{% endif %}" href="/jobs/{{ job.job_id }}">
+  <div class="employer-logo">🏥</div>
+  <div style="min-width:0">
+    <div style="font-weight:600;font-size:15px;color:var(--gray-800)">{{ job.title }}</div>
+    <div class="small muted" style="margin:2px 0 10px">
+      {{ employer.org_name if employer else 'HealthBoard' }}
+      {% if job.city or job.state_code %}· {{ [job.city, job.state_code]|select|join(', ') }}{% endif %}
+    </div>
+    <div class="row wrap" style="gap:6px">
+      {% if job.job_type %}<span class="badge badge-teal">{{ job.job_type.value }}</span>{% endif %}
+      {% if job.specialty %}<span class="badge badge-navy">{{ job.specialty }}</span>{% endif %}
+      {% if job.is_urgent %}<span class="badge badge-coral"><i class="fas fa-bolt"></i> Urgent</span>{% endif %}
+      {% if job.is_featured %}<span class="badge badge-gold"><i class="fas fa-star"></i> Featured</span>{% endif %}
+    </div>
+  </div>
+  <div style="text-align:right;flex-shrink:0">
+    {% if job.pay_rate_max %}<div class="pay">${{ job.pay_rate_max|int }}{{ '/hr' if job.pay_unit=='hourly' else '' }}</div>
+    {% elif job.pay_rate_min %}<div class="pay">${{ job.pay_rate_min|int }}+</div>{% endif %}
+    <div class="small muted" style="margin-top:4px">{{ job.application_count or 0 }} applicants</div>
+  </div>
+</a>
+{% endmacro %}
+
+{% macro candidate_card(p) %}
+<a class="pro-card" href="/talent/{{ p.profile_id }}">
+  <div class="pro-cover"></div>
+  <div class="pro-body">
+    <div class="pro-avatar">{{ (p.first_name[0] ~ p.last_name[0])|upper }}</div>
+    {% if p.profession_type %}<div class="verified-badge"><i class="fas fa-circle-check"></i> Verified {{ p.profession_type }}</div>{% endif %}
+    <div class="pro-name">{{ p.first_name }} {{ p.last_name }}{% if p.profession_type %}, {{ p.profession_type }}{% endif %}</div>
+    <div class="pro-role">{{ p.headline or p.specialty or 'Healthcare professional' }}</div>
+    <div class="row wrap" style="gap:5px">
+      {% if p.specialty %}<span class="badge badge-teal">{{ p.specialty }}</span>{% endif %}
+      {% if p.city or p.state_code %}<span class="badge badge-navy">{{ [p.city, p.state_code]|select|join(', ') }}</span>{% endif %}
+    </div>
+    <div class="pro-stats">
+      <div class="center"><div class="pro-stat-val">{{ p.years_experience or '—' }}</div><div class="pro-stat-lab">Years exp</div></div>
+      <div class="center"><div class="pro-stat-val">{{ p.completion_score }}%</div><div class="pro-stat-lab">Profile</div></div>
+    </div>
+    {% if p.resume_url %}<span class="badge badge-green"><i class="fas fa-file-lines"></i> Résumé on file</span>{% endif %}
+  </div>
+</a>
+{% endmacro %}

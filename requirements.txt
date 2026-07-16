@@ -1,0 +1,25 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+pydantic==2.10.4
+pydantic-settings==2.7.0
+email-validator==2.2.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+pyjwt==2.10.1
+pyotp==2.9.0
+python-multipart==0.0.20
+httpx==0.28.1
+jinja2==3.1.4              # server-rendered templates
+itsdangerous==2.2.0        # signed session/flash cookies
+
+# --- Production ---
+sendgrid==6.11.0            # transactional email
+boto3==1.35.99             # S3-compatible object storage (Vultr / AWS / R2)
+slowapi==0.1.9             # rate limiting
+alembic==1.14.0            # database migrations
+gunicorn==23.0.0           # production WSGI/ASGI process manager (Linux/Docker)
+psycopg[binary]==3.2.3     # PostgreSQL driver (production)
+openpyxl==3.1.5            # Excel (.xlsx) candidate import
+python-docx==1.1.2         # Word (.docx) candidate import
+pypdf==5.1.0               # PDF resume text extraction

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import job_card %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <div class="row between items-center">
+    <h2 style="margin:0">Welcome, {{ profile.first_name }}</h2>
+    <a class="btn btn-outline" href="/profile">My profile</a>
+  </div>
+
+  <div class="panel mt">
+    <div class="row between items-center">
+      <strong>Profile completeness</strong><span class="muted">{{ profile.completion_score }}%</span>
+    </div>
+    <div style="height:8px;background:var(--gray-100);border-radius:5px;margin-top:8px;overflow:hidden">
+      <div style="height:100%;width:{{ profile.completion_score }}%;background:linear-gradient(90deg,var(--teal),var(--teal-dark))"></div>
+    </div>
+    {% if profile.completion_score < 100 %}
+      <div class="small muted mt">Add your specialty, résumé and licenses to get better matches. <a href="/profile/edit">Complete profile →</a></div>
+    {% endif %}
+  </div>
+
+  <div class="app-grid mt2" style="grid-template-columns:1fr 320px">
+    <div>
+      <h3>My applications ({{ apps|length }})</h3>
+      {% if apps %}
+      <div class="card"><table class="tbl">
+        <thead><tr><th>Job</th><th>Status</th><th>Applied</th></tr></thead>
+        <tbody>
+        {% for a in apps %}
+          <tr>
+            <td><a href="/jobs/{{ a.job_id }}">{{ job_map.get(a.job_id).title if job_map.get(a.job_id) else 'Job' }}</a></td>
+            <td><span class="badge badge-navy">{{ a.status.value }}</span></td>
+            <td class="small muted">{{ a.applied_at.strftime('%b %d') }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+        <div class="panel muted">No applications yet. <a href="/jobs">Browse jobs →</a></div>
+      {% endif %}
+
+      {% if rec %}
+        <h3 class="mt2">Recommended for you</h3>
+        <div class="grid" style="gap:12px">{% for j in rec %}{{ job_card(j, None) }}{% endfor %}</div>
+      {% endif %}
+    </div>
+
+    <div>
+      <h3>Saved jobs ({{ saved|length }})</h3>
+      {% if saved %}
+        <div class="grid" style="gap:10px">
+        {% for j in saved %}
+          <a class="card card-p" href="/jobs/{{ j.job_id }}" style="display:block">
+            <div style="font-weight:600;font-size:14px">{{ j.title }}</div>
+            <div class="small muted">{{ [j.city, j.state_code]|select|join(', ') }}</div>
+          </a>
+        {% endfor %}
+        </div>
+      {% else %}
+        <div class="panel muted small">No saved jobs.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

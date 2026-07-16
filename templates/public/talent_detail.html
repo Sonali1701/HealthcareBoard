@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.first_name }} {{ profile.last_name }}{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <a href="/talent" class="small">← Back to talent</a>
+  <div class="panel mt">
+    <div class="row between wrap">
+      <div class="row items-center">
+        <span class="avatar" style="width:64px;height:64px;font-size:22px">{{ (profile.first_name[0] ~ profile.last_name[0])|upper }}</span>
+        <div>
+          <h2 style="margin:0">{{ profile.first_name }} {{ profile.last_name }}{% if profile.profession_type %}, {{ profile.profession_type }}{% endif %}</h2>
+          <div class="muted">{{ profile.headline or profile.specialty or 'Healthcare professional' }}</div>
+          <div class="small muted">{{ [profile.city, profile.state_code]|select|join(', ') }}{% if profile.years_experience %} · {{ profile.years_experience }} yrs experience{% endif %}</div>
+        </div>
+      </div>
+      <div class="row" style="gap:8px;align-items:flex-start">
+        {% if profile.resume_url %}<a class="btn btn-outline" href="{{ profile.resume_url }}" target="_blank">View résumé</a>{% endif %}
+        {% if user and user.role.value in ['recruiter','employer','admin'] %}
+          <a class="btn btn-primary" href="/messages/start/{{ profile.profile_id }}">Message</a>
+        {% endif %}
+      </div>
+    </div>
+    {% if profile.bio %}<p class="mt2">{{ profile.bio }}</p>{% endif %}
+
+    {% if profile.skills %}
+      <div class="section-title">Skills</div>
+      <div class="row wrap" style="gap:6px">{% for s in profile.skills %}<span class="badge badge-teal">{{ s.name }}</span>{% endfor %}</div>
+    {% endif %}
+    {% if profile.certifications %}
+      <div class="section-title">Certifications</div>
+      <div class="row wrap" style="gap:6px">{% for c in profile.certifications %}<span class="badge badge-gold">{{ c.cert_name }}</span>{% endfor %}</div>
+    {% endif %}
+    {% if profile.licenses %}
+      <div class="section-title">Licenses</div>
+      <table class="tbl"><thead><tr><th>Type</th><th>State</th><th>Status</th><th>Expires</th></tr></thead><tbody>
+      {% for l in profile.licenses %}<tr><td>{{ l.license_type }}</td><td>{{ l.state_code }}</td>
+        <td><span class="badge badge-green">{{ l.status.value }}</span></td>
+        <td>{{ l.expiry_date or '—' }}</td></tr>{% endfor %}
+      </tbody></table>
+    {% endif %}
+    {% if profile.work_history %}
+      <div class="section-title">Experience</div>
+      {% for w in profile.work_history %}
+        <div class="mb"><strong>{{ w.job_title }}</strong> · {{ w.employer_name }}
+          <div class="small muted">{{ w.start_date or '' }} – {{ w.end_date or 'Present' }}</div></div>
+      {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

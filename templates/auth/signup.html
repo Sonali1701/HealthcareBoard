@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Sign up{% endblock %}
+{% block content %}
+<div class="container" style="max-width:480px;margin-top:40px">
+  <div class="panel">
+    <h2 class="center">Create your account</h2>
+    {% if error %}<div class="form-err">{{ error }}</div>{% endif %}
+    <form method="post" action="/signup" class="mt" id="signup-form">
+      <div class="field">
+        <label class="label">I am a…</label>
+        <div class="row" style="gap:10px">
+          <label class="card card-p" style="flex:1;cursor:pointer;text-align:center">
+            <input type="radio" name="role" value="job_seeker" {% if role!='recruiter' %}checked{% endif %}>
+            <div style="font-weight:700;margin-top:4px">Healthcare Professional</div>
+            <div class="small muted">Find jobs, get matched</div>
+          </label>
+          <label class="card card-p" style="flex:1;cursor:pointer;text-align:center">
+            <input type="radio" name="role" value="recruiter" {% if role=='recruiter' %}checked{% endif %}>
+            <div style="font-weight:700;margin-top:4px">Recruiter / Employer</div>
+            <div class="small muted">Post jobs, hire talent</div>
+          </label>
+        </div>
+      </div>
+      <div class="row" style="gap:10px">
+        <div class="field" style="flex:1">
+          <label class="label">First name</label>
+          <input class="input" name="first_name" value="{{ first_name or '' }}">
+        </div>
+        <div class="field" style="flex:1">
+          <label class="label">Last name</label>
+          <input class="input" name="last_name" value="{{ last_name or '' }}">
+        </div>
+      </div>
+      <div class="field">
+        <label class="label">Email</label>
+        <input class="input" type="email" name="email" value="{{ email or '' }}" required>
+      </div>
+      <div class="field">
+        <label class="label">Password</label>
+        <input class="input" type="password" name="password" required minlength="8">
+        <div class="hint">At least 8 characters.</div>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Create account</button>
+    </form>
+    <p class="center small mt">Already have an account? <a href="/login">Log in</a></p>
+  </div>
+</div>
+{% endblock %}

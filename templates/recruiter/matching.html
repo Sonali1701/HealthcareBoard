@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}AI Matching{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <h2>AI candidate matching</h2>
+  <p class="muted">Score your talent pool against a role on skills, experience, location and pay.</p>
+  <div class="app-grid">
+    <aside>
+      <form method="post" action="/matching" class="panel">
+        <div class="field"><label class="label">Specialty</label>
+          <input class="input" name="specialty" value="{{ spec.specialty or 'Allergy & Immunology' }}"></div>
+        <div class="field"><label class="label">Profession</label>
+          <input class="input" name="profession_type" value="{{ spec.profession_type or '' }}" placeholder="MD, RN"></div>
+        <div class="field"><label class="label">Required skills (comma-separated)</label>
+          <input class="input" name="required_skills" value="{{ spec.required_skills or '' }}"></div>
+        <div class="section-title">Weights (%)</div>
+        <div class="row" style="gap:8px">
+          <div class="field" style="flex:1"><label class="label">Skills</label><input class="input" type="number" name="w_skills" value="35"></div>
+          <div class="field" style="flex:1"><label class="label">Exp</label><input class="input" type="number" name="w_exp" value="25"></div>
+        </div>
+        <div class="row" style="gap:8px">
+          <div class="field" style="flex:1"><label class="label">Location</label><input class="input" type="number" name="w_loc" value="20"></div>
+          <div class="field" style="flex:1"><label class="label">Pay</label><input class="input" type="number" name="w_pay" value="20"></div>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">Run matching</button>
+      </form>
+    </aside>
+    <div>
+      {% if results is none %}
+        <div class="panel muted center">Set a spec and run matching to rank your candidates.</div>
+      {% else %}
+        <div class="grid cols-3 mb">
+          <div class="stat"><div class="num">{{ summary.total }}</div><div class="lab">Candidates</div></div>
+          <div class="stat"><div class="num">{{ summary.avg_score }}</div><div class="lab">Avg score</div></div>
+          <div class="stat"><div class="num">{{ summary.excellent_90plus }}</div><div class="lab">Excellent (90+)</div></div>
+        </div>
+        <div class="grid" style="gap:10px">
+        {% for c in results %}
+          <div class="card card-p row between items-center">
+            <div class="row items-center">
+              <span class="badge badge-navy">#{{ c.rank }}</span>
+              <span class="avatar">{{ c.initials }}</span>
+              <div>
+                <a href="/talent/{{ c.profile_id }}" style="font-weight:700">{{ c.name }}</a>
+                <div class="small muted">{{ c.title or c.specialty or '' }}{% if c.location %} · {{ c.location }}{% endif %}</div>
+                <div class="small muted">{{ c.match_reason }}</div>
+              </div>
+            </div>
+            <div class="center">
+              <div class="pay" style="font-size:22px">{{ c.score_total|int }}</div>
+              <div class="small muted">match</div>
+              <a class="btn btn-outline btn-sm mt" href="/messages/start/{{ c.profile_id }}">Message</a>
+            </div>
+          </div>
+        {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

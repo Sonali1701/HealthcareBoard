@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }}{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <a href="/recruiter" class="small">← Back to dashboard</a>
+  <div class="row between items-center wrap mt">
+    <div>
+      <h2 style="margin:0">{{ job.title }}</h2>
+      <div class="small muted">{{ job.specialty or '' }} · {{ [job.city, job.state_code]|select|join(', ') }}
+        · <span class="badge {{ 'badge-green' if job.status.value=='active' else '' }}">{{ job.status.value }}</span></div>
+    </div>
+    <a class="btn btn-outline" href="/jobs/{{ job.job_id }}" target="_blank">View public page ↗</a>
+  </div>
+
+  <h3 class="mt2">Applicants ({{ apps|length }})</h3>
+  {% if apps %}
+  <div class="card"><table class="tbl">
+    <thead><tr><th>Candidate</th><th>Specialty</th><th>Match</th><th>Stage</th><th></th></tr></thead>
+    <tbody>
+    {% for a in apps %}{% set p = prof_map.get(a.profile_id) %}
+    <tr>
+      <td><a href="/talent/{{ a.profile_id }}" style="font-weight:600">{{ p.first_name if p else '—' }} {{ p.last_name if p else '' }}</a>
+        {% if p and p.resume_url %}<a class="small" href="{{ p.resume_url }}" target="_blank"> · résumé</a>{% endif %}</td>
+      <td class="small">{{ p.specialty if p else '—' }}</td>
+      <td class="small">{{ (a.match_score|int ~ '%') if a.match_score else '—' }}</td>
+      <td>
+        <form method="post" action="/recruiter/applications/{{ a.application_id }}/stage" class="row" style="gap:6px">
+          <select class="select" name="status" style="padding:5px 8px;font-size:13px" onchange="this.form.submit()">
+            {% for s in stages %}<option value="{{ s }}" {% if a.status.value==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+          </select>
+        </form>
+      </td>
+      <td><a class="btn btn-outline btn-sm" href="/messages/start/{{ a.profile_id }}">Message</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+    <div class="panel muted">No applicants yet. Share the <a href="/jobs/{{ job.job_id }}">public link</a> or run <a href="/matching">AI matching</a>.</div>
+  {% endif %}
+</div>
+{% endblock %}

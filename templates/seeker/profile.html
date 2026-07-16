@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}My profile{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <div class="row between items-center">
+    <h2 style="margin:0">My profile</h2>
+    <div class="row" style="gap:8px">
+      <a class="btn btn-outline" href="/profile/edit">Edit profile</a>
+      {% if profile.resume_url %}<a class="btn btn-ghost" href="{{ profile.resume_url }}" target="_blank">View résumé</a>{% endif %}
+    </div>
+  </div>
+
+  <div class="panel mt">
+    <div class="row items-center">
+      <span class="avatar" style="width:64px;height:64px;font-size:22px">{{ (profile.first_name[0] ~ profile.last_name[0])|upper }}</span>
+      <div>
+        <h3 style="margin:0">{{ profile.first_name }} {{ profile.last_name }}{% if profile.profession_type %}, {{ profile.profession_type }}{% endif %}</h3>
+        <div class="muted">{{ profile.headline or profile.specialty or 'Add a headline' }}</div>
+        <div class="small muted">{{ [profile.city, profile.state_code]|select|join(', ') or 'Add your location' }}
+          {% if profile.open_to_work %}· <span class="badge badge-green">Open to work</span>{% endif %}</div>
+      </div>
+    </div>
+    {% if profile.bio %}<p class="mt2">{{ profile.bio }}</p>{% endif %}
+    {% if profile.skills %}
+      <div class="section-title">Skills</div>
+      <div class="row wrap" style="gap:6px">{% for s in profile.skills %}<span class="badge badge-teal">{{ s.name }}</span>{% endfor %}</div>
+    {% endif %}
+    {% if profile.certifications %}
+      <div class="section-title">Certifications</div>
+      <div class="row wrap" style="gap:6px">{% for c in profile.certifications %}<span class="badge badge-gold">{{ c.cert_name }}</span>{% endfor %}</div>
+    {% endif %}
+    {% if profile.licenses %}
+      <div class="section-title">Licenses</div>
+      <table class="tbl"><thead><tr><th>Type</th><th>State</th><th>Status</th></tr></thead><tbody>
+      {% for l in profile.licenses %}<tr><td>{{ l.license_type }}</td><td>{{ l.state_code }}</td><td><span class="badge badge-green">{{ l.status.value }}</span></td></tr>{% endfor %}
+      </tbody></table>
+    {% endif %}
+    {% if not profile.resume_url %}
+      <div class="flash flash-error mt2">No résumé on file. <a href="/profile/edit">Upload one →</a></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,1900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HealthBoard Connect — Recruiter & Candidate Chat Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* ── DESIGN TOKENS ──────────────────────────────── */
+:root {
+  --ink:#0E1117; --ink-mid:#1C2333; --ink-soft:#2D3748;
+  --teal:#00B4A6; --teal-dim:#00887C; --teal-glow:rgba(0,180,166,.15);
+  --amber:#F5A623; --amber-dim:#C4821A; --amber-glow:rgba(245,166,35,.12);
+  --slate:#6B7A99; --slate-light:#8A97B0; --slate-dim:#3D4A63;
+  --surface:#F8F9FC; --surface-alt:#EFF2F8; --surface-deep:#E4E9F4;
+  --white:#FFFFFF;
+  --red:#E5534B; --green:#2DA44E; --blue:#1A7FD4;
+  --border:rgba(0,0,0,.08); --border-med:rgba(0,0,0,.12);
+  --shadow-xs:0 1px 3px rgba(0,0,0,.06); --shadow-sm:0 2px 8px rgba(0,0,0,.08);
+  --shadow-md:0 4px 20px rgba(0,0,0,.10); --shadow-lg:0 8px 40px rgba(0,0,0,.14);
+  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:20px; --r-pill:100px;
+  --font-display:'Syne',sans-serif; --font-body:'Instrument Sans',sans-serif;
+  --nav-h:56px;
+}
+
+/* ── RESET ──────────────────────────────────────── */
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{font-family:var(--font-body);background:var(--surface);color:var(--ink);height:100vh;overflow:hidden;}
+input,textarea,select,button{font-family:var(--font-body);}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--surface-deep);border-radius:4px;}
+
+/* ── TOP NAV ────────────────────────────────────── */
+.topnav{
+  height:var(--nav-h);background:var(--ink);display:flex;align-items:center;
+  padding:0 20px;gap:16px;position:fixed;top:0;left:0;right:0;z-index:300;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.nav-logo{font-family:var(--font-display);font-size:15px;font-weight:700;color:#fff;
+  display:flex;align-items:center;gap:8px;letter-spacing:-.01em;}
+.nav-logo .dot{width:8px;height:8px;background:var(--teal);border-radius:50%;
+  box-shadow:0 0 8px var(--teal);}
+.nav-logo span{color:var(--teal);}
+.view-toggle{display:flex;background:rgba(255,255,255,.08);border-radius:var(--r-pill);
+  padding:3px;margin-left:20px;gap:2px;}
+.view-btn{padding:5px 16px;border-radius:var(--r-pill);font-size:12px;font-weight:600;
+  color:rgba(255,255,255,.5);cursor:pointer;border:none;background:transparent;
+  transition:all .2s;letter-spacing:.02em;}
+.view-btn.active{background:var(--teal);color:#fff;box-shadow:0 0 12px var(--teal-glow);}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.nav-icon-btn{width:34px;height:34px;border-radius:var(--r-md);display:flex;align-items:center;
+  justify-content:center;background:rgba(255,255,255,.07);border:none;cursor:pointer;
+  color:rgba(255,255,255,.6);font-size:15px;transition:all .15s;position:relative;}
+.nav-icon-btn:hover{background:rgba(255,255,255,.12);color:#fff;}
+.nav-badge{position:absolute;top:5px;right:5px;width:7px;height:7px;
+  background:var(--amber);border-radius:50%;border:1.5px solid var(--ink);}
+.nav-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--teal-dim));
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;
+  font-weight:700;cursor:pointer;letter-spacing:.03em;}
+.status-indicator{display:flex;align-items:center;gap:6px;font-size:12px;
+  color:rgba(255,255,255,.4);padding:0 12px;border-left:1px solid rgba(255,255,255,.08);}
+.online-dot{width:7px;height:7px;background:var(--green);border-radius:50%;
+  box-shadow:0 0 6px rgba(45,164,78,.5);}
+
+/* ── APP SHELL ──────────────────────────────────── */
+.app{display:flex;height:100vh;padding-top:var(--nav-h);}
+.view{display:none;width:100%;height:100%;}
+.view.active{display:flex;}
+
+/* ══════════════════════════════════════════════════
+   RECRUITER VIEW
+══════════════════════════════════════════════════ */
+/* ── LEFT PANEL: INBOX ──────────────────────────── */
+.r-inbox{
+  width:320px;flex-shrink:0;background:var(--white);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;
+  height:100%;overflow:hidden;
+}
+.inbox-header{padding:16px 16px 12px;border-bottom:1px solid var(--border);}
+.inbox-title{font-family:var(--font-display);font-size:16px;font-weight:700;
+  color:var(--ink);margin-bottom:10px;display:flex;align-items:center;
+  justify-content:space-between;}
+.inbox-count{font-size:11px;font-weight:600;background:var(--teal);color:#fff;
+  padding:2px 7px;border-radius:var(--r-pill);}
+.inbox-search{display:flex;align-items:center;gap:8px;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-md);padding:7px 12px;}
+.inbox-search input{border:none;background:transparent;font-size:13px;color:var(--ink);
+  outline:none;flex:1;}
+.inbox-search input::placeholder{color:var(--slate-light);}
+.inbox-search svg{color:var(--slate-light);flex-shrink:0;}
+.inbox-filters{display:flex;gap:4px;padding:10px 16px;border-bottom:1px solid var(--border);}
+.ifilter{padding:4px 10px;border-radius:var(--r-pill);font-size:11px;font-weight:600;
+  cursor:pointer;border:1px solid var(--border);background:var(--white);
+  color:var(--slate);transition:all .15s;letter-spacing:.02em;}
+.ifilter.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+.ifilter:hover:not(.active){background:var(--surface);}
+
+.thread-list{flex:1;overflow-y:auto;}
+.thread{display:flex;gap:10px;padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--border);
+  transition:background .15s;position:relative;}
+.thread:hover{background:var(--surface);}
+.thread.active{background:var(--teal-glow);border-right:2px solid var(--teal);}
+.thread.unread .t-name{font-weight:600;}
+.t-avatar{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;letter-spacing:.02em;}
+.t-info{flex:1;min-width:0;}
+.t-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}
+.t-name{font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.t-time{font-size:11px;color:var(--slate-light);flex-shrink:0;}
+.t-preview{font-size:12px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;}
+.t-tags{display:flex;gap:4px;flex-wrap:wrap;}
+.t-tag{font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;letter-spacing:.03em;}
+.tag-icu{background:#E6F7F7;color:#007A6E;}
+.tag-travel{background:#FEF3E2;color:#9A5700;}
+.tag-urgent{background:#FEEAEA;color:#C41E1E;}
+.tag-new{background:#EAF4FD;color:#0063B8;}
+.tag-offer{background:#EAF7EE;color:#1A6B3A;}
+.tag-interview{background:#F0EBF8;color:#5B3FA0;}
+.t-unread-dot{position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  width:8px;height:8px;background:var(--teal);border-radius:50%;}
+
+.inbox-cta{padding:12px 16px;border-top:1px solid var(--border);}
+.new-conv-btn{width:100%;padding:10px;background:var(--ink);color:#fff;border:none;
+  border-radius:var(--r-md);font-size:13px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  transition:all .2s;font-family:var(--font-body);}
+.new-conv-btn:hover{background:var(--ink-soft);}
+
+/* ── MIDDLE PANEL: CHAT ─────────────────────────── */
+.r-chat{flex:1;display:flex;flex-direction:column;background:var(--surface);
+  min-width:0;height:100%;overflow:hidden;}
+
+.chat-topbar{
+  background:var(--white);border-bottom:1px solid var(--border);
+  padding:0 20px;height:62px;display:flex;align-items:center;gap:14px;flex-shrink:0;
+}
+.chat-candidate-info{display:flex;align-items:center;gap:12px;flex:1;}
+.chat-cand-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;}
+.chat-cand-name{font-size:15px;font-weight:600;color:var(--ink);}
+.chat-cand-meta{font-size:12px;color:var(--slate);}
+.chat-topbar-actions{display:flex;gap:6px;}
+.ctbar-btn{height:32px;padding:0 12px;border-radius:var(--r-md);font-size:12px;
+  font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--white);
+  color:var(--ink-soft);transition:all .15s;display:flex;align-items:center;gap:5px;}
+.ctbar-btn:hover{background:var(--surface);}
+.ctbar-btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
+.ctbar-btn.primary:hover{background:var(--teal-dim);}
+.ctbar-btn.warn{background:var(--amber);color:#fff;border-color:var(--amber);}
+.online-status{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--green);}
+.online-status .dot{width:6px;height:6px;background:var(--green);border-radius:50%;}
+
+/* ── MESSAGE AREA ───────────────────────────────── */
+.chat-messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:2px;}
+
+.msg-group{margin-bottom:16px;}
+.msg-date-divider{text-align:center;margin:12px 0;position:relative;}
+.msg-date-divider::before{content:'';position:absolute;top:50%;left:0;right:0;
+  height:1px;background:var(--border);}
+.msg-date-divider span{background:var(--surface);padding:0 12px;position:relative;
+  font-size:11px;color:var(--slate);font-weight:500;}
+
+.msg-row{display:flex;gap:8px;align-items:flex-end;margin-bottom:3px;}
+.msg-row.me{flex-direction:row-reverse;}
+.msg-sender-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;margin-bottom:2px;}
+.bubble{max-width:70%;padding:10px 14px;border-radius:16px;font-size:13.5px;
+  line-height:1.6;position:relative;}
+.bubble.them{background:var(--white);color:var(--ink);border:1px solid var(--border);
+  border-bottom-left-radius:4px;}
+.bubble.me{background:var(--ink);color:#fff;border-bottom-right-radius:4px;}
+.bubble-meta{font-size:10.5px;color:var(--slate-light);margin-top:3px;display:flex;
+  align-items:center;gap:4px;}
+.msg-row.me .bubble-meta{justify-content:flex-end;}
+.read-check{font-size:11px;}
+.read-check.read{color:var(--teal);}
+
+/* ── SPECIAL MESSAGE TYPES ──────────────────────── */
+.job-card-msg{background:var(--white);border:1px solid var(--border);
+  border-radius:var(--r-lg);overflow:hidden;max-width:360px;cursor:pointer;
+  transition:all .2s;}
+.job-card-msg:hover{border-color:var(--teal);box-shadow:var(--shadow-sm);}
+.job-card-msg-header{padding:14px 16px;border-bottom:1px solid var(--border);
+  background:linear-gradient(135deg,var(--ink) 0%,var(--ink-soft) 100%);}
+.jcm-icon{font-size:20px;margin-bottom:6px;}
+.jcm-title{font-size:13px;font-weight:700;color:#fff;margin-bottom:2px;}
+.jcm-sub{font-size:11.5px;color:rgba(255,255,255,.5);}
+.job-card-msg-body{padding:12px 16px;}
+.jcm-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:var(--slate);}
+.jcm-val{font-size:12px;font-weight:600;color:var(--ink);margin-left:auto;}
+.jcm-actions{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;}
+.jcm-btn{flex:1;padding:7px;border-radius:var(--r-md);font-size:12px;font-weight:600;
+  cursor:pointer;border:none;transition:all .15s;font-family:var(--font-body);}
+.jcm-apply{background:var(--teal);color:#fff;}
+.jcm-apply:hover{background:var(--teal-dim);}
+.jcm-save{background:var(--surface);color:var(--ink);border:1px solid var(--border);}
+.jcm-save:hover{background:var(--surface-alt);}
+
+.schedule-msg{background:var(--white);border:1px solid var(--border);
+  border-radius:var(--r-lg);overflow:hidden;max-width:300px;}
+.schedule-msg-header{background:var(--amber-glow);padding:12px 14px;
+  border-bottom:1px solid rgba(245,166,35,.2);}
+.sched-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px;}
+.sched-sub{font-size:11px;color:var(--slate);}
+.schedule-slots{padding:10px 14px;display:flex;flex-direction:column;gap:6px;}
+.sched-slot{padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-md);
+  font-size:12px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px;}
+.sched-slot:hover,.sched-slot.selected{background:var(--teal-glow);border-color:var(--teal);color:var(--teal);}
+.sched-slot.selected{font-weight:600;}
+.slot-icon{font-size:14px;}
+
+.system-msg{text-align:center;font-size:12px;color:var(--slate);padding:6px 12px;
+  background:var(--surface-alt);border-radius:var(--r-pill);display:inline-block;
+  margin:8px auto;}
+.system-msg-wrap{display:flex;justify-content:center;}
+
+/* ── TYPING INDICATOR ───────────────────────────── */
+.typing-indicator{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;}
+.typing-bubble{background:var(--white);border:1px solid var(--border);
+  border-radius:16px;border-bottom-left-radius:4px;padding:12px 16px;
+  display:flex;gap:4px;align-items:center;}
+.typing-dot{width:6px;height:6px;background:var(--slate-light);border-radius:50%;
+  animation:typingDot 1.4s infinite ease-in-out;}
+.typing-dot:nth-child(2){animation-delay:.2s;}
+.typing-dot:nth-child(3){animation-delay:.4s;}
+@keyframes typingDot{0%,60%,100%{transform:translateY(0);}30%{transform:translateY(-6px);}}
+
+/* ── COMPOSE BAR ────────────────────────────────── */
+.compose-bar{background:var(--white);border-top:1px solid var(--border);
+  padding:12px 16px;flex-shrink:0;}
+.compose-toolbar{display:flex;gap:6px;margin-bottom:8px;}
+.compose-tool{width:28px;height:28px;border-radius:var(--r-sm);display:flex;
+  align-items:center;justify-content:center;cursor:pointer;color:var(--slate);
+  border:none;background:transparent;font-size:14px;transition:all .15s;}
+.compose-tool:hover{background:var(--surface);color:var(--ink);}
+.compose-tool.active{background:var(--teal-glow);color:var(--teal);}
+.compose-tool-sep{width:1px;background:var(--border);margin:0 2px;}
+.compose-input-row{display:flex;gap:8px;align-items:flex-end;}
+.compose-input{flex:1;border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:10px 14px;font-size:13.5px;color:var(--ink);resize:none;outline:none;
+  max-height:120px;min-height:40px;transition:border-color .15s;line-height:1.5;}
+.compose-input:focus{border-color:var(--teal);}
+.compose-input::placeholder{color:var(--slate-light);}
+.send-btn{width:40px;height:40px;background:var(--teal);border-radius:50%;border:none;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:all .2s;flex-shrink:0;box-shadow:0 2px 8px rgba(0,180,166,.3);}
+.send-btn:hover{background:var(--teal-dim);transform:scale(1.05);}
+.send-btn svg{color:#fff;}
+
+/* ── QUICK REPLIES ──────────────────────────────── */
+.quick-replies{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+.quick-reply{padding:5px 12px;border-radius:var(--r-pill);border:1px solid var(--teal);
+  color:var(--teal);font-size:12px;font-weight:500;cursor:pointer;background:transparent;
+  transition:all .15s;font-family:var(--font-body);}
+.quick-reply:hover{background:var(--teal);color:#fff;}
+
+/* ── RIGHT PANEL: CANDIDATE PROFILE ────────────── */
+.r-profile{
+  width:300px;flex-shrink:0;background:var(--white);
+  border-left:1px solid var(--border);overflow-y:auto;height:100%;
+}
+.rp-header{padding:20px 18px 16px;}
+.rp-avatar-wrap{text-align:center;margin-bottom:14px;}
+.rp-avatar{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:22px;font-weight:700;margin:0 auto 8px;letter-spacing:.02em;}
+.rp-name{font-family:var(--font-display);font-size:15px;font-weight:700;text-align:center;
+  color:var(--ink);}
+.rp-role{font-size:12px;color:var(--slate);text-align:center;margin-top:2px;}
+.rp-badges{display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-top:8px;}
+.rp-badge{font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:3px;}
+.match-score{background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-md);padding:12px 14px;margin:0 18px 16px;text-align:center;}
+.ms-num{font-family:var(--font-display);font-size:28px;font-weight:700;color:var(--teal);}
+.ms-label{font-size:11px;color:var(--slate);margin-top:2px;}
+.ms-bar{height:5px;background:var(--surface-alt);border-radius:3px;overflow:hidden;margin-top:8px;}
+.ms-fill{height:100%;background:linear-gradient(90deg,var(--teal),var(--teal-dim));border-radius:3px;}
+
+.rp-section{padding:14px 18px;border-top:1px solid var(--border);}
+.rp-section-title{font-size:10.5px;font-weight:700;color:var(--slate);
+  letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;}
+.rp-info-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;}
+.rp-info-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0;}
+.rp-info-val{color:var(--ink-soft);flex:1;}
+.rp-info-label{font-size:11px;color:var(--slate);margin-left:auto;}
+
+.timeline{display:flex;flex-direction:column;gap:0;}
+.tl-item{display:flex;gap:10px;padding:6px 0;}
+.tl-dot-wrap{display:flex;flex-direction:column;align-items:center;width:12px;flex-shrink:0;margin-top:4px;}
+.tl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.tl-line{width:1px;flex:1;background:var(--border);margin-top:3px;min-height:16px;}
+.tl-content{flex:1;min-width:0;padding-bottom:8px;}
+.tl-event{font-size:12px;color:var(--ink);line-height:1.4;}
+.tl-time{font-size:10.5px;color:var(--slate-light);margin-top:2px;}
+
+.note-input{width:100%;border:1px solid var(--border);border-radius:var(--r-md);
+  padding:8px 10px;font-size:12px;resize:none;height:70px;outline:none;
+  color:var(--ink);transition:border-color .15s;font-family:var(--font-body);}
+.note-input:focus{border-color:var(--teal);}
+.note-save-btn{width:100%;padding:7px;background:var(--ink);color:#fff;border:none;
+  border-radius:var(--r-md);font-size:12px;font-weight:600;cursor:pointer;
+  margin-top:6px;font-family:var(--font-body);transition:background .15s;}
+.note-save-btn:hover{background:var(--ink-soft);}
+.saved-note{background:var(--amber-glow);border:1px solid rgba(245,166,35,.25);
+  border-radius:var(--r-md);padding:8px 10px;font-size:12px;color:var(--ink);
+  margin-top:6px;line-height:1.5;}
+
+.stage-select{width:100%;padding:8px 10px;border:1px solid var(--border);
+  border-radius:var(--r-md);font-size:13px;color:var(--ink);background:var(--white);
+  cursor:pointer;outline:none;font-family:var(--font-body);}
+
+.action-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:12px 18px 18px;}
+.act-btn{padding:8px;border-radius:var(--r-md);font-size:12px;font-weight:600;
+  cursor:pointer;border:1px solid var(--border);background:var(--white);
+  color:var(--ink);transition:all .15s;text-align:center;font-family:var(--font-body);}
+.act-btn:hover{background:var(--surface);}
+.act-btn.teal{background:var(--teal);color:#fff;border-color:var(--teal);}
+.act-btn.teal:hover{background:var(--teal-dim);}
+.act-btn.full{grid-column:1/-1;background:var(--amber);color:#fff;border-color:var(--amber);}
+.act-btn.full:hover{background:var(--amber-dim);}
+
+/* ══════════════════════════════════════════════════
+   CANDIDATE VIEW
+══════════════════════════════════════════════════ */
+.c-inbox{
+  width:300px;flex-shrink:0;background:var(--white);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;height:100%;
+}
+.c-inbox-header{padding:16px 16px 12px;border-bottom:1px solid var(--border);}
+.c-inbox-title{font-family:var(--font-display);font-size:16px;font-weight:700;
+  margin-bottom:10px;color:var(--ink);}
+.c-thread{display:flex;gap:10px;padding:12px 16px;cursor:pointer;
+  border-bottom:1px solid var(--border);transition:background .15s;position:relative;}
+.c-thread:hover{background:var(--surface);}
+.c-thread.active{background:var(--teal-glow);}
+.ct-logo{width:40px;height:40px;border-radius:var(--r-md);display:flex;align-items:center;
+  justify-content:center;font-size:18px;background:var(--surface-alt);flex-shrink:0;}
+.ct-info{flex:1;min-width:0;}
+.ct-org{font-size:13px;font-weight:600;color:var(--ink);}
+.ct-recruiter{font-size:11.5px;color:var(--slate);margin-bottom:3px;}
+.ct-preview{font-size:12px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ct-time{font-size:11px;color:var(--slate-light);}
+.c-unread{position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  background:var(--teal);color:#fff;font-size:10px;font-weight:700;
+  min-width:18px;height:18px;border-radius:var(--r-pill);display:flex;
+  align-items:center;justify-content:center;padding:0 4px;}
+
+.c-chat{flex:1;display:flex;flex-direction:column;background:var(--surface);
+  min-width:0;height:100%;}
+
+.c-chat-topbar{background:var(--white);border-bottom:1px solid var(--border);
+  padding:0 18px;height:62px;display:flex;align-items:center;gap:12px;flex-shrink:0;}
+.org-logo{width:36px;height:36px;border-radius:var(--r-md);background:var(--surface-alt);
+  display:flex;align-items:center;justify-content:center;font-size:18px;}
+.org-name{font-size:14px;font-weight:700;color:var(--ink);}
+.recruiter-name{font-size:12px;color:var(--slate);}
+.c-chat-actions{margin-left:auto;display:flex;gap:6px;}
+
+.c-job-offers{
+  width:300px;flex-shrink:0;background:var(--white);
+  border-left:1px solid var(--border);overflow-y:auto;height:100%;
+}
+.cjo-header{padding:16px 18px;border-bottom:1px solid var(--border);}
+.cjo-title{font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--ink);}
+.cjo-sub{font-size:12px;color:var(--slate);margin-top:2px;}
+.job-offer-card{margin:12px;background:var(--white);border:1px solid var(--border);
+  border-radius:var(--r-lg);overflow:hidden;transition:all .2s;}
+.job-offer-card:hover{box-shadow:var(--shadow-sm);border-color:var(--teal);}
+.joc-top{padding:14px 14px 10px;border-bottom:1px solid var(--border);}
+.joc-employer{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.joc-emp-logo{width:28px;height:28px;border-radius:var(--r-sm);font-size:14px;
+  display:flex;align-items:center;justify-content:center;background:var(--surface-alt);}
+.joc-emp-name{font-size:12px;font-weight:600;color:var(--ink);}
+.joc-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:4px;}
+.joc-pay{font-size:14px;font-weight:700;color:var(--teal);}
+.joc-pay-sub{font-size:11px;color:var(--slate);font-weight:400;}
+.joc-details{padding:10px 14px;}
+.joc-detail{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--slate);
+  padding:2px 0;}
+.joc-detail-val{color:var(--ink);font-weight:500;margin-left:auto;}
+.joc-footer{padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:6px;}
+.joc-btn{flex:1;padding:7px;border-radius:var(--r-md);font-size:11.5px;font-weight:600;
+  cursor:pointer;border:none;font-family:var(--font-body);transition:all .15s;}
+.joc-apply{background:var(--teal);color:#fff;}
+.joc-apply:hover{background:var(--teal-dim);}
+.joc-decline{background:var(--surface);color:var(--ink);border:1px solid var(--border);}
+.joc-decline:hover{background:var(--surface-alt);}
+.offer-status{font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r-pill);
+  letter-spacing:.04em;display:inline-block;margin-bottom:6px;}
+.status-new{background:#EAF4FD;color:#0063B8;}
+.status-interview{background:#F0EBF8;color:#5B3FA0;}
+.status-applied{background:#EAF7EE;color:#1A6B3A;}
+
+/* ══════════════════════════════════════════════════
+   CRM / ANALYTICS VIEW
+══════════════════════════════════════════════════ */
+.crm-view{flex-direction:column;overflow:hidden;}
+.crm-header{background:var(--white);border-bottom:1px solid var(--border);
+  padding:16px 28px;flex-shrink:0;display:flex;align-items:center;gap:16px;}
+.crm-title{font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--ink);}
+.crm-period{font-size:12px;color:var(--slate);margin-left:auto;}
+.crm-period select{border:1px solid var(--border);border-radius:var(--r-md);
+  padding:5px 10px;font-size:12px;background:var(--white);cursor:pointer;
+  font-family:var(--font-body);}
+
+.crm-body{flex:1;overflow-y:auto;padding:20px 28px;}
+.crm-metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:24px;}
+.crm-metric{background:var(--white);border:1px solid var(--border);
+  border-radius:var(--r-lg);padding:16px 18px;}
+.cm-icon{font-size:22px;margin-bottom:8px;}
+.cm-label{font-size:11px;color:var(--slate);font-weight:600;text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:4px;}
+.cm-val{font-family:var(--font-display);font-size:24px;font-weight:700;color:var(--ink);}
+.cm-change{font-size:11px;margin-top:4px;}
+.cm-up{color:var(--green);}
+.cm-down{color:var(--red);}
+
+.crm-grid{display:grid;grid-template-columns:1fr 380px;gap:16px;}
+.crm-panel{background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);}
+.crm-panel-header{padding:14px 18px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;}
+.crm-panel-title{font-size:14px;font-weight:700;color:var(--ink);}
+.crm-panel-action{font-size:12px;color:var(--teal);cursor:pointer;font-weight:500;}
+
+/* Conversation table */
+.conv-table{width:100%;border-collapse:collapse;}
+.conv-table th{padding:10px 16px;text-align:left;font-size:11px;font-weight:700;
+  color:var(--slate);text-transform:uppercase;letter-spacing:.06em;
+  border-bottom:1px solid var(--border);background:var(--surface);}
+.conv-table td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;
+  color:var(--ink-soft);}
+.conv-table tr:last-child td{border-bottom:none;}
+.conv-table tr:hover td{background:var(--surface);}
+.cand-cell{display:flex;align-items:center;gap:8px;}
+.cand-cell-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;}
+.conv-status{font-size:11px;font-weight:600;padding:3px 8px;border-radius:var(--r-pill);}
+.cs-active{background:#EAF7EE;color:#1A6B3A;}
+.cs-pending{background:#FEF3E2;color:#9A5700;}
+.cs-offered{background:#F0EBF8;color:#5B3FA0;}
+.cs-hired{background:#EAF4FD;color:#0063B8;}
+.cs-cold{background:var(--surface-alt);color:var(--slate);}
+.response-bar{display:flex;align-items:center;gap:8px;}
+.rbar-track{flex:1;height:4px;background:var(--surface-alt);border-radius:3px;overflow:hidden;}
+.rbar-fill{height:100%;background:var(--teal);border-radius:3px;}
+.rbar-label{font-size:11px;color:var(--slate);min-width:28px;text-align:right;}
+
+/* Funnel chart */
+.funnel{padding:18px;}
+.funnel-row{margin-bottom:10px;}
+.funnel-label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;}
+.funnel-stage{color:var(--ink);font-weight:500;}
+.funnel-count{color:var(--slate);}
+.funnel-bar-wrap{position:relative;height:28px;background:var(--surface);border-radius:var(--r-md);}
+.funnel-bar{height:100%;border-radius:var(--r-md);display:flex;align-items:center;
+  padding-left:12px;font-size:11.5px;font-weight:700;color:#fff;transition:width .6s ease;}
+
+/* ── TEMPLATES MODAL ────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;
+  display:flex;align-items:center;justify-content:center;opacity:0;
+  pointer-events:none;transition:opacity .2s;}
+.modal-overlay.open{opacity:1;pointer-events:all;}
+.modal{background:var(--white);border-radius:var(--r-xl);width:560px;max-height:80vh;
+  overflow:hidden;display:flex;flex-direction:column;transform:scale(.96) translateY(8px);
+  transition:transform .2s;}
+.modal-overlay.open .modal{transform:scale(1) translateY(0);}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.modal-title{font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--ink);}
+.modal-close{width:30px;height:30px;border-radius:var(--r-md);border:none;
+  background:var(--surface);cursor:pointer;display:flex;align-items:center;
+  justify-content:center;color:var(--slate);font-size:16px;}
+.modal-close:hover{background:var(--surface-alt);}
+.modal-body{padding:20px 24px;overflow-y:auto;}
+.template-card{border:1px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;
+  cursor:pointer;margin-bottom:10px;transition:all .2s;}
+.template-card:hover{border-color:var(--teal);background:var(--teal-glow);}
+.template-card.selected{border-color:var(--teal);background:var(--teal-glow);}
+.tmpl-name{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:4px;}
+.tmpl-preview{font-size:12px;color:var(--slate);line-height:1.5;}
+.tmpl-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:3px;
+  margin-top:6px;display:inline-block;}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);
+  display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;}
+.mf-btn{padding:9px 20px;border-radius:var(--r-md);font-size:13px;font-weight:600;
+  cursor:pointer;border:1px solid var(--border);background:var(--white);
+  color:var(--ink);font-family:var(--font-body);transition:all .15s;}
+.mf-btn:hover{background:var(--surface);}
+.mf-btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
+.mf-btn.primary:hover{background:var(--teal-dim);}
+
+/* ── ANIMATIONS ─────────────────────────────────── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+@keyframes slideIn{from{opacity:0;transform:translateX(10px);}to{opacity:1;transform:translateX(0);}}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+.fade-up{animation:fadeUp .35s ease both;}
+.new-msg{animation:fadeUp .25s ease both;}
+
+/* ── NOTIFICATION TOAST ─────────────────────────── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--ink);color:#fff;
+  padding:12px 18px;border-radius:var(--r-lg);font-size:13px;z-index:500;
+  display:flex;align-items:center;gap:10px;box-shadow:var(--shadow-lg);
+  transform:translateY(80px);opacity:0;transition:all .3s ease;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);flex-shrink:0;}
+
+/* ── RESPONSIVE UTILS ───────────────────────────── */
+.hidden{display:none!important;}
+.text-teal{color:var(--teal);}
+.text-muted{color:var(--slate);}
+.mt-8{margin-top:8px;}
+</style>
+</head>
+<body>
+<style>.hb-locked body>*:not(#hb-gate){visibility:hidden}</style>
+<script>if(!localStorage.getItem('hb_token'))document.documentElement.classList.add('hb-locked');</script>
+
+<!-- ══ TOP NAV ══ -->
+<nav class="topnav">
+  <div class="nav-logo">
+    <div class="dot"></div>
+    Health<span>Board</span> Connect
+  </div>
+  <div class="view-toggle">
+    <button class="view-btn active" onclick="switchView('recruiter')">⚙ Recruiter</button>
+    <button class="view-btn" onclick="switchView('candidate')">👤 Candidate</button>
+    <button class="view-btn" onclick="switchView('crm')">📊 CRM & Tracking</button>
+  </div>
+  <div class="nav-right">
+    <div class="status-indicator"><div class="online-dot"></div>Live</div>
+    <button class="nav-icon-btn" onclick="showToast('📋 Templates opened','Choosing a template...')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    </button>
+    <button class="nav-icon-btn" onclick="openTemplates()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <div class="nav-badge"></div>
+    </button>
+    <div class="nav-avatar">RL</div>
+  </div>
+</nav>
+
+<div class="app">
+
+<!-- ══════════════════════════════════════════════
+     RECRUITER VIEW
+══════════════════════════════════════════════════ -->
+<div class="view active" id="view-recruiter">
+
+  <!-- LEFT: INBOX -->
+  <div class="r-inbox">
+    <div class="inbox-header">
+      <div class="inbox-title">Inbox <span class="inbox-count">18</span></div>
+      <div class="inbox-search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input placeholder="Search candidates...">
+      </div>
+    </div>
+    <div class="inbox-filters">
+      <button class="ifilter active">All</button>
+      <button class="ifilter">Unread</button>
+      <button class="ifilter">Active</button>
+      <button class="ifilter">Offers</button>
+    </div>
+    <div class="thread-list">
+
+      <div class="thread active unread" onclick="selectThread('jessica')">
+        <div class="t-avatar" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">JM</div>
+        <div class="t-info">
+          <div class="t-top">
+            <div class="t-name">Jessica Martinez, RN</div>
+            <div class="t-time">2m</div>
+          </div>
+          <div class="t-preview">That shift timing sounds perfect, I wanted to ask about...</div>
+          <div class="t-tags">
+            <span class="t-tag tag-icu">ICU</span>
+            <span class="t-tag tag-travel">Travel</span>
+          </div>
+        </div>
+        <div class="t-unread-dot"></div>
+      </div>
+
+      <div class="thread unread" onclick="selectThread('alex')">
+        <div class="t-avatar" style="background:linear-gradient(135deg,#6B3FA0,#4A2880);color:#fff;">AM</div>
+        <div class="t-info">
+          <div class="t-top"><div class="t-name">Alex Moore, RN</div><div class="t-time">14m</div></div>
+          <div class="t-preview">Yes, I'm definitely interested in the ER position at...</div>
+          <div class="t-tags"><span class="t-tag tag-urgent">🔴 Urgent</span><span class="t-tag tag-new">ER</span></div>
+        </div>
+        <div class="t-unread-dot"></div>
+      </div>
+
+      <div class="thread" onclick="selectThread('sarah')">
+        <div class="t-avatar" style="background:linear-gradient(135deg,#F5A623,#C4821A);color:#fff;">SR</div>
+        <div class="t-info">
+          <div class="t-top"><div class="t-name">Sarah Rodriguez, BSN</div><div class="t-time">1h</div></div>
+          <div class="t-preview">Thank you for the offer! I reviewed the housing...</div>
+          <div class="t-tags"><span class="t-tag tag-offer">Offer Sent</span></div>
+        </div>
+      </div>
+
+      <div class="thread" onclick="selectThread('kevin')">
+        <div class="t-avatar" style="background:linear-gradient(135deg,#E5534B,#A33830);color:#fff;">KL</div>
+        <div class="t-info">
+          <div class="t-top"><div class="t-name">Dr. Kevin Liang, MD</div><div class="t-time">3h</div></div>
+          <div class="t-preview">I can do the video interview on Thursday at 2pm...</div>
+          <div class="t-tags"><span class="t-tag tag-interview">Interview Set</span></div>
+        </div>
+      </div>
+
+      <div class="thread" onclick="selectThread('tanya')">
+        <div class="t-avatar" style="background:linear-gradient(135deg,#1A7FD4,#0A5A9A);color:#fff;">TC</div>
+        <div class="t-info">
+          <div class="t-top"><div class="t-name">Tanya Collins, CRNA</div><div class="t-time">1d</div></div>
+          <div class="t-preview">What's the exact pay structure for the anesthesia...</div>
+          <div class="t-tags"><span class="t-tag tag-icu">CRNA</span><span class="t-tag tag-travel">$210K</span></div>
+        </div>
+      </div>
+
+      <div class="thread" onclick="selectThread('priya')">
+        <div class="t-avatar" style="background:linear-gradient(135deg,#2DA44E,#1A6B30);color:#fff;">PW</div>
+        <div class="t-info">
+          <div class="t-top"><div class="t-name">Priya Waller, PharmD</div><div class="t-time">2d</div></div>
+          <div class="t-preview">Hi! I saw your message about the oncology pharmacy...</div>
+          <div class="t-tags"><span class="t-tag tag-new">Pharmacy</span></div>
+        </div>
+      </div>
+
+      <div class="thread" onclick="selectThread('marcus')">
+        <div class="t-avatar" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">MH</div>
+        <div class="t-info">
+          <div class="t-top"><div class="t-name">Marcus Henderson, RRT</div><div class="t-time">3d</div></div>
+          <div class="t-preview">Could you send me more details on the NICU position?</div>
+          <div class="t-tags"><span class="t-tag tag-new">RT</span><span class="t-tag tag-icu">NICU</span></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="inbox-cta">
+      <button class="new-conv-btn" onclick="showToast('✉️ New conversation','Choose candidate from database...')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        New Conversation
+      </button>
+    </div>
+  </div>
+
+  <!-- MIDDLE: CHAT -->
+  <div class="r-chat">
+    <div class="chat-topbar">
+      <div class="chat-candidate-info">
+        <div class="chat-cand-avatar" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;font-size:13px;font-weight:700;">JM</div>
+        <div>
+          <div class="chat-cand-name">Jessica Martinez, BSN, RN</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="chat-cand-meta">ICU Travel Nurse · Houston, TX · 8 yrs exp</div>
+            <div class="online-status"><div class="dot"></div>Online now</div>
+          </div>
+        </div>
+      </div>
+      <div class="chat-topbar-actions">
+        <button class="ctbar-btn" onclick="showToast('📋 Profile opened','Viewing full candidate profile...')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Profile
+        </button>
+        <button class="ctbar-btn" onclick="showToast('📅 Scheduler opened','Pick available time slots...')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Schedule
+        </button>
+        <button class="ctbar-btn" onclick="sendJobCard()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          Send Job
+        </button>
+        <button class="ctbar-btn warn" onclick="sendSchedule()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Send Offer
+        </button>
+      </div>
+    </div>
+
+    <div class="chat-messages" id="recruiter-messages">
+
+      <div class="msg-date-divider"><span>Today, Jan 14 2025</span></div>
+
+      <!-- Recruiter outbound -->
+      <div class="msg-group">
+        <div class="msg-row me fade-up">
+          <div>
+            <div class="bubble me">Hi Jessica! I'm Rachel from Memorial Hermann Health System. I came across your profile and was really impressed — 8 years of ICU experience with CCRN certification is exactly what our MICU team needs. We have a 13-week travel contract opening up Feb 1st. Would you be open to hearing more? 🏥</div>
+            <div class="bubble-meta" style="justify-content:flex-end;">10:02 AM <span class="read-check read">✓✓</span></div>
+          </div>
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">RL</div>
+        </div>
+      </div>
+
+      <!-- Candidate reply -->
+      <div class="msg-group">
+        <div class="msg-row fade-up">
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;font-size:10px;">JM</div>
+          <div>
+            <div class="bubble them">Hi Rachel! Yes absolutely, I'm actively looking for my next travel contract. Memorial Hermann has a great reputation. What's the pay package looking like? And is the 3×12 nights schedule? 🙂</div>
+            <div class="bubble-meta">10:18 AM</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Job card message -->
+      <div class="msg-group">
+        <div class="msg-row me fade-up">
+          <div>
+            <div class="job-card-msg">
+              <div class="job-card-msg-header">
+                <div class="jcm-icon">🏥</div>
+                <div class="jcm-title">Travel ICU RN — MICU Nights</div>
+                <div class="jcm-sub">Memorial Hermann Health System</div>
+              </div>
+              <div class="job-card-msg-body">
+                <div class="jcm-row">💰 Pay Rate<span class="jcm-val">$62/hr</span></div>
+                <div class="jcm-row">🏠 Housing<span class="jcm-val">$2,400/wk</span></div>
+                <div class="jcm-row">📅 Duration<span class="jcm-val">13 weeks</span></div>
+                <div class="jcm-row">🌙 Shift<span class="jcm-val">Nights 7p–7a</span></div>
+                <div class="jcm-row">📍 Location<span class="jcm-val">Houston, TX</span></div>
+                <div class="jcm-row">🗓 Start<span class="jcm-val">Feb 1, 2025</span></div>
+              </div>
+              <div class="jcm-actions">
+                <button class="jcm-btn jcm-apply" onclick="showToast('✅ Application started','Jessica can apply directly in chat...')">Apply Now</button>
+                <button class="jcm-btn jcm-save" onclick="showToast('🔖 Job saved','Saved to Jessica\'s profile...')">Save Job</button>
+              </div>
+            </div>
+            <div class="bubble-meta" style="justify-content:flex-end;">10:24 AM <span class="read-check read">✓✓</span></div>
+          </div>
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">RL</div>
+        </div>
+      </div>
+
+      <!-- Candidate response -->
+      <div class="msg-group">
+        <div class="msg-row fade-up">
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;font-size:10px;">JM</div>
+          <div>
+            <div class="bubble them">Wow $62/hr plus $2,400 housing is a really strong package! I'm very interested. A few quick questions — does the housing stipend start from day 1, and are there any completion bonuses?</div>
+            <div class="bubble-meta">10:31 AM</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg-group">
+        <div class="msg-row me fade-up">
+          <div>
+            <div class="bubble me">Great questions! ✅ Housing starts Day 1. We also offer a $500 completion bonus at week 13, and Day 1 medical/dental/vision. One thing — do you hold a current Texas compact license?</div>
+            <div class="bubble-meta" style="justify-content:flex-end;">10:35 AM <span class="read-check read">✓✓</span></div>
+          </div>
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">RL</div>
+        </div>
+      </div>
+
+      <!-- Schedule message -->
+      <div class="msg-group" id="schedule-msg-group" style="display:none;">
+        <div class="msg-row me fade-up">
+          <div>
+            <div class="schedule-msg">
+              <div class="schedule-msg-header">
+                <div class="sched-title">📅 Schedule an Interview</div>
+                <div class="sched-sub">Pick a time that works for you</div>
+              </div>
+              <div class="schedule-slots">
+                <div class="sched-slot" onclick="selectSlot(this)"><span class="slot-icon">🌅</span>Tue Jan 14 · 10:00 AM CST</div>
+                <div class="sched-slot" onclick="selectSlot(this)"><span class="slot-icon">☀️</span>Tue Jan 14 · 2:00 PM CST</div>
+                <div class="sched-slot" onclick="selectSlot(this)"><span class="slot-icon">🌆</span>Wed Jan 15 · 11:00 AM CST</div>
+                <div class="sched-slot" onclick="selectSlot(this)"><span class="slot-icon">🌅</span>Thu Jan 16 · 9:30 AM CST</div>
+              </div>
+            </div>
+            <div class="bubble-meta" style="justify-content:flex-end;">Just now <span class="read-check">✓</span></div>
+          </div>
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">RL</div>
+        </div>
+      </div>
+
+      <!-- Candidate latest -->
+      <div class="msg-group">
+        <div class="msg-row fade-up">
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;font-size:10px;">JM</div>
+          <div>
+            <div class="bubble them">Yes! I have an active Texas compact license, exp Dec 2026. That shift timing sounds perfect, I wanted to ask about the nurse-to-patient ratio in the MICU specifically?</div>
+            <div class="bubble-meta">11:02 AM</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Typing indicator -->
+      <div class="typing-indicator" id="typing-indicator" style="display:none;">
+        <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;font-size:10px;">JM</div>
+        <div class="typing-bubble">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="compose-bar">
+      <div class="quick-replies">
+        <button class="quick-reply" onclick="insertQuickReply('Our MICU is 2:1 ratio, which is excellent for travel!')">2:1 ratio info</button>
+        <button class="quick-reply" onclick="insertQuickReply('I can schedule you for a facility tour before start date.')">Schedule tour</button>
+        <button class="quick-reply" onclick="insertQuickReply('Would you like me to send over the formal offer letter?')">Send offer</button>
+        <button class="quick-reply" onclick="sendSchedule()">📅 Interview slots</button>
+      </div>
+      <div class="compose-toolbar">
+        <button class="compose-tool" title="Attach file" onclick="showToast('📎 File attached','Resume snapshot ready to send...')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <button class="compose-tool" title="Send job" onclick="sendJobCard()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+        </button>
+        <button class="compose-tool" title="Schedule interview" onclick="sendSchedule()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </button>
+        <button class="compose-tool" title="Templates" onclick="openTemplates()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </button>
+        <div class="compose-tool-sep"></div>
+        <button class="compose-tool active" title="AI assist" onclick="showToast('🤖 AI Assist','Generating personalized message draft...')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/></svg>
+        </button>
+      </div>
+      <div class="compose-input-row">
+        <textarea class="compose-input" id="recruiter-compose" placeholder="Message Jessica..." rows="1"
+          oninput="autoResize(this)" onkeydown="handleEnter(event,'recruiter')"></textarea>
+        <button class="send-btn" onclick="sendRecruiterMsg()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: CANDIDATE PROFILE PANEL -->
+  <div class="r-profile">
+    <div class="rp-header">
+      <div class="rp-avatar-wrap">
+        <div class="rp-avatar" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">JM</div>
+        <div class="rp-name">Jessica Martinez</div>
+        <div class="rp-role">BSN, RN · ICU Specialist</div>
+        <div class="rp-badges">
+          <span class="rp-badge" style="background:#E6F7F7;color:#007A6E;">✓ Verified RN</span>
+          <span class="rp-badge" style="background:#FEF3E2;color:#9A5700;">Travel Ready</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="match-score">
+      <div class="ms-num">94%</div>
+      <div class="ms-label">Match Score for This Role</div>
+      <div class="ms-bar"><div class="ms-fill" style="width:94%;"></div></div>
+    </div>
+
+    <div class="rp-section">
+      <div class="rp-section-title">Quick Info</div>
+      <div class="rp-info-row"><span class="rp-info-icon">📍</span><span class="rp-info-val">Houston, TX</span></div>
+      <div class="rp-info-row"><span class="rp-info-icon">⏰</span><span class="rp-info-val">8 years experience</span></div>
+      <div class="rp-info-row"><span class="rp-info-icon">💰</span><span class="rp-info-val">$50+/hr minimum</span></div>
+      <div class="rp-info-row"><span class="rp-info-icon">📅</span><span class="rp-info-val">Available Feb 1</span></div>
+      <div class="rp-info-row"><span class="rp-info-icon">🏥</span><span class="rp-info-val">CCRN, ACLS, BLS</span></div>
+      <div class="rp-info-row"><span class="rp-info-icon">🎓</span><span class="rp-info-val">BSN · UT Health 2016</span></div>
+    </div>
+
+    <div class="rp-section">
+      <div class="rp-section-title">ATS Stage</div>
+      <select class="stage-select" onchange="showToast('✅ Stage updated','Saved to CRM tracking...')">
+        <option>📩 Initial Contact</option>
+        <option selected>💬 In Conversation</option>
+        <option>📋 Application Received</option>
+        <option>📅 Interview Scheduled</option>
+        <option>📄 Offer Extended</option>
+        <option>🎉 Hired</option>
+        <option>❌ Not Interested</option>
+      </select>
+    </div>
+
+    <div class="rp-section">
+      <div class="rp-section-title">Conversation History</div>
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-dot-wrap"><div class="tl-dot" style="background:var(--teal);"></div><div class="tl-line"></div></div>
+          <div class="tl-content">
+            <div class="tl-event">Replied to job card — ICU Travel RN</div>
+            <div class="tl-time">Today 10:31 AM · Interested ✅</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot-wrap"><div class="tl-dot" style="background:var(--teal);"></div><div class="tl-line"></div></div>
+          <div class="tl-content">
+            <div class="tl-event">Job card sent · MICU Nights $62/hr</div>
+            <div class="tl-time">Today 10:24 AM · Opened ✓</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot-wrap"><div class="tl-dot" style="background:var(--amber);"></div><div class="tl-line"></div></div>
+          <div class="tl-content">
+            <div class="tl-event">First outreach sent by Rachel L.</div>
+            <div class="tl-time">Today 10:02 AM · Read ✓✓</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot-wrap"><div class="tl-dot" style="background:var(--slate-light);"></div></div>
+          <div class="tl-content">
+            <div class="tl-event">Profile viewed by recruiter</div>
+            <div class="tl-time">Yesterday 4:15 PM</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rp-section">
+      <div class="rp-section-title">Recruiter Notes</div>
+      <textarea class="note-input" id="recruiter-note" placeholder="Add private notes about this candidate...">Strong ICU background, TX compact license confirmed. Interested in travel. Price-conscious but flexible on start date.</textarea>
+      <button class="note-save-btn" onclick="saveNote()">Save Note</button>
+    </div>
+
+    <div class="action-btns">
+      <button class="act-btn teal" onclick="showToast('📄 Offer letter created','Generating formal offer document...')">Send Offer</button>
+      <button class="act-btn" onclick="showToast('📅 Interview scheduled','Calendar invite sent to candidate...')">Schedule</button>
+      <button class="act-btn" onclick="showToast('📁 Profile exported','Downloaded candidate PDF...')">Export PDF</button>
+      <button class="act-btn" onclick="showToast('🚫 Marked inactive','Candidate moved to cold leads...')">Mark Cold</button>
+      <button class="act-btn full" onclick="showToast('🎉 Hired! Congrats!','Jessica moved to Hired stage in CRM...')">🎉 Mark as Hired</button>
+    </div>
+  </div>
+
+</div><!-- /recruiter view -->
+
+
+<!-- ══════════════════════════════════════════════
+     CANDIDATE VIEW
+══════════════════════════════════════════════════ -->
+<div class="view" id="view-candidate">
+  <!-- LEFT: RECRUITER INBOX -->
+  <div class="c-inbox">
+    <div class="c-inbox-header">
+      <div class="c-inbox-title">Messages</div>
+      <div class="inbox-search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input placeholder="Search recruiters...">
+      </div>
+    </div>
+    <div class="thread-list" style="flex:1;">
+      <div class="c-thread active" onclick="showToast('💬 Conversation loaded','Memorial Hermann thread selected...')">
+        <div class="ct-logo">🏥</div>
+        <div class="ct-info">
+          <div class="ct-org">Memorial Hermann</div>
+          <div class="ct-recruiter">Rachel Lee · Recruiter</div>
+          <div class="ct-preview">Great — so our MICU runs 2:1 ratio which is...</div>
+          <div class="ct-time">2m ago</div>
+        </div>
+        <div class="c-unread">2</div>
+      </div>
+      <div class="c-thread" onclick="showToast('💬 Conversation loaded','HCA Healthcare thread selected...')">
+        <div class="ct-logo">💙</div>
+        <div class="ct-info">
+          <div class="ct-org">HCA Healthcare</div>
+          <div class="ct-recruiter">David Park · Senior Recruiter</div>
+          <div class="ct-preview">We'd love to have you interview for our Level I...</div>
+          <div class="ct-time">1h ago</div>
+        </div>
+        <div class="c-unread">1</div>
+      </div>
+      <div class="c-thread" onclick="showToast('💬 Conversation loaded','AMN Healthcare thread selected...')">
+        <div class="ct-logo">⚕️</div>
+        <div class="ct-info">
+          <div class="ct-org">AMN Healthcare</div>
+          <div class="ct-recruiter">Kim Torres · Travel Nurse Recruiter</div>
+          <div class="ct-preview">The $58/hr contract in LA is still open if you're...</div>
+          <div class="ct-time">3h ago</div>
+        </div>
+      </div>
+      <div class="c-thread" onclick="showToast('💬 Conversation loaded','Cedars-Sinai thread selected...')">
+        <div class="ct-logo">🌟</div>
+        <div class="ct-info">
+          <div class="ct-org">Cedars-Sinai</div>
+          <div class="ct-recruiter">Amanda Ross · Talent Acquisition</div>
+          <div class="ct-preview">Your CCRN certification really stood out to our team...</div>
+          <div class="ct-time">1d ago</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MIDDLE: CHAT (candidate POV) -->
+  <div class="c-chat">
+    <div class="c-chat-topbar">
+      <div class="org-logo">🏥</div>
+      <div>
+        <div class="org-name">Memorial Hermann Health System</div>
+        <div class="recruiter-name">Rachel Lee · ICU Travel Nurse Recruiter · <span style="color:var(--green);">● Online</span></div>
+      </div>
+      <div class="c-chat-actions">
+        <button class="ctbar-btn" onclick="showToast('📋 Job details opened','Viewing full job description...')">View Job</button>
+        <button class="ctbar-btn" onclick="showToast('⚠️ Reported','This conversation has been flagged for review...')">Report</button>
+      </div>
+    </div>
+
+    <div class="chat-messages" id="candidate-messages">
+      <div class="msg-date-divider"><span>Today, Jan 14 2025</span></div>
+
+      <div class="msg-group">
+        <div class="msg-row fade-up">
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#1A7FD4,#0A5A9A);color:#fff;font-size:10px;">RL</div>
+          <div>
+            <div class="bubble them">Hi Jessica! I'm Rachel from Memorial Hermann Health System. I came across your profile and was really impressed — 8 years of ICU experience with CCRN certification is exactly what our MICU team needs. We have a 13-week travel contract opening up Feb 1st. Would you be open to hearing more? 🏥</div>
+            <div class="bubble-meta">10:02 AM</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg-group">
+        <div class="msg-row me fade-up">
+          <div>
+            <div class="bubble me">Hi Rachel! Yes absolutely, I'm actively looking for my next travel contract. Memorial Hermann has a great reputation. What's the pay package looking like? And is the 3×12 nights schedule? 🙂</div>
+            <div class="bubble-meta" style="justify-content:flex-end;">10:18 AM <span class="read-check read">✓✓</span></div>
+          </div>
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;font-size:10px;">JM</div>
+        </div>
+      </div>
+
+      <!-- Job card received -->
+      <div class="msg-group">
+        <div class="msg-row fade-up">
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#1A7FD4,#0A5A9A);color:#fff;font-size:10px;">RL</div>
+          <div>
+            <div class="job-card-msg">
+              <div class="job-card-msg-header">
+                <div class="jcm-icon">🏥</div>
+                <div class="jcm-title">Travel ICU RN — MICU Nights</div>
+                <div class="jcm-sub">Memorial Hermann Health System</div>
+              </div>
+              <div class="job-card-msg-body">
+                <div class="jcm-row">💰 Pay Rate<span class="jcm-val">$62/hr</span></div>
+                <div class="jcm-row">🏠 Housing<span class="jcm-val">$2,400/wk</span></div>
+                <div class="jcm-row">📅 Duration<span class="jcm-val">13 weeks</span></div>
+                <div class="jcm-row">🌙 Shift<span class="jcm-val">Nights 7p–7a</span></div>
+                <div class="jcm-row">📍 Location<span class="jcm-val">Houston, TX</span></div>
+                <div class="jcm-row">🗓 Start<span class="jcm-val">Feb 1, 2025</span></div>
+              </div>
+              <div class="jcm-actions">
+                <button class="jcm-btn jcm-apply" onclick="showToast('✅ Applied!','Your application has been sent to Memorial Hermann...')">Apply Now</button>
+                <button class="jcm-btn jcm-save" onclick="showToast('🔖 Saved','Job added to your saved list...')">Save Job</button>
+              </div>
+            </div>
+            <div class="bubble-meta">10:24 AM</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg-group">
+        <div class="msg-row me fade-up">
+          <div>
+            <div class="bubble me">Wow $62/hr plus $2,400 housing is a really strong package! I'm very interested. A few quick questions — does the housing stipend start from day 1, and are there any completion bonuses?</div>
+            <div class="bubble-meta" style="justify-content:flex-end;">10:31 AM <span class="read-check read">✓✓</span></div>
+          </div>
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;font-size:10px;">JM</div>
+        </div>
+      </div>
+
+      <div class="msg-group">
+        <div class="msg-row fade-up">
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#1A7FD4,#0A5A9A);color:#fff;font-size:10px;">RL</div>
+          <div>
+            <div class="bubble them">Great questions! ✅ Housing starts Day 1. We also offer a $500 completion bonus at week 13, and Day 1 medical/dental/vision. One thing — do you hold a current Texas compact license?</div>
+            <div class="bubble-meta">10:35 AM</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Schedule received -->
+      <div class="msg-group">
+        <div class="msg-row fade-up">
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#1A7FD4,#0A5A9A);color:#fff;font-size:10px;">RL</div>
+          <div>
+            <div class="schedule-msg">
+              <div class="schedule-msg-header">
+                <div class="sched-title">📅 Interview Request</div>
+                <div class="sched-sub">Rachel wants to schedule a call</div>
+              </div>
+              <div class="schedule-slots">
+                <div class="sched-slot" onclick="confirmSlot(this)"><span class="slot-icon">🌅</span>Tue Jan 14 · 10:00 AM CST</div>
+                <div class="sched-slot" onclick="confirmSlot(this)"><span class="slot-icon">☀️</span>Tue Jan 14 · 2:00 PM CST</div>
+                <div class="sched-slot selected" onclick="confirmSlot(this)"><span class="slot-icon">🌆</span>Wed Jan 15 · 11:00 AM CST ✓ Selected</div>
+                <div class="sched-slot" onclick="confirmSlot(this)"><span class="slot-icon">🌅</span>Thu Jan 16 · 9:30 AM CST</div>
+              </div>
+            </div>
+            <div class="bubble-meta">10:50 AM</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg-group">
+        <div class="msg-row me fade-up">
+          <div>
+            <div class="bubble me">Yes! I have an active Texas compact license, exp Dec 2026. That shift timing sounds perfect, I wanted to ask about the nurse-to-patient ratio in the MICU specifically?</div>
+            <div class="bubble-meta" style="justify-content:flex-end;">11:02 AM <span class="read-check read">✓✓</span></div>
+          </div>
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;font-size:10px;">JM</div>
+        </div>
+      </div>
+
+      <div class="system-msg-wrap">
+        <div class="system-msg">📋 Wed Jan 15 · 11:00 AM CST confirmed</div>
+      </div>
+
+      <div class="msg-group">
+        <div class="msg-row fade-up">
+          <div class="msg-sender-av" style="background:linear-gradient(135deg,#1A7FD4,#0A5A9A);color:#fff;font-size:10px;">RL</div>
+          <div>
+            <div class="bubble them">Great — our MICU runs 2:1 ratio which is excellent! Rarely goes to 3:1. It's a fantastic unit, very supportive charge nurses. Ready to send you the formal offer? 🎉</div>
+            <div class="bubble-meta">11:08 AM</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="compose-bar">
+      <div class="quick-replies">
+        <button class="quick-reply" onclick="insertCandidateReply('Yes, please send the offer letter!')">Accept offer 🎉</button>
+        <button class="quick-reply" onclick="insertCandidateReply('I need a few days to review. Can I get back to you by Friday?')">Need more time</button>
+        <button class="quick-reply" onclick="insertCandidateReply('Can you tell me more about the team culture?')">Ask about culture</button>
+        <button class="quick-reply" onclick="insertCandidateReply('I have another offer I\'m considering. Can you match $65/hr?')">Negotiate pay</button>
+      </div>
+      <div class="compose-input-row">
+        <textarea class="compose-input" id="candidate-compose" placeholder="Reply to Rachel..." rows="1"
+          oninput="autoResize(this)" onkeydown="handleEnter(event,'candidate')"></textarea>
+        <button class="send-btn" onclick="sendCandidateMsg()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: JOB OFFERS SIDEBAR -->
+  <div class="c-job-offers">
+    <div class="cjo-header">
+      <div class="cjo-title">Your Opportunities</div>
+      <div class="cjo-sub">4 active recruiter conversations</div>
+    </div>
+
+    <div class="job-offer-card">
+      <div class="joc-top">
+        <div class="joc-employer">
+          <div class="joc-emp-logo">🏥</div>
+          <div class="joc-emp-name">Memorial Hermann</div>
+        </div>
+        <span class="offer-status status-new">NEW OFFER</span>
+        <div class="joc-title">Travel ICU RN — MICU Nights</div>
+        <div class="joc-pay">$62/hr <span class="joc-pay-sub">+$2,400 housing</span></div>
+      </div>
+      <div class="joc-details">
+        <div class="joc-detail">📍 Houston, TX<span class="joc-detail-val">13 weeks</span></div>
+        <div class="joc-detail">🌙 Nights 7p–7a<span class="joc-detail-val">Feb 1 start</span></div>
+        <div class="joc-detail">🏥 ICU 2:1 ratio<span class="joc-detail-val">Day 1 benefits</span></div>
+      </div>
+      <div class="joc-footer">
+        <button class="joc-btn joc-apply" onclick="showToast('✅ Applied to Memorial Hermann!','Rachel will see your application immediately...')">Apply</button>
+        <button class="joc-btn joc-decline" onclick="showToast('❌ Declined','Recruiter notified. No further contact.')">Decline</button>
+      </div>
+    </div>
+
+    <div class="job-offer-card">
+      <div class="joc-top">
+        <div class="joc-employer">
+          <div class="joc-emp-logo">💙</div>
+          <div class="joc-emp-name">HCA Healthcare</div>
+        </div>
+        <span class="offer-status status-interview">INTERVIEW</span>
+        <div class="joc-title">Staff RN — Emergency Dept</div>
+        <div class="joc-pay">$48/hr <span class="joc-pay-sub">full benefits</span></div>
+      </div>
+      <div class="joc-details">
+        <div class="joc-detail">📍 Dallas, TX<span class="joc-detail-val">Permanent</span></div>
+        <div class="joc-detail">🌅 Days/Nights<span class="joc-detail-val">Flexible</span></div>
+        <div class="joc-detail">💊 ER · Trauma<span class="joc-detail-val">$10K sign-on</span></div>
+      </div>
+      <div class="joc-footer">
+        <button class="joc-btn joc-apply" onclick="showToast('📅 Interview confirmed','Thu Jan 16 at 2:00 PM CST...')">Confirm Interview</button>
+        <button class="joc-btn joc-decline" onclick="showToast('❌ Interview declined','HCA notified...')">Decline</button>
+      </div>
+    </div>
+
+    <div class="job-offer-card">
+      <div class="joc-top">
+        <div class="joc-employer">
+          <div class="joc-emp-logo">⚕️</div>
+          <div class="joc-emp-name">AMN Healthcare</div>
+        </div>
+        <span class="offer-status status-applied">EXPLORING</span>
+        <div class="joc-title">Travel ICU RN — LA</div>
+        <div class="joc-pay">$58/hr <span class="joc-pay-sub">+$2,100 housing</span></div>
+      </div>
+      <div class="joc-details">
+        <div class="joc-detail">📍 Los Angeles, CA<span class="joc-detail-val">13 weeks</span></div>
+        <div class="joc-detail">🌙 Nights<span class="joc-detail-val">Mar start</span></div>
+      </div>
+      <div class="joc-footer">
+        <button class="joc-btn joc-apply" onclick="showToast('💬 Message sent','Asking Kim for more details...')">Inquire</button>
+        <button class="joc-btn joc-decline">Not Now</button>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /candidate view -->
+
+
+<!-- ══════════════════════════════════════════════
+     CRM & TRACKING VIEW
+══════════════════════════════════════════════════ -->
+<div class="view crm-view" id="view-crm">
+  <div class="crm-header">
+    <div class="crm-title">📊 CRM & Conversation Intelligence</div>
+    <button class="ctbar-btn" onclick="showToast('📥 Report exported','CSV download ready...')">Export CSV</button>
+    <button class="ctbar-btn teal" style="background:var(--teal);color:#fff;border-color:var(--teal);" onclick="showToast('📤 Bulk message sent','Template sent to 24 candidates...')">Bulk Message</button>
+    <div class="crm-period">
+      <select><option>Last 30 days</option><option>Last 7 days</option><option>This quarter</option></select>
+    </div>
+  </div>
+
+  <div class="crm-body">
+    <!-- Metrics -->
+    <div class="crm-metrics">
+      <div class="crm-metric">
+        <div class="cm-icon">💬</div>
+        <div class="cm-label">Total Conversations</div>
+        <div class="cm-val">284</div>
+        <div class="cm-change cm-up">↑ 34% vs last month</div>
+      </div>
+      <div class="crm-metric">
+        <div class="cm-icon">↩️</div>
+        <div class="cm-label">Response Rate</div>
+        <div class="cm-val">68%</div>
+        <div class="cm-change cm-up">↑ 12% vs avg</div>
+      </div>
+      <div class="crm-metric">
+        <div class="cm-icon">⏱️</div>
+        <div class="cm-label">Avg Response Time</div>
+        <div class="cm-val">4.2h</div>
+        <div class="cm-change cm-down">↑ slower by 22min</div>
+      </div>
+      <div class="crm-metric">
+        <div class="cm-icon">📄</div>
+        <div class="cm-label">Offers Sent</div>
+        <div class="cm-val">42</div>
+        <div class="cm-change cm-up">↑ 8 this week</div>
+      </div>
+      <div class="crm-metric">
+        <div class="cm-icon">🎉</div>
+        <div class="cm-label">Placed / Hired</div>
+        <div class="cm-val">19</div>
+        <div class="cm-change cm-up">45% offer-to-hire</div>
+      </div>
+    </div>
+
+    <div class="crm-grid">
+      <!-- Conversation table -->
+      <div class="crm-panel">
+        <div class="crm-panel-header">
+          <div class="crm-panel-title">All Conversations</div>
+          <span class="crm-panel-action" onclick="showToast('🔍 Filter applied','Showing active candidates only...')">Filter ▾</span>
+        </div>
+        <div style="overflow-x:auto;">
+        <table class="conv-table">
+          <thead>
+            <tr>
+              <th>Candidate</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Response</th>
+              <th>Last Msg</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <div class="cand-cell">
+                  <div class="cand-cell-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">JM</div>
+                  <div>
+                    <div style="font-weight:600;font-size:13px;">Jessica Martinez</div>
+                    <div style="font-size:11px;color:var(--slate);">ICU RN · 8yr</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size:12px;">Travel ICU · $62/hr</td>
+              <td><span class="conv-status cs-active">In Conversation</span></td>
+              <td>
+                <div class="response-bar">
+                  <div class="rbar-track"><div class="rbar-fill" style="width:94%;"></div></div>
+                  <div class="rbar-label">94%</div>
+                </div>
+              </td>
+              <td style="font-size:12px;color:var(--slate);">2m ago</td>
+              <td><button class="ctbar-btn" style="font-size:11px;padding:4px 10px;" onclick="switchView('recruiter')">Open ↗</button></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="cand-cell">
+                  <div class="cand-cell-av" style="background:linear-gradient(135deg,#6B3FA0,#4A2880);color:#fff;">AM</div>
+                  <div>
+                    <div style="font-weight:600;font-size:13px;">Alex Moore</div>
+                    <div style="font-size:11px;color:var(--slate);">ER RN · 5yr</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size:12px;">Staff ER · $48/hr</td>
+              <td><span class="conv-status cs-offered">Offer Sent</span></td>
+              <td>
+                <div class="response-bar">
+                  <div class="rbar-track"><div class="rbar-fill" style="width:78%;"></div></div>
+                  <div class="rbar-label">78%</div>
+                </div>
+              </td>
+              <td style="font-size:12px;color:var(--slate);">14m</td>
+              <td><button class="ctbar-btn" style="font-size:11px;padding:4px 10px;" onclick="showToast('💬 Thread opened','Alex Moore conversation...')">Open ↗</button></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="cand-cell">
+                  <div class="cand-cell-av" style="background:linear-gradient(135deg,#F5A623,#C4821A);color:#fff;">SR</div>
+                  <div>
+                    <div style="font-weight:600;font-size:13px;">Sarah Rodriguez</div>
+                    <div style="font-size:11px;color:var(--slate);">Travel ICU · 6yr</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size:12px;">Travel ICU · $60/hr</td>
+              <td><span class="conv-status cs-hired">Hired ✓</span></td>
+              <td>
+                <div class="response-bar">
+                  <div class="rbar-track"><div class="rbar-fill" style="width:100%;background:var(--green);"></div></div>
+                  <div class="rbar-label">100%</div>
+                </div>
+              </td>
+              <td style="font-size:12px;color:var(--slate);">1h</td>
+              <td><button class="ctbar-btn" style="font-size:11px;padding:4px 10px;" onclick="showToast('📋 Profile opened','Sarah Rodriguez hired record...')">View</button></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="cand-cell">
+                  <div class="cand-cell-av" style="background:linear-gradient(135deg,#E5534B,#A33830);color:#fff;">KL</div>
+                  <div>
+                    <div style="font-weight:600;font-size:13px;">Dr. Kevin Liang</div>
+                    <div style="font-size:11px;color:var(--slate);">ER MD · 12yr</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size:12px;">EM Physician · $280K</td>
+              <td><span class="conv-status cs-pending">Interview</span></td>
+              <td>
+                <div class="response-bar">
+                  <div class="rbar-track"><div class="rbar-fill" style="width:62%;background:var(--amber);"></div></div>
+                  <div class="rbar-label">62%</div>
+                </div>
+              </td>
+              <td style="font-size:12px;color:var(--slate);">3h</td>
+              <td><button class="ctbar-btn" style="font-size:11px;padding:4px 10px;" onclick="showToast('💬 Thread opened','Dr. Liang conversation...')">Open ↗</button></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="cand-cell">
+                  <div class="cand-cell-av" style="background:linear-gradient(135deg,#1A7FD4,#0A5A9A);color:#fff;">TC</div>
+                  <div>
+                    <div style="font-weight:600;font-size:13px;">Tanya Collins</div>
+                    <div style="font-size:11px;color:var(--slate);">CRNA · 15yr</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size:12px;">CRNA · $210K</td>
+              <td><span class="conv-status cs-active">In Conversation</span></td>
+              <td>
+                <div class="response-bar">
+                  <div class="rbar-track"><div class="rbar-fill" style="width:85%;"></div></div>
+                  <div class="rbar-label">85%</div>
+                </div>
+              </td>
+              <td style="font-size:12px;color:var(--slate);">1d</td>
+              <td><button class="ctbar-btn" style="font-size:11px;padding:4px 10px;" onclick="showToast('💬 Thread opened','Tanya Collins conversation...')">Open ↗</button></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="cand-cell">
+                  <div class="cand-cell-av" style="background:linear-gradient(135deg,#6B7A99,#3D4A63);color:#fff;">PW</div>
+                  <div>
+                    <div style="font-weight:600;font-size:13px;">Priya Waller</div>
+                    <div style="font-size:11px;color:var(--slate);">PharmD · 9yr</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size:12px;">Oncology PharmD · $65/hr</td>
+              <td><span class="conv-status cs-cold">No Response</span></td>
+              <td>
+                <div class="response-bar">
+                  <div class="rbar-track"><div class="rbar-fill" style="width:0%;"></div></div>
+                  <div class="rbar-label">0%</div>
+                </div>
+              </td>
+              <td style="font-size:12px;color:var(--slate);">2d</td>
+              <td><button class="ctbar-btn" style="font-size:11px;padding:4px 10px;" onclick="showToast('📩 Follow-up sent','Automated follow-up delivered...')">Follow-up</button></td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      <!-- Right column: Funnel + tracking -->
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="crm-panel">
+          <div class="crm-panel-header">
+            <div class="crm-panel-title">Hiring Funnel (30d)</div>
+          </div>
+          <div class="funnel">
+            <div class="funnel-row">
+              <div class="funnel-label"><span class="funnel-stage">📩 Outreach Sent</span><span class="funnel-count">284 candidates</span></div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:100%;background:var(--slate-dim);">284</div></div>
+            </div>
+            <div class="funnel-row">
+              <div class="funnel-label"><span class="funnel-stage">↩️ Replied</span><span class="funnel-count">193 · 68%</span></div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:68%;background:#1A7FD4;">193</div></div>
+            </div>
+            <div class="funnel-row">
+              <div class="funnel-label"><span class="funnel-stage">🔗 Job Card Opened</span><span class="funnel-count">156 · 55%</span></div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:55%;background:var(--teal-dim);">156</div></div>
+            </div>
+            <div class="funnel-row">
+              <div class="funnel-label"><span class="funnel-stage">📋 Applied</span><span class="funnel-count">84 · 30%</span></div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:30%;background:var(--teal);">84</div></div>
+            </div>
+            <div class="funnel-row">
+              <div class="funnel-label"><span class="funnel-stage">📅 Interviewed</span><span class="funnel-count">48 · 17%</span></div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:17%;background:var(--amber);">48</div></div>
+            </div>
+            <div class="funnel-row">
+              <div class="funnel-label"><span class="funnel-stage">📄 Offered</span><span class="funnel-count">42 · 15%</span></div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:15%;background:var(--amber-dim);">42</div></div>
+            </div>
+            <div class="funnel-row">
+              <div class="funnel-label"><span class="funnel-stage">🎉 Hired</span><span class="funnel-count">19 · 7%</span></div>
+              <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:7%;background:var(--green);">19</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="crm-panel">
+          <div class="crm-panel-header">
+            <div class="crm-panel-title">Message Performance</div>
+          </div>
+          <div style="padding:14px 18px;display:flex;flex-direction:column;gap:10px;">
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+                <span style="color:var(--ink);font-weight:500;">Open Rate</span>
+                <span style="font-weight:700;color:var(--teal);">84%</span>
+              </div>
+              <div style="height:6px;background:var(--surface-alt);border-radius:3px;overflow:hidden;">
+                <div style="width:84%;height:100%;background:var(--teal);border-radius:3px;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+                <span style="color:var(--ink);font-weight:500;">Reply Rate</span>
+                <span style="font-weight:700;color:var(--teal);">68%</span>
+              </div>
+              <div style="height:6px;background:var(--surface-alt);border-radius:3px;overflow:hidden;">
+                <div style="width:68%;height:100%;background:var(--teal-dim);border-radius:3px;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+                <span style="color:var(--ink);font-weight:500;">Job Card Click-Through</span>
+                <span style="font-weight:700;color:var(--amber);">55%</span>
+              </div>
+              <div style="height:6px;background:var(--surface-alt);border-radius:3px;overflow:hidden;">
+                <div style="width:55%;height:100%;background:var(--amber);border-radius:3px;"></div>
+              </div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+                <span style="color:var(--ink);font-weight:500;">Template: "Personal Outreach"</span>
+                <span style="font-weight:700;color:var(--green);">74% reply</span>
+              </div>
+              <div style="height:6px;background:var(--surface-alt);border-radius:3px;overflow:hidden;">
+                <div style="width:74%;height:100%;background:var(--green);border-radius:3px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="crm-panel">
+          <div class="crm-panel-header"><div class="crm-panel-title">Auto-Follow-Up Rules</div></div>
+          <div style="padding:14px 18px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;padding:8px;background:var(--surface);border-radius:var(--r-md);">
+              <span style="font-size:16px;">⏰</span>
+              <div style="flex:1;"><div style="font-weight:500;">No reply in 48h</div><div style="color:var(--slate);font-size:11px;">Send follow-up template #2</div></div>
+              <span style="color:var(--green);font-size:11px;font-weight:600;">ON</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;padding:8px;background:var(--surface);border-radius:var(--r-md);">
+              <span style="font-size:16px;">📋</span>
+              <div style="flex:1;"><div style="font-weight:500;">Job card not opened in 24h</div><div style="color:var(--slate);font-size:11px;">Resend with different template</div></div>
+              <span style="color:var(--green);font-size:11px;font-weight:600;">ON</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;padding:8px;background:var(--surface);border-radius:var(--r-md);">
+              <span style="font-size:16px;">🎉</span>
+              <div style="flex:1;"><div style="font-weight:500;">After offer accepted</div><div style="color:var(--slate);font-size:11px;">Send onboarding checklist</div></div>
+              <span style="color:var(--green);font-size:11px;font-weight:600;">ON</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /crm view -->
+
+</div><!-- /app -->
+
+<!-- ── TEMPLATES MODAL ────────────────────────────── -->
+<div class="modal-overlay" id="templates-modal" onclick="handleModalClick(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Message Templates</div>
+      <button class="modal-close" onclick="closeTemplates()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="template-card selected" onclick="selectTemplate(this)">
+        <div class="tmpl-name">🎯 Personal ICU Outreach</div>
+        <div class="tmpl-preview">Hi [Name]! I'm [Recruiter] from [Hospital]. I came across your profile and was impressed — [X] years of ICU experience with [Cert] is exactly what our team needs. We have a [Type] opening Feb 1st. Open to hearing more?</div>
+        <span class="tmpl-tag" style="background:#E6F7F7;color:#007A6E;">ICU · Travel</span>
+        <span class="tmpl-tag" style="background:#EAF7EE;color:#1A6B3A;">74% reply rate ↑</span>
+      </div>
+      <div class="template-card" onclick="selectTemplate(this)">
+        <div class="tmpl-name">💰 High-Pay Package Highlight</div>
+        <div class="tmpl-preview">Hi [Name]! Quick question — are you open to a [Specialty] role in [City]? Package is $[Rate]/hr + $[Housing]/wk housing. One of our strongest travel contracts this quarter. Worth 5 minutes?</div>
+        <span class="tmpl-tag" style="background:#FEF3E2;color:#9A5700;">Travel · Pay-Focused</span>
+        <span class="tmpl-tag" style="background:#EAF7EE;color:#1A6B3A;">68% reply rate</span>
+      </div>
+      <div class="template-card" onclick="selectTemplate(this)">
+        <div class="tmpl-name">📅 Interview Follow-Up</div>
+        <div class="tmpl-preview">Hi [Name]! Just following up on our conversation about the [Role] position. I wanted to share a few time slots for a quick intro call — no pressure, just 20 minutes to talk through the details!</div>
+        <span class="tmpl-tag" style="background:#F0EBF8;color:#5B3FA0;">Follow-Up</span>
+      </div>
+      <div class="template-card" onclick="selectTemplate(this)">
+        <div class="tmpl-name">🎉 Formal Offer Letter</div>
+        <div class="tmpl-preview">Congratulations [Name]! We're thrilled to extend a formal offer for the [Role] position at [Hospital]. Please find the offer details below: Start: [Date], Pay: $[Rate]/hr, Housing: $[Amount]/wk...</div>
+        <span class="tmpl-tag" style="background:#EAF4FD;color:#0063B8;">Offer · Formal</span>
+        <span class="tmpl-tag" style="background:#EAF7EE;color:#1A6B3A;">92% acceptance</span>
+      </div>
+      <div class="template-card" onclick="selectTemplate(this)">
+        <div class="tmpl-name">❄️ Re-engagement (Cold Lead)</div>
+        <div class="tmpl-preview">Hi [Name]! It's been a while since we connected. Checking in to see if you're still open to [Specialty] opportunities. We have some great new contracts in [State] — would love to reconnect!</div>
+        <span class="tmpl-tag" style="background:var(--surface-alt);color:var(--slate);">Cold Lead</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="mf-btn" onclick="closeTemplates()">Cancel</button>
+      <button class="mf-btn primary" onclick="useTemplate()">Use Template</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast">
+  <div class="toast-dot"></div>
+  <span id="toast-msg"></span>
+</div>
+
+<script>
+/* ── VIEW SWITCHING ─────────────────────────────── */
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  const btns = document.querySelectorAll('.view-btn');
+  const map = {recruiter:0, candidate:1, crm:2};
+  btns[map[name]].classList.add('active');
+}
+
+/* ── SEND MESSAGES ──────────────────────────────── */
+function sendRecruiterMsg() {
+  const ta = document.getElementById('recruiter-compose');
+  const text = ta.value.trim();
+  if (!text) return;
+  appendMessage('recruiter-messages', text, 'me', 'RL', 'linear-gradient(135deg,#00B4A6,#007A6E)');
+  ta.value = ''; ta.style.height = '40px';
+  showToast('✅ Message delivered','Jessica received your message instantly...');
+  setTimeout(() => showTyping(), 1200);
+}
+
+function sendCandidateMsg() {
+  const ta = document.getElementById('candidate-compose');
+  const text = ta.value.trim();
+  if (!text) return;
+  appendMessage('candidate-messages', text, 'me', 'JM', 'linear-gradient(135deg,#00B4A6,#007A6E)');
+  ta.value = ''; ta.style.height = '40px';
+  showToast('📤 Sent to Rachel','Memorial Hermann recruiter notified...');
+  setTimeout(() => {
+    appendMessage('candidate-messages', 'That\'s great to hear! Our MICU is a fantastic unit. Let me send over the formal offer right now 🎉', 'them', 'RL', 'linear-gradient(135deg,#1A7FD4,#0A5A9A)');
+  }, 2000);
+}
+
+function appendMessage(containerId, text, side, initials, bg) {
+  const container = document.getElementById(containerId);
+  const now = new Date();
+  const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const div = document.createElement('div');
+  div.className = 'msg-group';
+  const metaHTML = side === 'me'
+    ? `<div class="bubble-meta" style="justify-content:flex-end;">${time} <span class="read-check">✓</span></div>`
+    : `<div class="bubble-meta">${time}</div>`;
+  const avHTML = `<div class="msg-sender-av" style="background:${bg};color:#fff;font-size:10px;">${initials}</div>`;
+  if (side === 'me') {
+    div.innerHTML = `<div class="msg-row me new-msg"><div><div class="bubble me">${text}</div>${metaHTML}</div>${avHTML}</div>`;
+  } else {
+    div.innerHTML = `<div class="msg-row new-msg">${avHTML}<div><div class="bubble them">${text}</div>${metaHTML}</div></div>`;
+  }
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function showTyping() {
+  const ti = document.getElementById('typing-indicator');
+  if (ti) { ti.style.display = 'flex'; scrollToBottom('recruiter-messages'); }
+  setTimeout(() => {
+    if (ti) ti.style.display = 'none';
+    appendMessage('recruiter-messages', 'Our MICU runs a strict 2:1 ratio — you\'ll rarely see 3:1. The team is very supportive and the charge nurses are phenomenal. Ready to send you the formal offer? 🎉', 'them', 'JM', 'linear-gradient(135deg,#00B4A6,#007A6E)');
+  }, 2500);
+}
+
+function scrollToBottom(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+/* ── SPECIAL MESSAGES ───────────────────────────── */
+function sendJobCard() {
+  showToast('💼 Job card sent','Jessica can apply directly in chat...');
+}
+
+function sendSchedule() {
+  const g = document.getElementById('schedule-msg-group');
+  if (g) { g.style.display = 'block'; scrollToBottom('recruiter-messages'); }
+  showToast('📅 Interview slots sent','Jessica can pick a time instantly...');
+}
+
+function selectSlot(el) {
+  el.closest('.schedule-slots').querySelectorAll('.sched-slot').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+  el.innerHTML = el.innerHTML + ' ✓';
+  showToast('📅 Slot selected','Calendar invite will be sent automatically...');
+}
+
+function confirmSlot(el) {
+  el.closest('.schedule-slots').querySelectorAll('.sched-slot').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+  showToast('✅ Interview confirmed!','Calendar invite sent to both parties...');
+}
+
+/* ── QUICK REPLIES ──────────────────────────────── */
+function insertQuickReply(text) {
+  const ta = document.getElementById('recruiter-compose');
+  ta.value = text; ta.focus();
+}
+
+function insertCandidateReply(text) {
+  const ta = document.getElementById('candidate-compose');
+  ta.value = text; ta.focus();
+}
+
+/* ── COMPOSE UTILS ──────────────────────────────── */
+function autoResize(el) {
+  el.style.height = '40px';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function handleEnter(e, who) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    who === 'recruiter' ? sendRecruiterMsg() : sendCandidateMsg();
+  }
+}
+
+/* ── NOTE ───────────────────────────────────────── */
+function saveNote() {
+  const note = document.getElementById('recruiter-note').value;
+  showToast('📝 Note saved','Synced to candidate CRM record...');
+}
+
+/* ── TEMPLATES ──────────────────────────────────── */
+function openTemplates() {
+  document.getElementById('templates-modal').classList.add('open');
+}
+function closeTemplates() {
+  document.getElementById('templates-modal').classList.remove('open');
+}
+function handleModalClick(e) {
+  if (e.target.id === 'templates-modal') closeTemplates();
+}
+function selectTemplate(card) {
+  document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+}
+function useTemplate() {
+  const selected = document.querySelector('.template-card.selected .tmpl-name');
+  if (selected) {
+    const ta = document.getElementById('recruiter-compose');
+    if (ta) ta.value = 'Hi Jessica! Just following up on our conversation about the ICU Travel RN position. I wanted to share a few time slots for a quick intro call — no pressure, just 20 minutes to talk through the details!';
+    closeTemplates();
+    showToast('✅ Template applied','Ready to customize and send...');
+  }
+}
+
+/* ── TOAST ──────────────────────────────────────── */
+let toastTimer;
+function showToast(msg, sub) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg + (sub ? ' — ' + sub : '');
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+/* ── INIT ───────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.ifilter').forEach(f => {
+    f.addEventListener('click', function() {
+      document.querySelectorAll('.ifilter').forEach(x => x.classList.remove('active'));
+      this.classList.add('active');
+    });
+  });
+  setTimeout(() => scrollToBottom('recruiter-messages'), 100);
+  setTimeout(() => scrollToBottom('candidate-messages'), 100);
+});
+</script>
+
+<!-- ════════ LIVE DATA WIRING — messaging + CRM analytics APIs ════════ -->
+<script src="/static/hb-api.js"></script>
+<script>
+let HB_ME = null, HB_CONVOS = [], HB_CUR = null;
+const HB_STAGE_LABEL = {
+  initial_contact:'Initial Contact', in_conversation:'In Conversation',
+  application_received:'Application Received', interview_scheduled:'Interview Scheduled',
+  offer_extended:'Offer Extended', hired:'Hired', not_interested:'Not Interested',
+};
+const HB_STAGE_KEYS = Object.keys(HB_STAGE_LABEL);
+const HB_STAGE_CSS = {
+  in_conversation:'cs-active', offer_extended:'cs-offered', hired:'cs-hired',
+  interview_scheduled:'cs-pending', not_interested:'cs-cold',
+};
+
+function hbAgo(iso){
+  if(!iso) return '';
+  const s = (Date.now() - new Date(iso).getTime())/1000;
+  if(s<60) return 'now'; if(s<3600) return Math.floor(s/60)+'m';
+  if(s<86400) return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'d';
+}
+function hbInit2(name){ return (name||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
+
+async function hbInitChat(){
+  try { await HB.gate(); } catch(e){}
+  document.documentElement.classList.remove('hb-locked');   // reveal after auth (never leave blank)
+  try { HB_ME = await HB.get('/api/auth/me'); } catch(e){ console.error(e); return; }
+  await hbLoadInbox();
+  await hbLoadCRM();
+}
+
+async function hbLoadInbox(){
+  const list = document.querySelector('#view-recruiter .thread-list');
+  if(!list) return;
+  try {
+    const data = await HB.get('/api/analytics/conversations');
+    HB_CONVOS = data.conversations || [];
+  } catch(e){ console.error('inbox', e); return; }
+  if(!HB_CONVOS.length){
+    list.innerHTML = '<div style="padding:24px;color:var(--slate);font-size:13px;">No conversations yet.<br>Seed demo data:<br><code>python -m app.seed_demo_conversations</code></div>';
+    return;
+  }
+  list.innerHTML = HB_CONVOS.map((c,i) => `
+    <div class="thread" data-id="${c.thread_id}" onclick="hbSelectThread('${c.thread_id}')">
+      <div class="t-avatar" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">${hbInit2(c.candidate)}</div>
+      <div class="t-info">
+        <div class="t-top"><div class="t-name">${HB.esc(c.candidate)}</div><div class="t-time">${hbAgo(c.last_message_at)}</div></div>
+        <div class="t-preview">${HB.esc(HB_STAGE_LABEL[c.ats_stage]||c.ats_stage)}</div>
+        <div class="t-tags"><span class="t-tag tag-icu">${HB.esc(HB_STAGE_LABEL[c.ats_stage]||'')}</span></div>
+      </div></div>`).join('');
+  hbSelectThread(HB_CONVOS[0].thread_id);
+}
+
+async function hbSelectThread(tid){
+  HB_CUR = tid;
+  document.querySelectorAll('#view-recruiter .thread').forEach(t =>
+    t.classList.toggle('active', t.getAttribute('data-id') === tid));
+  const conv = HB_CONVOS.find(c => c.thread_id === tid);
+  const nameEl = document.querySelector('#view-recruiter .chat-cand-name');
+  const metaEl = document.querySelector('#view-recruiter .chat-cand-meta');
+  const avEl   = document.querySelector('#view-recruiter .chat-cand-avatar');
+  if(conv){
+    if(nameEl) nameEl.textContent = conv.candidate;
+    if(metaEl) metaEl.textContent = HB_STAGE_LABEL[conv.ats_stage] || conv.ats_stage;
+    if(avEl)   avEl.textContent = hbInit2(conv.candidate);
+  }
+  // Sync the ATS stage dropdown.
+  const sel = document.querySelector('#view-recruiter .stage-select');
+  if(sel && conv){ const idx = HB_STAGE_KEYS.indexOf(conv.ats_stage); if(idx>=0) sel.selectedIndex = idx; }
+
+  let detail;
+  try { detail = await HB.get('/api/messages/threads/' + tid); }
+  catch(e){ console.error('thread', e); return; }
+  const cont = document.getElementById('recruiter-messages');
+  cont.innerHTML = detail.messages.length ? detail.messages.map(hbMsgHTML).join('')
+    : '<div style="padding:20px;color:var(--slate);">No messages yet.</div>';
+  cont.scrollTop = cont.scrollHeight;
+}
+window.selectThread = hbSelectThread; // override the (undefined) original
+
+function hbMsgHTML(m){
+  const me = HB_ME && m.sender_id === HB_ME.user_id;
+  const t = new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  return `<div class="msg-group"><div class="msg-row ${me?'me':'them'} fade-up">
+    <div><div class="bubble ${me?'me':'them'}">${HB.esc(m.body||'')}</div>
+    <div class="bubble-meta" style="${me?'justify-content:flex-end;':''}">${t}${me?' <span class="read-check read">✓✓</span>':''}</div></div>
+    <div class="msg-sender-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">${me?'RL':hbInit2(HB_CONVOS.find(c=>c.thread_id===HB_CUR)?.candidate)}</div>
+    </div></div>`;
+}
+
+// Override mock send with a real API call.
+async function sendRecruiterMsg(){
+  const ta = document.getElementById('recruiter-compose');
+  const text = ta.value.trim();
+  if(!text || !HB_CUR) return;
+  ta.value=''; ta.style.height='40px';
+  try { await HB.post('/api/messages/threads/' + HB_CUR + '/messages', { body: text }); }
+  catch(e){ console.error('send', e); showToast('⚠ Send failed', e.message); return; }
+  await hbSelectThread(HB_CUR);
+  showToast('✅ Message sent','Delivered via HealthBoard API');
+}
+
+// ATS stage change → PATCH.
+document.addEventListener('change', async (e) => {
+  if(e.target && e.target.classList.contains('stage-select') && HB_CUR){
+    const key = HB_STAGE_KEYS[e.target.selectedIndex] || 'in_conversation';
+    try { await HB.patch('/api/messages/threads/' + HB_CUR + '/ats', { ats_stage: key });
+          showToast('✅ Stage updated', HB_STAGE_LABEL[key]); }
+    catch(err){ console.error('ats', err); }
+  }
+});
+
+async function hbLoadCRM(){
+  // Conversations table
+  const tbody = document.querySelector('#view-crm .conv-table tbody');
+  if(tbody){
+    const rows = HB_CONVOS.length ? HB_CONVOS.map(c => `
+      <tr>
+        <td><div class="cand-cell"><div class="cand-cell-av" style="background:linear-gradient(135deg,#00B4A6,#007A6E);color:#fff;">${hbInit2(c.candidate)}</div>
+          <div><div style="font-weight:600;font-size:13px;">${HB.esc(c.candidate)}</div>
+          <div style="font-size:11px;color:var(--slate);">${c.messages_sent+c.messages_received} msgs</div></div></div></td>
+        <td style="font-size:12px;">Allergy & Immunology</td>
+        <td><span class="conv-status ${HB_STAGE_CSS[c.ats_stage]||'cs-active'}">${HB.esc(HB_STAGE_LABEL[c.ats_stage]||c.ats_stage)}</span></td>
+        <td><div class="response-bar"><div class="rbar-track"><div class="rbar-fill" style="width:${Math.round((c.response_rate||0)*100)}%;"></div></div>
+          <div class="rbar-label">${Math.round((c.response_rate||0)*100)}%</div></div></td>
+        <td style="font-size:12px;color:var(--slate);">${hbAgo(c.last_message_at)} ago</td>
+        <td><button class="ctbar-btn" style="font-size:11px;padding:4px 10px;" onclick="switchView('recruiter');hbSelectThread('${c.thread_id}')">Open ↗</button></td>
+      </tr>`).join('')
+      : '<tr><td colspan="6" style="padding:24px;color:var(--slate);">No conversations yet.</td></tr>';
+    tbody.innerHTML = rows;
+  }
+  // Funnel
+  const funnel = document.querySelector('#view-crm .funnel');
+  if(funnel){
+    try {
+      const f = await HB.get('/api/analytics/funnel');
+      const s = f.stages || {};
+      const steps = [['📨 Applied','applied','var(--slate-dim)'],['🔎 Screening','screening','#1A7FD4'],
+                     ['📅 Interview','interview','var(--amber)'],['📄 Offer','offer','var(--amber-dim)'],
+                     ['🎉 Hired','hired','var(--green)']];
+      const max = Math.max(1, ...steps.map(([,k]) => s[k]||0));
+      funnel.innerHTML = steps.map(([label,k,col]) => {
+        const n = s[k]||0; const pct = Math.round(100*n/max);
+        return `<div class="funnel-row"><div class="funnel-label"><span class="funnel-stage">${label}</span>
+          <span class="funnel-count">${n} candidate${n===1?'':'s'}</span></div>
+          <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:${Math.max(pct,6)}%;background:${col};">${n}</div></div></div>`;
+      }).join('');
+    } catch(e){ console.error('funnel', e); }
+  }
+}
+
+// Send job-card / interview-times / offer as real messages into the open thread.
+async function _hbChatSend(body){
+  if(!HB_CUR){ showToast('Open a conversation first',''); return; }
+  try{ await HB.post('/api/messages/threads/'+HB_CUR+'/messages',{body}); await hbSelectThread(HB_CUR); }
+  catch(e){ console.warn('chat action', e); }
+}
+window.sendJobCard = function(){ _hbChatSend('📋 Shared a job opening — Allergy & Immunology Physician · $240/hr · Locum. Let me know if you’d like the full details.'); showToast('📋 Job card sent',''); };
+window.sendSchedule = function(){ _hbChatSend('📅 Proposed interview times: Tue 2:00pm, Wed 10:00am, or Thu 3:00pm CST — which works best?'); showToast('📅 Interview times sent',''); };
+window.sendOffer = function(){ _hbChatSend('📄 Formal offer: $62/hr + $2,400/wk housing on a 13-week contract. Offer letter to follow.'); showToast('📄 Offer sent',''); };
+
+document.addEventListener('DOMContentLoaded', hbInitChat);
+</script>
+</body>
+</html>

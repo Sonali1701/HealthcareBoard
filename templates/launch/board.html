@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HealthBoard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/launch-board.css">
+</head>
+<body>
+<!-- Shown while we validate an existing session so the login form never flashes. -->
+<div id="boot-splash" class="boot-splash">
+  <div class="boot-mark"><i class="fas fa-heart-pulse"></i></div>
+  <div class="spinner big"></div>
+  <div class="boot-text">Loading your workspace…</div>
+</div>
+
+<div id="auth-gate" class="auth-gate hidden">
+  <div class="auth-brand">
+    <div class="brand-row"><span class="brand-mark">H</span><span>HealthBoard</span></div>
+    <h1>The staffing network for healthcare professionals</h1>
+    <p>Browse live jobs, manage credentials and connect with recruiters — all in one place.</p>
+    <ul class="auth-points">
+      <li><i class="fas fa-circle-check"></i> Verified provider directory</li>
+      <li><i class="fas fa-circle-check"></i> Live roles from the job board</li>
+      <li><i class="fas fa-circle-check"></i> Secure, private candidate data</li>
+    </ul>
+  </div>
+  <div class="auth-panel">
+    <div class="auth-panel-inner">
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-auth-mode="login">Sign in</button>
+        <button class="auth-tab" data-auth-mode="signup">Create account</button>
+      </div>
+      <div id="auth-title" class="auth-title">Welcome back</div>
+      <div id="auth-subtitle" class="auth-subtitle">Sign in to access your workspace.</div>
+      <div id="signup-fields" class="signup-fields">
+        <div class="field-label">I am a…</div>
+        <div class="role-pills">
+          <label class="role-pill selected"><input type="radio" name="signup-role" value="job_seeker" checked> <i class="fas fa-user-nurse"></i> Healthcare Pro</label>
+          <label class="role-pill"><input type="radio" name="signup-role" value="recruiter"> <i class="fas fa-briefcase"></i> Recruiter</label>
+        </div>
+        <div class="split">
+          <input id="auth-first" class="input" placeholder="First name" autocomplete="given-name">
+          <input id="auth-last" class="input" placeholder="Last name" autocomplete="family-name">
+        </div>
+      </div>
+      <input id="auth-email" class="input" type="email" placeholder="Email address" autocomplete="email">
+      <div class="pw-wrap">
+        <input id="auth-password" class="input" type="password" placeholder="Password" autocomplete="current-password">
+        <button type="button" id="auth-pw-toggle" class="pw-toggle" tabindex="-1" aria-label="Show password"><i class="fas fa-eye"></i></button>
+      </div>
+      <div id="auth-hint" class="auth-hint">At least 8 characters.</div>
+      <div id="auth-error" class="form-error"></div>
+      <button id="auth-submit" class="btn primary full">Sign in</button>
+      <div class="auth-foot">Protected workspace · your data stays private</div>
+    </div>
+  </div>
+</div>
+
+<div class="app-shell hidden" id="app-shell">
+  <aside class="sidebar">
+    <a class="logo" href="#" data-page="dashboard">
+      <span class="logo-icon"><i class="fas fa-heart-pulse"></i></span>
+      <span><strong>Health<span>Board</span></strong><small>Pro Platform</small></span>
+    </a>
+    <nav class="nav">
+      <div class="nav-label">Main</div>
+      <button class="nav-item active" data-page="dashboard"><i class="fas fa-table-cells-large"></i>Dashboard</button>
+      <button class="nav-item" data-page="jobs"><i class="fas fa-search"></i>Find Jobs</button>
+      <button class="nav-item" data-page="community"><i class="fas fa-stream"></i>Community Feed</button>
+      <button class="nav-item recruiter-only" data-page="providers"><i class="fas fa-user-doctor"></i>Providers</button>
+      <div class="nav-label">Workspace</div>
+      <button class="nav-item" data-page="profile"><i class="fas fa-id-card"></i>My Profile</button>
+      <button class="nav-item" data-page="messages"><i class="fas fa-comment-dots"></i>Messages</button>
+      <button class="nav-item" data-page="notifications"><i class="fas fa-bell"></i>Notifications</button>
+      <button class="nav-item" data-page="resume"><i class="fas fa-file-lines"></i>Resume</button>
+      <div class="nav-label recruiter-only">Recruiter</div>
+      <button class="nav-item recruiter-only" data-page="employer"><i class="fas fa-building"></i>Employer Portal</button>
+      <button class="nav-item recruiter-only" data-page="analytics"><i class="fas fa-chart-line"></i>Analytics</button>
+    </nav>
+    <div class="user-mini">
+      <div id="mini-avatar" class="avatar">H</div>
+      <div><strong id="mini-name">HealthBoard</strong><small id="mini-role">Signed in</small></div>
+      <button id="logout-btn" class="icon-btn" title="Sign out"><i class="fas fa-right-from-bracket"></i></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="top-search"><i class="fas fa-magnifying-glass"></i><input id="global-search" placeholder="Search jobs, providers, topics"></div>
+      <div class="top-actions">
+        <button class="icon-btn" data-page="messages"><i class="fas fa-comment-dots"></i></button>
+        <button class="icon-btn" data-page="notifications"><i class="fas fa-bell"></i></button>
+        <button class="top-user" data-page="profile"><span id="top-avatar" class="avatar">H</span><span id="top-name">Account</span></button>
+      </div>
+    </header>
+
+    <section id="page-dashboard" class="page active">
+      <div class="hero-band">
+        <div><h1>Dashboard</h1><p id="dash-sub">Loading your workspace...</p></div>
+        <button class="btn primary" data-page="jobs"><i class="fas fa-briefcase"></i>Find Jobs</button>
+      </div>
+      <div class="metrics">
+        <div class="metric"><span id="metric-jobs">0</span><small>Open jobs</small></div>
+        <div class="metric"><span id="metric-apps">0</span><small>Applications</small></div>
+        <div class="metric"><span id="metric-saved">0</span><small>Saved jobs</small></div>
+        <div class="metric"><span id="metric-profile">0%</span><small>Profile</small></div>
+      </div>
+      <div class="section-head"><div><h2>Recommended Jobs</h2><p>Live roles from the job board</p></div></div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Role</th><th>Type</th><th>Specialty</th><th>Pay</th><th class="th-actions"></th></tr></thead>
+          <tbody id="dashboard-jobs"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="page-jobs" class="page">
+      <div class="section-head"><div><h1>Find Jobs</h1><p id="jobs-count">Loading jobs...</p></div></div>
+      <div class="filter-row">
+        <input id="job-q" class="input" placeholder="Search title, specialty, city">
+        <select id="job-type" class="input"><option value="">All types</option><option value="travel">Travel</option><option value="staff">Staff</option><option value="per_diem">Per diem</option><option value="contract">Contract</option></select>
+        <input id="job-state" class="input short" maxlength="2" placeholder="State">
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Role</th><th>Type</th><th>Specialty</th><th>Pay</th><th class="th-actions"></th></tr></thead>
+          <tbody id="jobs-list"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="page-providers" class="page">
+      <div class="section-head"><div><h1>Providers</h1><p id="providers-count">Loading providers...</p></div></div>
+      <div class="filter-row provider-filters">
+        <input id="provider-q" class="input" placeholder="Search name, specialty, city">
+        <select id="provider-license-title" class="input"><option value="">Any license/title</option></select>
+        <select id="provider-state" class="input"><option value="">Any state</option></select>
+        <select id="provider-experience" class="input"><option value="">Years experience</option><option value="0-2">0-2 years</option><option value="3-5">3-5 years</option><option value="6-10">6-10 years</option><option value="10+">10+ years</option></select>
+        <select id="provider-contact" class="input"><option value="">Contact status</option><option value="any">Any contact</option><option value="both">Email + phone</option><option value="email">Email only</option><option value="phone">Phone only</option><option value="missing">Missing contact</option></select>
+        <input id="provider-zip" class="input" maxlength="5" inputmode="numeric" placeholder="ZIP code">
+        <div class="radius-control is-disabled" title="Distance from the ZIP code">
+          <div class="radius-label">
+            <span>Distance</span>
+            <strong><b id="radius-value">25</b> mi</strong>
+          </div>
+          <div class="radius-track">
+            <span>5 mi</span>
+            <input type="range" id="provider-radius" min="5" max="250" step="5" value="25" disabled aria-label="Provider distance in miles">
+            <span>250 mi</span>
+          </div>
+        </div>
+      </div>
+      <div class="tabs" id="provider-tabs">
+        <button class="tab active" data-category="">All</button>
+        <button class="tab" data-category="Physicians">Physicians</button>
+        <button class="tab" data-category="Nursing">Nursing</button>
+        <button class="tab" data-category="Allied">Allied</button>
+        <button class="tab" data-category="APP">APP</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Provider</th><th>License</th><th>Category</th><th>Experience</th><th>Location</th><th>Contact</th><th class="th-actions"></th></tr></thead>
+          <tbody id="providers-grid"></tbody>
+        </table>
+      </div>
+      <div id="providers-pager" class="pager"></div>
+    </section>
+
+    <section id="page-profile" class="page">
+      <div class="section-head"><div><h1>My Profile</h1><p id="profile-sub">Live profile data</p></div></div>
+      <div id="profile-card" class="profile-panel"></div>
+    </section>
+
+    <section id="page-resume" class="page">
+      <div class="section-head"><div><h1>Resume</h1><p>Upload PDF or DOCX</p></div></div>
+      <div class="upload-box" id="resume-drop">
+        <i class="fas fa-cloud-arrow-up"></i>
+        <strong>Upload resume</strong>
+        <span>PDF or DOCX, up to 10 MB</span>
+        <input id="resume-file" type="file" accept=".pdf,.docx,.doc">
+      </div>
+    </section>
+
+    <section id="page-community" class="page"><div class="section-head"><div><h1>Community Feed</h1><p>Recent posts</p></div></div><div id="feed-list" class="list"></div></section>
+    <section id="page-messages" class="page"><div class="section-head"><div><h1>Messages</h1><p>Conversations</p></div></div><div class="empty">No conversation selected.</div></section>
+    <section id="page-notifications" class="page"><div class="section-head"><div><h1>Notifications</h1><p>Account activity</p></div></div><div id="notifications-list" class="list"></div></section>
+    <section id="page-employer" class="page"><div class="section-head"><div><h1>Employer Portal</h1><p id="employer-sub">Recruiter workspace</p></div></div><div id="employer-panel" class="profile-panel"></div></section>
+    <section id="page-analytics" class="page"><div class="section-head"><div><h1>Analytics</h1><p>Recruitment activity</p></div></div><div id="analytics-panel" class="metrics"></div></section>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+<script src="/assets/js/launch-board.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Organization{% endblock %}
+{% block content %}
+<div class="container mt2" style="max-width:640px">
+  <h2>{{ 'Edit' if employer else 'Create' }} organization</h2>
+  <form method="post" action="/recruiter/employer" class="panel">
+    <div class="field"><label class="label">Organization name *</label>
+      <input class="input" name="org_name" value="{{ employer.org_name if employer else '' }}" required></div>
+    <div class="row" style="gap:12px">
+      <div class="field" style="flex:1"><label class="label">Type</label>
+        <select class="select" name="org_type">
+          {% set t = employer.org_type if employer else '' %}
+          <option value="">—</option>
+          {% for o in ['health_system','hospital','clinic','agency'] %}
+            <option value="{{ o }}" {% if t==o %}selected{% endif %}>{{ o }}</option>{% endfor %}
+        </select></div>
+      <div class="field" style="flex:1"><label class="label">City</label>
+        <input class="input" name="city" value="{{ employer.city if employer else '' }}"></div>
+      <div class="field" style="width:90px"><label class="label">State</label>
+        <input class="input" name="state_code" value="{{ employer.state_code if employer else '' }}" maxlength="2"></div>
+    </div>
+    <div class="field"><label class="label">Website</label>
+      <input class="input" name="website_url" value="{{ employer.website_url if employer else '' }}"></div>
+    <div class="field"><label class="label">About</label>
+      <textarea class="textarea" name="description">{{ employer.description if employer else '' }}</textarea></div>
+    <button class="btn btn-primary" type="submit">Save organization</button>
+  </form>
+</div>
+{% endblock %}

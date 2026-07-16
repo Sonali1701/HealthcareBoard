@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HealthBoard — Pay Package Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ── DESIGN SYSTEM ─────────────────────────────── */
+:root {
+  /* palette */
+  --ink:#0A0F1E;
+  --ink2:#121928;
+  --ink3:#1C2840;
+  --ink4:#243452;
+  --teal:#06D6A0;
+  --teal-dim:#04A87E;
+  --teal-glow:rgba(6,214,160,.14);
+  --teal-glow2:rgba(6,214,160,.07);
+  --gold:#FFD166;
+  --gold-dim:#E8B800;
+  --gold-glow:rgba(255,209,102,.13);
+  --coral:#EF476F;
+  --coral-glow:rgba(239,71,111,.12);
+  --sky:#118AB2;
+  --sky-glow:rgba(17,138,178,.12);
+  --lavender:#B388FF;
+  --lav-glow:rgba(179,136,255,.12);
+  --slate:#7A8BA6;
+  --slate2:#5A6B80;
+  --slate3:#3D4E63;
+  --white:#E8EEF8;
+  --white2:#C0CEDF;
+  --white3:#8A99AE;
+  --border:rgba(255,255,255,.07);
+  --border2:rgba(255,255,255,.12);
+  --border-teal:rgba(6,214,160,.25);
+  --border-gold:rgba(255,209,102,.25);
+  --f-head:'Space Grotesk',sans-serif;
+  --f-mono:'Space Mono',monospace;
+  --r:8px; --r2:12px; --r3:16px; --r4:24px;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{background:var(--ink);color:var(--white);font-family:var(--f-head);
+  min-height:100vh;overflow-x:hidden;}
+input,select,button{font-family:var(--f-head);}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:var(--ink2);}
+::-webkit-scrollbar-thumb{background:var(--ink4);border-radius:4px;}
+
+/* ── NOISE TEXTURE ──── */
+body::after{content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events:none;z-index:0;opacity:.5;}
+
+/* ── TOP BAR ──── */
+.topbar{background:rgba(10,15,30,.9);backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);height:54px;position:fixed;
+  top:0;left:0;right:0;z-index:200;display:flex;align-items:center;padding:0 24px;gap:16px;}
+.logo{font-size:15px;font-weight:700;color:var(--white);display:flex;align-items:center;gap:8px;}
+.logo-gem{width:26px;height:26px;background:linear-gradient(135deg,var(--teal),var(--teal-dim));
+  border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;}
+.logo span{color:var(--teal);}
+.feature-pill{background:linear-gradient(90deg,rgba(6,214,160,.15),rgba(255,209,102,.1));
+  border:1px solid rgba(6,214,160,.2);color:var(--teal);font-size:11px;font-weight:700;
+  padding:3px 12px;border-radius:100px;letter-spacing:.06em;margin-left:10px;}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.gsa-badge{display:flex;align-items:center;gap:6px;background:var(--sky-glow);
+  border:1px solid rgba(17,138,178,.25);border-radius:100px;padding:4px 12px;
+  font-size:11.5px;color:var(--sky);font-weight:600;}
+.gsa-dot{width:6px;height:6px;border-radius:50%;background:var(--teal);
+  box-shadow:0 0 6px var(--teal);animation:blink 2s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+.tb-btn{padding:7px 16px;border-radius:var(--r);font-size:12px;font-weight:600;
+  cursor:pointer;background:var(--ink3);border:1px solid var(--border2);
+  color:var(--white2);transition:all .2s;}
+.tb-btn:hover{background:var(--ink4);border-color:var(--teal);}
+
+/* ── LAYOUT ──── */
+.page{padding-top:54px;min-height:100vh;position:relative;z-index:1;}
+
+/* ── CANDIDATE SELECTOR STRIP ──── */
+.cand-strip{background:var(--ink2);border-bottom:1px solid var(--border);
+  padding:14px 28px;display:flex;align-items:center;gap:14px;overflow-x:auto;}
+.cand-strip-label{font-size:11px;font-weight:700;color:var(--slate);
+  text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;}
+.cand-pill{display:flex;align-items:center;gap:8px;padding:8px 14px;
+  border-radius:100px;border:1px solid var(--border2);background:var(--ink3);
+  cursor:pointer;transition:all .2s;white-space:nowrap;flex-shrink:0;}
+.cand-pill:hover{border-color:var(--teal);}
+.cand-pill.active{border-color:var(--teal);background:var(--teal-glow);}
+.cand-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:11px;font-weight:700;}
+.cand-pill-name{font-size:12.5px;font-weight:600;color:var(--white);}
+.cand-pill-score{font-family:var(--f-mono);font-size:11px;font-weight:700;
+  color:var(--teal);background:var(--teal-glow);padding:1px 6px;border-radius:4px;}
+
+/* ── MAIN GRID ──── */
+.main-grid{display:grid;grid-template-columns:400px 1fr;min-height:calc(100vh - 130px);}
+
+/* ════════════════════════════════
+   LEFT: INPUTS
+════════════════════════════════ */
+.inputs-panel{background:var(--ink2);border-right:1px solid var(--border);
+  overflow-y:auto;height:calc(100vh - 130px);position:sticky;top:130px;}
+
+.ip-header{padding:20px 22px 14px;border-bottom:1px solid var(--border);}
+.ip-title{font-size:16px;font-weight:700;color:var(--white);margin-bottom:3px;}
+.ip-sub{font-size:12px;color:var(--slate);}
+.ip-body{padding:18px 22px;}
+
+/* section headers */
+.sec-head{font-size:10px;font-weight:700;color:var(--teal);letter-spacing:.1em;
+  text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.sec-head::after{content:'';flex:1;height:1px;background:var(--teal-glow);}
+.sec{margin-bottom:22px;}
+
+/* inputs */
+.field{margin-bottom:12px;}
+.field-lbl{font-size:12px;font-weight:600;color:var(--white2);margin-bottom:5px;
+  display:flex;align-items:center;justify-content:space-between;}
+.field-lbl .hint{font-size:10.5px;color:var(--slate);font-weight:400;}
+.finput{width:100%;background:var(--ink3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:9px 12px;font-size:13px;color:var(--white);
+  outline:none;transition:all .2s;font-family:var(--f-head);}
+.finput:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-glow);}
+.finput::placeholder{color:var(--slate2);}
+.fselect{width:100%;background:var(--ink3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:9px 12px;font-size:13px;color:var(--white);
+  outline:none;cursor:pointer;transition:all .2s;-webkit-appearance:none;
+  font-family:var(--f-head);}
+.fselect:focus{border-color:var(--teal);}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.input-prefix-wrap{position:relative;}
+.input-prefix{position:absolute;left:11px;top:50%;transform:translateY(-50%);
+  font-size:13px;color:var(--slate);font-family:var(--f-mono);}
+.finput.with-prefix{padding-left:24px;}
+.input-suffix{position:absolute;right:11px;top:50%;transform:translateY(-50%);
+  font-size:11px;color:var(--slate);font-family:var(--f-mono);}
+
+/* margin slider */
+.slider-wrap{display:flex;align-items:center;gap:10px;}
+.fslider{flex:1;-webkit-appearance:none;height:5px;border-radius:3px;
+  background:linear-gradient(to right,var(--teal) 0%,var(--teal) var(--pct,20%),var(--ink4) var(--pct,20%));
+  outline:none;cursor:pointer;}
+.fslider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;
+  border-radius:50%;background:var(--teal);cursor:pointer;
+  box-shadow:0 0 8px rgba(6,214,160,.5);border:2px solid var(--ink);}
+.slider-val{font-family:var(--f-mono);font-size:13px;font-weight:700;
+  color:var(--teal);min-width:40px;text-align:right;}
+
+/* GSA panel */
+.gsa-panel{background:linear-gradient(135deg,rgba(17,138,178,.1),rgba(17,138,178,.05));
+  border:1px solid rgba(17,138,178,.2);border-radius:var(--r2);padding:14px;margin-bottom:14px;}
+.gsa-panel-title{font-size:12px;font-weight:700;color:var(--sky);margin-bottom:10px;
+  display:flex;align-items:center;gap:6px;}
+.gsa-row{display:flex;align-items:center;justify-content:space-between;
+  padding:6px 0;border-bottom:1px solid rgba(17,138,178,.1);font-size:12.5px;}
+.gsa-row:last-child{border-bottom:none;}
+.gsa-label{color:var(--white2);}
+.gsa-value{font-family:var(--f-mono);font-weight:700;color:var(--sky);}
+.gsa-status{display:flex;align-items:center;gap:5px;font-size:11px;
+  background:rgba(6,214,160,.1);border:1px solid rgba(6,214,160,.15);
+  color:var(--teal);padding:3px 10px;border-radius:100px;font-weight:600;}
+
+.calc-btn{width:100%;padding:12px;background:linear-gradient(135deg,var(--teal),var(--teal-dim));
+  color:var(--ink);font-size:14px;font-weight:700;border:none;border-radius:var(--r2);
+  cursor:pointer;transition:all .3s;display:flex;align-items:center;justify-content:center;
+  gap:8px;letter-spacing:.01em;box-shadow:0 4px 20px rgba(6,214,160,.2);margin-top:6px;}
+.calc-btn:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(6,214,160,.3);}
+.calc-btn:active{transform:translateY(0);}
+
+/* ════════════════════════════════
+   RIGHT: RESULTS
+════════════════════════════════ */
+.results-panel{background:var(--ink);padding:24px 28px;overflow-y:auto;
+  height:calc(100vh - 130px);}
+
+/* MODE SELECTOR */
+.mode-selector{display:flex;gap:0;background:var(--ink2);border:1px solid var(--border);
+  border-radius:var(--r2);overflow:hidden;margin-bottom:24px;}
+.mode-btn{flex:1;padding:12px 16px;border:none;background:transparent;
+  cursor:pointer;transition:all .2s;text-align:left;position:relative;}
+.mode-btn.active-teal{background:var(--teal-glow);border-right:1px solid var(--border-teal);}
+.mode-btn.active-gold{background:var(--gold-glow);}
+.mode-btn:not(.active-teal):not(.active-gold):hover{background:rgba(255,255,255,.03);}
+.mode-icon{font-size:20px;margin-bottom:6px;}
+.mode-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:2px;}
+.mode-sub{font-size:11px;color:var(--slate);}
+.mode-badge{position:absolute;top:10px;right:12px;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:100px;letter-spacing:.04em;}
+.badge-teal{background:var(--teal-glow);border:1px solid var(--border-teal);color:var(--teal);}
+.badge-gold{background:var(--gold-glow);border:1px solid var(--border-gold);color:var(--gold);}
+.mode-divider{width:1px;background:var(--border);}
+
+/* RATE CARDS */
+.rate-cards-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
+.rate-card{border-radius:var(--r3);padding:20px;position:relative;overflow:hidden;}
+.rate-card.teal-card{background:linear-gradient(135deg,rgba(6,214,160,.1),rgba(6,214,160,.04));
+  border:1px solid var(--border-teal);}
+.rate-card.gold-card{background:linear-gradient(135deg,rgba(255,209,102,.1),rgba(255,209,102,.04));
+  border:1px solid var(--border-gold);}
+.rate-card.coral-card{background:linear-gradient(135deg,rgba(239,71,111,.08),rgba(239,71,111,.02));
+  border:1px solid rgba(239,71,111,.2);}
+.rate-card.sky-card{background:linear-gradient(135deg,rgba(17,138,178,.1),rgba(17,138,178,.04));
+  border:1px solid rgba(17,138,178,.2);}
+.rc-label{font-size:10px;font-weight:700;color:var(--slate);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:6px;}
+.rc-val{font-family:var(--f-mono);font-size:26px;font-weight:700;margin-bottom:4px;}
+.rc-val.teal{color:var(--teal);}
+.rc-val.gold{color:var(--gold);}
+.rc-val.coral{color:var(--coral);}
+.rc-val.sky{color:var(--sky);}
+.rc-sub{font-size:11.5px;color:var(--slate);}
+.rc-formula{position:absolute;bottom:12px;right:12px;font-size:10px;
+  color:var(--slate2);font-family:var(--f-mono);}
+
+/* COMPARISON TABLE */
+.comp-section{margin-bottom:24px;}
+.comp-section-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;}
+.comp-section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+
+.comp-table{width:100%;border-collapse:collapse;background:var(--ink2);
+  border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;}
+.comp-table th{background:var(--ink3);padding:10px 14px;text-align:left;
+  font-size:10.5px;font-weight:700;color:var(--slate);text-transform:uppercase;
+  letter-spacing:.07em;border-bottom:1px solid var(--border);}
+.comp-table th.teal-head{color:var(--teal);background:rgba(6,214,160,.06);}
+.comp-table th.gold-head{color:var(--gold);background:rgba(255,209,102,.06);}
+.comp-table td{padding:11px 14px;border-bottom:1px solid var(--border);
+  font-size:13px;color:var(--white2);}
+.comp-table tr:last-child td{border-bottom:none;}
+.comp-table tr:hover td{background:rgba(255,255,255,.02);}
+.comp-table .label-cell{color:var(--slate);font-size:12px;font-weight:500;}
+.comp-table .val-teal{font-family:var(--f-mono);font-weight:700;color:var(--teal);}
+.comp-table .val-gold{font-family:var(--f-mono);font-weight:700;color:var(--gold);}
+.comp-table .val-mono{font-family:var(--f-mono);}
+.comp-table .separator-row td{background:var(--ink3);color:var(--slate);
+  font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;padding:7px 14px;}
+.highlight-row td{background:rgba(6,214,160,.05);}
+.highlight-row-gold td{background:rgba(255,209,102,.05);}
+
+/* MARGIN ANALYSIS */
+.margin-bar-section{margin-bottom:24px;}
+.margin-bar-wrap{background:var(--ink2);border:1px solid var(--border);border-radius:var(--r2);padding:18px 20px;}
+.mb-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:14px;}
+.bar-row{margin-bottom:14px;}
+.bar-label-row{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;}
+.bar-label{color:var(--white2);font-weight:500;}
+.bar-val{font-family:var(--f-mono);font-weight:700;}
+.bar-track{height:10px;background:var(--ink3);border-radius:5px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:5px;transition:width .8s ease;}
+.stacked-bar{height:14px;background:var(--ink3);border-radius:5px;overflow:hidden;
+  display:flex;margin-bottom:8px;}
+.sb-seg{height:100%;transition:width .8s ease;}
+.sb-legend{display:flex;gap:14px;flex-wrap:wrap;}
+.sb-leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--slate);}
+.sb-leg-dot{width:8px;height:8px;border-radius:50%;}
+
+/* CANDIDATE CHOICE CARDS */
+.choice-section{margin-bottom:24px;}
+.choice-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.choice-card{border-radius:var(--r3);padding:20px;cursor:pointer;
+  transition:all .25s;position:relative;}
+.choice-card.w2{background:linear-gradient(135deg,rgba(6,214,160,.08),rgba(6,214,160,.03));
+  border:1px solid var(--border-teal);}
+.choice-card.w2:hover,.choice-card.w2.selected{border-color:var(--teal);
+  box-shadow:0 0 24px rgba(6,214,160,.12);}
+.choice-card.perdiem{background:linear-gradient(135deg,rgba(255,209,102,.08),rgba(255,209,102,.03));
+  border:1px solid var(--border-gold);}
+.choice-card.perdiem:hover,.choice-card.perdiem.selected{border-color:var(--gold);
+  box-shadow:0 0 24px rgba(255,209,102,.12);}
+.choice-selected-badge{position:absolute;top:12px;right:12px;font-size:10px;
+  font-weight:700;padding:3px 10px;border-radius:100px;letter-spacing:.04em;}
+.cc-icon{font-size:28px;margin-bottom:10px;}
+.cc-type{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  margin-bottom:4px;}
+.cc-headline{font-size:20px;font-weight:700;font-family:var(--f-mono);margin-bottom:3px;}
+.cc-sub{font-size:12px;color:var(--slate);margin-bottom:12px;line-height:1.5;}
+.cc-breakdown{display:flex;flex-direction:column;gap:5px;}
+.cc-br-row{display:flex;justify-content:space-between;font-size:12px;}
+.cc-br-label{color:var(--slate);}
+.cc-br-val{font-family:var(--f-mono);font-weight:600;}
+.cc-divider{height:1px;background:var(--border);margin:6px 0;}
+.cc-total-row{display:flex;justify-content:space-between;font-size:13.5px;font-weight:700;}
+.compare-tag{font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:100px;
+  display:inline-block;margin-top:8px;}
+
+/* GSA INFO BOX */
+.gsa-info-box{background:linear-gradient(135deg,rgba(17,138,178,.1),rgba(6,214,160,.05));
+  border:1px solid rgba(17,138,178,.2);border-radius:var(--r2);padding:16px 18px;margin-bottom:20px;}
+.gib-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.gib-title{font-size:13px;font-weight:700;color:var(--sky);display:flex;align-items:center;gap:7px;}
+.gib-live{font-size:10px;font-weight:700;color:var(--teal);
+  background:var(--teal-glow);border:1px solid rgba(6,214,160,.2);
+  padding:2px 8px;border-radius:100px;display:flex;align-items:center;gap:4px;}
+.gib-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.gib-item{background:rgba(17,138,178,.08);border-radius:var(--r);padding:10px 12px;}
+.gib-item-label{font-size:10px;color:var(--slate);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
+.gib-item-val{font-family:var(--f-mono);font-size:15px;font-weight:700;color:var(--sky);}
+.gib-item-sub{font-size:10.5px;color:var(--slate);margin-top:2px;}
+
+/* SEND OFFER SECTION */
+.offer-section{background:var(--ink2);border:1px solid var(--border);
+  border-radius:var(--r2);padding:18px 20px;margin-bottom:20px;}
+.offer-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.offer-title{font-size:13px;font-weight:700;color:var(--white);}
+.offer-btns{display:flex;gap:8px;}
+.offer-btn{padding:9px 18px;border-radius:var(--r);font-size:12.5px;font-weight:700;
+  cursor:pointer;transition:all .2s;font-family:var(--f-head);border:1px solid var(--border2);}
+.offer-btn:hover{transform:translateY(-1px);}
+.offer-btn.teal{background:var(--teal);color:var(--ink);border-color:var(--teal);}
+.offer-btn.teal:hover{background:var(--teal-dim);}
+.offer-btn.ghost{background:transparent;color:var(--white2);}
+.offer-btn.ghost:hover{background:var(--ink3);}
+.offer-btn.gold{background:var(--gold);color:var(--ink);border-color:var(--gold);}
+.offer-btn.gold:hover{background:var(--gold-dim);}
+.offer-preview{background:var(--ink3);border-radius:var(--r);padding:14px 16px;
+  font-size:12.5px;color:var(--white2);line-height:1.7;border:1px solid var(--border);}
+.offer-preview strong{color:var(--teal);}
+.offer-preview .gold-text{color:var(--gold);}
+
+/* WEEKLY EARNINGS CHART */
+.weekly-chart{margin-bottom:24px;}
+.wc-wrap{background:var(--ink2);border:1px solid var(--border);border-radius:var(--r2);padding:18px;}
+.wc-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:14px;}
+.wc-bars{display:flex;gap:16px;align-items:flex-end;height:120px;}
+.wc-bar-group{flex:1;display:flex;gap:3px;align-items:flex-end;}
+.wc-bar{border-radius:4px 4px 0 0;transition:height .7s ease;min-width:0;flex:1;}
+.wc-bar-label{font-size:10px;color:var(--slate);text-align:center;margin-top:6px;}
+.wc-legend{display:flex;gap:14px;margin-top:10px;}
+.wc-leg{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--slate);}
+.wc-leg-dot{width:8px;height:8px;border-radius:2px;}
+
+/* TOAST */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--ink3);
+  border:1px solid var(--teal);color:var(--white);padding:12px 18px;
+  border-radius:var(--r2);font-size:13px;z-index:600;
+  display:flex;align-items:center;gap:10px;
+  box-shadow:0 4px 20px rgba(6,214,160,.15);
+  transform:translateY(80px);opacity:0;transition:all .3s ease;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast-dot{width:7px;height:7px;border-radius:50%;background:var(--teal);flex-shrink:0;}
+
+/* DISCLAIMER */
+.disclaimer{background:rgba(239,71,111,.06);border:1px solid rgba(239,71,111,.15);
+  border-radius:var(--r);padding:10px 14px;font-size:11.5px;color:var(--slate);
+  line-height:1.6;margin-bottom:20px;}
+.disclaimer strong{color:var(--coral);}
+
+/* animations */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.fade-up{animation:fadeUp .4s ease both;}
+@keyframes countUp{from{opacity:0;}to{opacity:1;}}
+.count-anim{animation:countUp .6s ease;}
+</style>
+</head>
+<body>
+
+<!-- ══ TOP BAR ══ -->
+<nav class="topbar">
+  <div class="logo">
+    <div class="logo-gem">💰</div>
+    Health<span>Board</span>
+    <div class="feature-pill">PAY PACKAGE ENGINE</div>
+  </div>
+  <div class="tb-right">
+    <div class="gsa-badge">
+      <div class="gsa-dot"></div>
+      GSA API Connected · FY2025 Rates
+    </div>
+    <button class="tb-btn" onclick="toast('📤 Package exported','PDF generated for candidate...')">Export PDF</button>
+    <button class="tb-btn" onclick="toast('📩 Offer sent','Package delivered to candidate inbox...')">Send to Candidate</button>
+  </div>
+</nav>
+
+<div class="page">
+
+<!-- ══ CANDIDATE SELECTOR STRIP ══ -->
+<div class="cand-strip">
+  <div class="cand-strip-label">Matched Candidates →</div>
+
+  <div class="cand-pill active" onclick="selectCand(this,'jessica','Houston','TX',62,0)">
+    <div class="cand-av" style="background:linear-gradient(135deg,#06D6A0,#04A87E);color:#0A0F1E;">JM</div>
+    <div>
+      <div class="cand-pill-name">Jessica Martinez, RN</div>
+      <div style="font-size:10px;color:var(--slate);">ICU · Houston, TX</div>
+    </div>
+    <div class="cand-pill-score">94</div>
+  </div>
+
+  <div class="cand-pill" onclick="selectCand(this,'alex','Dallas','TX',58,1)">
+    <div class="cand-av" style="background:linear-gradient(135deg,#9B6DFF,#6040CC);color:#fff;">AM</div>
+    <div>
+      <div class="cand-pill-name">Alex Moore, RN</div>
+      <div style="font-size:10px;color:var(--slate);">ER · Dallas, TX</div>
+    </div>
+    <div class="cand-pill-score">88</div>
+  </div>
+
+  <div class="cand-pill" onclick="selectCand(this,'sarah','Los Angeles','CA',65,2)">
+    <div class="cand-av" style="background:linear-gradient(135deg,#FFB547,#E8961A);color:#0A0F1E;">SR</div>
+    <div>
+      <div class="cand-pill-name">Sarah Rodriguez, RN</div>
+      <div style="font-size:10px;color:var(--slate);">ICU · Los Angeles, CA</div>
+    </div>
+    <div class="cand-pill-score">86</div>
+  </div>
+
+  <div class="cand-pill" onclick="selectCand(this,'kevin','Chicago','IL',72,3)">
+    <div class="cand-av" style="background:linear-gradient(135deg,#EF476F,#A33850);color:#fff;">KL</div>
+    <div>
+      <div class="cand-pill-name">Dr. Kevin Liang, MD</div>
+      <div style="font-size:10px;color:var(--slate);">ER MD · Chicago, IL</div>
+    </div>
+    <div class="cand-pill-score">82</div>
+  </div>
+
+  <div class="cand-pill" onclick="selectCand(this,'tanya','Nashville','TN',80,4)">
+    <div class="cand-av" style="background:linear-gradient(135deg,#118AB2,#0A5A80);color:#fff;">TC</div>
+    <div>
+      <div class="cand-pill-name">Tanya Collins, CRNA</div>
+      <div style="font-size:10px;color:var(--slate);">CRNA · Nashville, TN</div>
+    </div>
+    <div class="cand-pill-score">79</div>
+  </div>
+
+  <div class="cand-pill" onclick="selectCand(this,'priya','New York','NY',68,5)">
+    <div class="cand-av" style="background:linear-gradient(135deg,#3DD68C,#1A8A4A);color:#0A0F1E;">PW</div>
+    <div>
+      <div class="cand-pill-name">Priya Waller, PharmD</div>
+      <div style="font-size:10px;color:var(--slate);">Oncology · New York, NY</div>
+    </div>
+    <div class="cand-pill-score">76</div>
+  </div>
+</div>
+
+<!-- ══ MAIN GRID ══ -->
+<div class="main-grid">
+
+<!-- ════════════ LEFT: INPUTS ════════════ -->
+<div class="inputs-panel">
+  <div class="ip-header">
+    <div class="ip-title">Pay Package Configuration</div>
+    <div class="ip-sub">Calculating for: <span id="cand-name-display" style="color:var(--teal);font-weight:600;">Jessica Martinez, RN</span></div>
+  </div>
+  <div class="ip-body">
+
+    <!-- Job Info -->
+    <div class="sec">
+      <div class="sec-head">Job Details</div>
+      <div class="frow">
+        <div class="field">
+          <label class="field-lbl">Bill Rate ($/hr) <span class="hint">Charged to client</span></label>
+          <div class="input-prefix-wrap">
+            <span class="input-prefix">$</span>
+            <input class="finput with-prefix" id="bill-rate" type="number" value="82" min="1"
+              oninput="recalc()">
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-lbl">Contract Length</label>
+          <select class="fselect" id="contract-weeks" onchange="recalc()">
+            <option value="13" selected>13 weeks</option>
+            <option value="26">26 weeks</option>
+            <option value="39">39 weeks</option>
+            <option value="52">52 weeks</option>
+          </select>
+        </div>
+      </div>
+      <div class="frow">
+        <div class="field">
+          <label class="field-lbl">Hours/Week</label>
+          <select class="fselect" id="hrs-week" onchange="recalc()">
+            <option value="36" selected>36 hrs (3×12)</option>
+            <option value="40">40 hrs</option>
+            <option value="48">48 hrs</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-lbl">Overtime hrs/week</label>
+          <input class="finput" id="ot-hrs" type="number" value="0" min="0" oninput="recalc()">
+        </div>
+      </div>
+    </div>
+
+    <!-- Agency Margin -->
+    <div class="sec">
+      <div class="sec-head">Agency Margin</div>
+      <div class="field">
+        <label class="field-lbl">Target Margin % <span class="hint" id="margin-note">→ 20% default</span></label>
+        <div class="slider-wrap">
+          <input type="range" class="fslider" id="margin-slider" min="10" max="35" value="20"
+            oninput="updateMarginSlider(this.value);recalc()">
+          <div class="slider-val" id="margin-val">20%</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--ink3);
+          border-radius:var(--r);padding:10px 12px;border:1px solid var(--border);margin-top:4px;">
+        <div style="font-size:12px;color:var(--slate);">Bill Rate</div>
+        <div style="font-family:var(--f-mono);font-size:13px;font-weight:700;color:var(--white);text-align:right;" id="show-bill">$82.00/hr</div>
+        <div style="font-size:12px;color:var(--slate);">Agency Margin ($)</div>
+        <div style="font-family:var(--f-mono);font-size:13px;font-weight:700;color:var(--coral);text-align:right;" id="show-margin-$">$16.40/hr</div>
+        <div style="font-size:12px;color:var(--slate);">Available for Pay</div>
+        <div style="font-family:var(--f-mono);font-size:13px;font-weight:700;color:var(--teal);text-align:right;" id="show-available">$65.60/hr</div>
+      </div>
+    </div>
+
+    <!-- Burden Rate -->
+    <div class="sec">
+      <div class="sec-head">Burden & Loaded Rate</div>
+      <div class="field">
+        <label class="field-lbl">Fully Loaded Multiplier <span class="hint">1.20× of W2 rate</span></label>
+        <div class="slider-wrap">
+          <input type="range" class="fslider" id="burden-slider" min="110" max="140" value="120"
+            oninput="updateBurdenSlider(this.value);recalc()" step="1">
+          <div class="slider-val" id="burden-val">1.20×</div>
+        </div>
+        <div style="font-size:11px;color:var(--slate);margin-top:6px;line-height:1.6;">
+          Includes: FICA (7.65%) + FUTA/SUTA (2–3%) + Workers Comp (~2%) + Benefits (~8%) + Admin (~0.35%)
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-lbl">Benefits Package Cost ($/hr)</label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">$</span>
+          <input class="finput with-prefix" id="benefits-cost" type="number" value="4.50" step="0.25" oninput="recalc()">
+        </div>
+      </div>
+    </div>
+
+    <!-- GSA Location -->
+    <div class="sec">
+      <div class="sec-head">GSA Location & Per Diem</div>
+      <div class="frow">
+        <div class="field">
+          <label class="field-lbl">Work City</label>
+          <input class="finput" id="gsa-city" value="Houston" oninput="lookupGSA()">
+        </div>
+        <div class="field">
+          <label class="field-lbl">State</label>
+          <select class="fselect" id="gsa-state" onchange="lookupGSA()">
+            <option value="TX" selected>TX</option>
+            <option value="CA">CA</option>
+            <option value="NY">NY</option>
+            <option value="FL">FL</option>
+            <option value="IL">IL</option>
+            <option value="TN">TN</option>
+            <option value="WA">WA</option>
+            <option value="CO">CO</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="gsa-panel" id="gsa-panel">
+        <div class="gsa-panel-title">
+          🏛 GSA FY2025 Per Diem — Houston, TX
+          <span class="gsa-status"><div class="gsa-dot"></div>Live</span>
+        </div>
+        <div class="gsa-row">
+          <span class="gsa-label">Lodging Rate (max/night)</span>
+          <span class="gsa-value" id="gsa-lodging">$132/night</span>
+        </div>
+        <div class="gsa-row">
+          <span class="gsa-label">M&IE Rate (meals/day)</span>
+          <span class="gsa-value" id="gsa-mie">$68/day</span>
+        </div>
+        <div class="gsa-row">
+          <span class="gsa-label">Total Per Diem/day</span>
+          <span class="gsa-value" id="gsa-total-day">$200/day</span>
+        </div>
+        <div class="gsa-row">
+          <span class="gsa-label">Stipend/week (tax-free max)</span>
+          <span class="gsa-value" id="gsa-weekly">$1,400/wk</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-lbl">Housing Stipend Override ($/wk) <span class="hint">0 = use GSA max</span></label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">$</span>
+          <input class="finput with-prefix" id="housing-override" type="number" value="0" oninput="recalc()">
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-lbl">M&IE Override ($/wk) <span class="hint">0 = use GSA max</span></label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">$</span>
+          <input class="finput with-prefix" id="mie-override" type="number" value="0" oninput="recalc()">
+        </div>
+      </div>
+    </div>
+
+    <!-- Extras -->
+    <div class="sec">
+      <div class="sec-head">Additional Compensation</div>
+      <div class="frow">
+        <div class="field">
+          <label class="field-lbl">Completion Bonus ($)</label>
+          <div class="input-prefix-wrap">
+            <span class="input-prefix">$</span>
+            <input class="finput with-prefix" id="completion-bonus" type="number" value="500" oninput="recalc()">
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-lbl">Travel Allowance ($)</label>
+          <div class="input-prefix-wrap">
+            <span class="input-prefix">$</span>
+            <input class="finput with-prefix" id="travel-allow" type="number" value="500" oninput="recalc()">
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-lbl">Scrubs / Licensing Reimbursement ($)</label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">$</span>
+          <input class="finput with-prefix" id="reimb" type="number" value="200" oninput="recalc()">
+        </div>
+      </div>
+    </div>
+
+    <button class="calc-btn" onclick="recalc();toast('✅ Calculated','Package ready to send to candidate...')">
+      <span>⚡</span> Calculate Pay Package
+    </button>
+
+  </div>
+</div>
+
+<!-- ════════════ RIGHT: RESULTS ════════════ -->
+<div class="results-panel" id="results-panel">
+
+  <!-- MODE SELECTOR -->
+  <div class="mode-selector fade-up">
+    <button class="mode-btn active-teal" id="mode-w2" onclick="setMode('w2')">
+      <div class="mode-icon">🏦</div>
+      <div class="mode-title">Option A — Pure W2</div>
+      <div class="mode-sub">Higher taxable hourly rate, no stipends. Simple, transparent.</div>
+      <div class="mode-badge badge-teal">RECOMMENDED</div>
+    </button>
+    <div class="mode-divider"></div>
+    <button class="mode-btn" id="mode-pd" onclick="setMode('perdiem')">
+      <div class="mode-icon">✈️</div>
+      <div class="mode-title">Option B — W2 + Per Diem</div>
+      <div class="mode-sub">Lower taxable W2 + tax-free housing & M&IE stipends (GSA limits).</div>
+      <div class="mode-badge badge-gold">MAX TAKE-HOME</div>
+    </button>
+  </div>
+
+  <!-- GSA INFO BOX -->
+  <div class="gsa-info-box fade-up">
+    <div class="gib-header">
+      <div class="gib-title">🏛 GSA Integration — <span id="gsa-location-display">Houston, TX</span></div>
+      <div class="gib-live"><div class="gsa-dot"></div>FY2025 Live Rates</div>
+    </div>
+    <div class="gib-grid">
+      <div class="gib-item">
+        <div class="gib-item-label">Lodging Max</div>
+        <div class="gib-item-val" id="gib-lodging">$132</div>
+        <div class="gib-item-sub">per night</div>
+      </div>
+      <div class="gib-item">
+        <div class="gib-item-label">M&IE Rate</div>
+        <div class="gib-item-val" id="gib-mie">$68</div>
+        <div class="gib-item-sub">per day</div>
+      </div>
+      <div class="gib-item">
+        <div class="gib-item-label">Max Tax-Free/wk</div>
+        <div class="gib-item-val" id="gib-weekly">$1,400</div>
+        <div class="gib-item-sub">stipend total</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RATE SUMMARY CARDS -->
+  <div class="comp-section fade-up">
+    <div class="comp-section-title">Key Rates Summary</div>
+    <div class="rate-cards-row">
+      <div class="rate-card teal-card">
+        <div class="rc-label">Bill Rate (to Client)</div>
+        <div class="rc-val teal" id="rc-bill">$82.00</div>
+        <div class="rc-sub">per hour charged to hospital</div>
+        <div class="rc-formula">/hr</div>
+      </div>
+      <div class="rate-card coral-card">
+        <div class="rc-label">Agency Margin</div>
+        <div class="rc-val coral" id="rc-margin-pct">20%</div>
+        <div class="rc-sub">= <span id="rc-margin-dollar">$16.40</span>/hr · <span id="rc-margin-week">$590</span>/wk</div>
+        <div class="rc-formula">protected</div>
+      </div>
+      <div class="rate-card sky-card">
+        <div class="rc-label">W2 Pay Rate</div>
+        <div class="rc-val sky" id="rc-w2-rate">$54.67</div>
+        <div class="rc-sub">taxable hourly (Option A)</div>
+        <div class="rc-formula">÷1.20 burden</div>
+      </div>
+      <div class="rate-card gold-card">
+        <div class="rc-label">W2 + Per Diem Rate</div>
+        <div class="rc-val gold" id="rc-pd-rate">$32.40</div>
+        <div class="rc-sub">taxable W2 + tax-free stipend</div>
+        <div class="rc-formula">+GSA stipend</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DETAILED COMPARISON TABLE -->
+  <div class="comp-section fade-up">
+    <div class="comp-section-title">Full Package Comparison</div>
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th class="teal-head">Option A: Pure W2</th>
+          <th class="gold-head">Option B: W2 + Per Diem</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="separator-row"><td colspan="3">📥 Revenue Side</td></tr>
+        <tr>
+          <td class="label-cell">Bill Rate (to client)</td>
+          <td class="val-teal" id="t-bill-w2">$82.00/hr</td>
+          <td class="val-gold" id="t-bill-pd">$82.00/hr</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Hours per week</td>
+          <td class="val-mono" id="t-hrs-w2">36 hrs</td>
+          <td class="val-mono" id="t-hrs-pd">36 hrs</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Weekly Revenue</td>
+          <td class="val-teal" id="t-rev-w2">$2,952.00</td>
+          <td class="val-gold" id="t-rev-pd">$2,952.00</td>
+        </tr>
+
+        <tr class="separator-row"><td colspan="3">🏢 Agency Costs</td></tr>
+        <tr>
+          <td class="label-cell">Target Margin (%)</td>
+          <td class="val-mono" id="t-margin-pct-w2">20%</td>
+          <td class="val-mono" id="t-margin-pct-pd">20%</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Agency Margin ($/hr)</td>
+          <td class="val-mono" id="t-margin-hr-w2">$16.40</td>
+          <td class="val-mono" id="t-margin-hr-pd">$16.40</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Agency Revenue/week</td>
+          <td class="val-mono" id="t-margin-wk-w2">$590.40</td>
+          <td class="val-mono" id="t-margin-wk-pd">$590.40</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Agency Revenue (contract)</td>
+          <td class="val-mono" id="t-margin-contract-w2">$7,675.20</td>
+          <td class="val-mono" id="t-margin-contract-pd">$7,675.20</td>
+        </tr>
+
+        <tr class="separator-row"><td colspan="3">👩‍⚕️ Candidate Pay</td></tr>
+        <tr>
+          <td class="label-cell">Pool Available for Pay ($/hr)</td>
+          <td class="val-mono" id="t-pool-w2">$65.60</td>
+          <td class="val-mono" id="t-pool-pd">$65.60</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Burden/Loaded Multiplier</td>
+          <td class="val-mono">1.20×</td>
+          <td class="val-mono">1.20×</td>
+        </tr>
+        <tr class="highlight-row">
+          <td class="label-cell"><strong>Taxable W2 Rate ($/hr)</strong></td>
+          <td class="val-teal" id="t-w2-rate"><strong>$54.67</strong></td>
+          <td class="val-gold" id="t-pd-taxable-rate"><strong>$32.40</strong></td>
+        </tr>
+        <tr>
+          <td class="label-cell">OT Rate (1.5×)</td>
+          <td class="val-mono" id="t-ot-w2">$82.00</td>
+          <td class="val-mono" id="t-ot-pd">$48.60</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Benefits (medical/dental)</td>
+          <td class="val-mono" id="t-benefits-w2">$4.50/hr</td>
+          <td class="val-mono" id="t-benefits-pd">$4.50/hr</td>
+        </tr>
+
+        <tr class="separator-row"><td colspan="3">🏠 Tax-Free Stipends (Option B only)</td></tr>
+        <tr>
+          <td class="label-cell">GSA Lodging Stipend/wk</td>
+          <td style="color:var(--slate2);font-size:12px;font-family:var(--f-mono);">—</td>
+          <td class="val-gold" id="t-lodging-wk">$924.00</td>
+        </tr>
+        <tr>
+          <td class="label-cell">GSA M&IE Stipend/wk</td>
+          <td style="color:var(--slate2);font-size:12px;font-family:var(--f-mono);">—</td>
+          <td class="val-gold" id="t-mie-wk">$476.00</td>
+        </tr>
+        <tr class="highlight-row-gold">
+          <td class="label-cell"><strong>Total Tax-Free Stipend/wk</strong></td>
+          <td style="color:var(--slate2);font-family:var(--f-mono);">—</td>
+          <td class="val-gold" id="t-stipend-total"><strong>$1,400.00</strong></td>
+        </tr>
+
+        <tr class="separator-row"><td colspan="3">💵 Weekly Take-Home Summary</td></tr>
+        <tr>
+          <td class="label-cell">Gross Taxable Pay/wk</td>
+          <td class="val-teal" id="t-gross-w2">$1,968.00</td>
+          <td class="val-gold" id="t-gross-pd">$1,166.40</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Tax-Free Stipend/wk</td>
+          <td style="color:var(--slate2);font-family:var(--f-mono);">$0</td>
+          <td class="val-gold" id="t-stipend-pd">$1,400.00</td>
+        </tr>
+        <tr class="highlight-row highlight-row-gold">
+          <td class="label-cell"><strong>Total Weekly Compensation</strong></td>
+          <td class="val-teal" id="t-total-w2"><strong>$1,968.00</strong></td>
+          <td class="val-gold" id="t-total-pd"><strong>$2,566.40</strong></td>
+        </tr>
+        <tr>
+          <td class="label-cell">Est. Net Take-Home/wk (28% tax)</td>
+          <td class="val-mono" id="t-net-w2">~$1,417</td>
+          <td class="val-mono" id="t-net-pd">~$2,106</td>
+        </tr>
+
+        <tr class="separator-row"><td colspan="3">📅 Full Contract Totals (13 weeks)</td></tr>
+        <tr>
+          <td class="label-cell">Total Gross Earnings</td>
+          <td class="val-teal" id="t-contract-gross-w2">$25,584</td>
+          <td class="val-gold" id="t-contract-gross-pd">$33,363</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Completion Bonus</td>
+          <td class="val-mono" id="t-bonus-w2">$500</td>
+          <td class="val-mono" id="t-bonus-pd">$500</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Travel Allowance</td>
+          <td class="val-mono" id="t-travel-w2">$500</td>
+          <td class="val-mono" id="t-travel-pd">$500</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Reimbursements</td>
+          <td class="val-mono" id="t-reimb-w2">$200</td>
+          <td class="val-mono" id="t-reimb-pd">$200</td>
+        </tr>
+        <tr class="highlight-row highlight-row-gold">
+          <td class="label-cell"><strong>TOTAL CONTRACT VALUE</strong></td>
+          <td class="val-teal" style="font-size:15px;" id="t-grand-w2"><strong>$26,784</strong></td>
+          <td class="val-gold" style="font-size:15px;" id="t-grand-pd"><strong>$34,563</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- MARGIN ANALYSIS -->
+  <div class="margin-bar-section fade-up">
+    <div class="margin-bar-wrap">
+      <div class="mb-title">📊 Bill Rate Allocation Breakdown</div>
+      <div class="bar-row">
+        <div class="bar-label-row">
+          <div class="bar-label">Agency Margin</div>
+          <div class="bar-val" style="color:var(--coral);" id="mb-margin-val">20% · $16.40/hr</div>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="mb-margin-bar" style="width:20%;background:var(--coral);"></div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label-row">
+          <div class="bar-label">Burden / Taxes / Benefits</div>
+          <div class="bar-val" style="color:var(--sky);" id="mb-burden-val">12.3% · $10.09/hr</div>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="mb-burden-bar" style="width:12.3%;background:var(--sky);"></div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label-row">
+          <div class="bar-label">W2 Taxable Pay (Option A)</div>
+          <div class="bar-val" style="color:var(--teal);" id="mb-w2pay-val">66.7% · $54.67/hr</div>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="mb-w2pay-bar" style="width:66.7%;background:var(--teal);"></div></div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="mb-title" style="font-size:12px;margin-bottom:8px;">Option B Split ($/hr equivalent)</div>
+        <div class="stacked-bar" id="stacked-bar">
+          <div class="sb-seg" id="sb-margin" style="width:20%;background:var(--coral);"></div>
+          <div class="sb-seg" id="sb-burden" style="width:12.3%;background:var(--sky);"></div>
+          <div class="sb-seg" id="sb-w2" style="width:27%;background:var(--gold);"></div>
+          <div class="sb-seg" id="sb-stipend" style="width:23.7%;background:var(--teal);"></div>
+          <div class="sb-seg" id="sb-benefits" style="width:6.6%;background:var(--lavender);"></div>
+        </div>
+        <div class="sb-legend">
+          <div class="sb-leg-item"><div class="sb-leg-dot" style="background:var(--coral);"></div>Margin</div>
+          <div class="sb-leg-item"><div class="sb-leg-dot" style="background:var(--sky);"></div>Burden</div>
+          <div class="sb-leg-item"><div class="sb-leg-dot" style="background:var(--gold);"></div>W2 Pay</div>
+          <div class="sb-leg-item"><div class="sb-leg-dot" style="background:var(--teal);"></div>Tax-Free Stipend</div>
+          <div class="sb-leg-item"><div class="sb-leg-dot" style="background:var(--lavender);"></div>Benefits</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CANDIDATE CHOICE CARDS -->
+  <div class="choice-section fade-up">
+    <div class="comp-section-title">Candidate Decision — Choose Your Package</div>
+    <div class="choice-cards">
+
+      <div class="choice-card w2" id="choice-w2" onclick="selectChoice('w2')">
+        <div class="cc-icon">🏦</div>
+        <div class="cc-type" style="color:var(--teal);">Option A · Pure W2</div>
+        <div class="cc-headline" style="color:var(--teal);" id="cc-w2-headline">$54.67/hr</div>
+        <div class="cc-sub">Full taxable hourly rate. Simple, higher base pay. Best for candidates planning to file taxes easily or staying local.</div>
+        <div class="cc-breakdown">
+          <div class="cc-br-row">
+            <span class="cc-br-label">Hourly W2 Rate</span>
+            <span class="cc-br-val" style="color:var(--teal);" id="cc-w2-rate">$54.67</span>
+          </div>
+          <div class="cc-br-row">
+            <span class="cc-br-label">Weekly Gross Pay</span>
+            <span class="cc-br-val" id="cc-w2-weekly">$1,968.00</span>
+          </div>
+          <div class="cc-br-row">
+            <span class="cc-br-label">Benefits Included</span>
+            <span class="cc-br-val">Medical + Dental</span>
+          </div>
+          <div class="cc-divider"></div>
+          <div class="cc-total-row">
+            <span>Est. Contract Total</span>
+            <span style="color:var(--teal);" id="cc-w2-total">$26,784</span>
+          </div>
+        </div>
+        <div class="compare-tag" style="background:var(--teal-glow);color:var(--teal);
+            border:1px solid rgba(6,214,160,.2);">Simple · Transparent</div>
+      </div>
+
+      <div class="choice-card perdiem" id="choice-pd" onclick="selectChoice('perdiem')">
+        <div class="cc-icon">✈️</div>
+        <div class="cc-type" style="color:var(--gold);">Option B · W2 + Per Diem</div>
+        <div class="cc-headline" style="color:var(--gold);" id="cc-pd-headline">$32.40/hr + stipend</div>
+        <div class="cc-sub">Lower taxable W2 + tax-free GSA housing & M&IE stipends. Higher total take-home for qualifying travel nurses.</div>
+        <div class="cc-breakdown">
+          <div class="cc-br-row">
+            <span class="cc-br-label">Taxable W2 Rate</span>
+            <span class="cc-br-val" style="color:var(--gold);" id="cc-pd-rate">$32.40</span>
+          </div>
+          <div class="cc-br-row">
+            <span class="cc-br-label">Housing Stipend/wk</span>
+            <span class="cc-br-val" style="color:var(--teal);" id="cc-pd-lodging">$924.00</span>
+          </div>
+          <div class="cc-br-row">
+            <span class="cc-br-label">M&IE Stipend/wk</span>
+            <span class="cc-br-val" style="color:var(--teal);" id="cc-pd-mie">$476.00</span>
+          </div>
+          <div class="cc-br-row">
+            <span class="cc-br-label">Total Weekly Comp</span>
+            <span class="cc-br-val" style="color:var(--gold);" id="cc-pd-weekly">$2,566.40</span>
+          </div>
+          <div class="cc-divider"></div>
+          <div class="cc-total-row">
+            <span>Est. Contract Total</span>
+            <span style="color:var(--gold);" id="cc-pd-total">$34,563</span>
+          </div>
+        </div>
+        <div class="compare-tag" style="background:var(--gold-glow);color:var(--gold);
+            border:1px solid rgba(255,209,102,.2);" id="savings-tag">+$7,779 vs W2</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WEEKLY EARNINGS CHART -->
+  <div class="weekly-chart fade-up">
+    <div class="wc-wrap">
+      <div class="wc-title">📈 Weekly Earnings Visualization</div>
+      <div class="wc-bars" id="wc-bars">
+        <!-- rendered by JS -->
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:2px;" id="wc-labels"></div>
+      <div class="wc-legend">
+        <div class="wc-leg"><div class="wc-leg-dot" style="background:var(--teal);"></div>W2 Taxable</div>
+        <div class="wc-leg"><div class="wc-leg-dot" style="background:var(--gold);"></div>Tax-Free Stipend</div>
+        <div class="wc-leg"><div class="wc-leg-dot" style="background:var(--coral);"></div>Agency Margin</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OFFER LETTER PREVIEW -->
+  <div class="offer-section fade-up">
+    <div class="offer-header">
+      <div class="offer-title">📄 Offer Letter Preview</div>
+      <div class="offer-btns">
+        <button class="offer-btn ghost" onclick="toast('📋 Copied','Package details copied to clipboard...')">Copy</button>
+        <button class="offer-btn teal" onclick="toast('💬 Sent to Jessica','Package offer sent via chat platform...')">Send via Chat</button>
+        <button class="offer-btn gold" onclick="toast('📧 Email sent','Formal offer email delivered...')">Email Offer</button>
+      </div>
+    </div>
+    <div class="offer-preview" id="offer-preview">
+      Dear <strong>Jessica</strong>,<br><br>
+      We're excited to offer you the <strong>Travel ICU RN — MICU Nights</strong> position at <strong>Memorial Hermann Health System, Houston, TX</strong>.<br><br>
+      <strong>📋 Contract Summary:</strong><br>
+      Duration: 13 weeks | Start: February 1, 2025 | Schedule: 3×12 Nights (7p–7a)<br><br>
+      <strong>💰 Your Pay Package Options:</strong><br><br>
+      <strong style="color:var(--teal);">Option A — Pure W2:</strong><br>
+      • Base hourly rate: <strong>$54.67/hr</strong><br>
+      • Weekly gross: <strong>$1,968.00</strong><br>
+      • Est. contract total: <strong>$26,784</strong><br><br>
+      <span class="gold-text"><strong>Option B — W2 + GSA Per Diem (Recommended for Maximum Take-Home):</strong></span><br>
+      • Taxable W2 rate: <strong class="gold-text">$32.40/hr</strong><br>
+      • Housing stipend: <strong class="gold-text">$924/wk</strong> (tax-free, GSA Houston rate)<br>
+      • M&IE stipend: <strong class="gold-text">$476/wk</strong> (tax-free, GSA Houston rate)<br>
+      • Total weekly compensation: <strong class="gold-text">$2,566.40</strong><br>
+      • Est. contract total: <strong class="gold-text">$34,563</strong><br><br>
+      <strong>✅ Benefits (both options):</strong><br>
+      Day 1 Medical + Dental + Vision | $500 completion bonus | $500 travel allowance | $200 scrubs/licensing<br><br>
+      Please select your preferred option and reply to accept. We look forward to having you on the team!<br><br>
+      — HealthBoard Recruiting Team
+    </div>
+  </div>
+
+  <!-- DISCLAIMER -->
+  <div class="disclaimer fade-up">
+    <strong>⚠️ Compliance Notice:</strong> Per Diem rates sourced from GSA FY2025 tables and are subject to IRS guidelines for travel nurses (must maintain a tax home, be traveling away from home). Candidates should consult a tax professional. Housing and M&IE stipends are tax-free only within GSA limits; amounts above GSA limits become taxable income. This calculator is for illustrative purposes — final packages subject to contract review.
+  </div>
+
+</div><!-- /results-panel -->
+</div><!-- /main-grid -->
+</div><!-- /page -->
+
+<!-- TOAST -->
+<div class="toast" id="toast"><div class="toast-dot"></div><span id="toast-text"></span></div>
+
+<script>
+/* ══════════════════════════════════
+   GSA RATE DATABASE (FY2025 simulated)
+   Real integration: https://api.gsa.gov/travel/perdiem/v2/rates/city/{city}/state/{state}/year/2025
+══════════════════════════════════ */
+const GSA_RATES = {
+  'TX': { lodging:132, mie:68, city:'Houston' },
+  'CA': { lodging:239, mie:79, city:'Los Angeles' },
+  'NY': { lodging:296, mie:92, city:'New York City' },
+  'FL': { lodging:153, mie:74, city:'Miami' },
+  'IL': { lodging:182, mie:76, city:'Chicago' },
+  'TN': { lodging:119, mie:66, city:'Nashville' },
+  'WA': { lodging:207, mie:79, city:'Seattle' },
+  'CO': { lodging:177, mie:74, city:'Denver' },
+};
+
+// City overrides
+const GSA_CITY_OVERRIDES = {
+  'houston':     { lodging:132, mie:68 },
+  'dallas':      { lodging:142, mie:69 },
+  'san antonio': { lodging:119, mie:66 },
+  'austin':      { lodging:149, mie:72 },
+  'los angeles': { lodging:239, mie:79 },
+  'san francisco':{ lodging:292, mie:92 },
+  'new york':    { lodging:296, mie:92 },
+  'chicago':     { lodging:182, mie:76 },
+  'nashville':   { lodging:119, mie:66 },
+  'miami':       { lodging:168, mie:74 },
+  'denver':      { lodging:177, mie:74 },
+  'seattle':     { lodging:207, mie:79 },
+};
+
+let currentGSA = { lodging:132, mie:68 };
+let currentMode = 'w2';
+let currentChoice = null;
+let toastTimer;
+
+const CAND_DATA = [
+  { name:'Jessica Martinez, RN', city:'Houston', state:'TX', baseRate:62 },
+  { name:'Alex Moore, RN',       city:'Dallas',  state:'TX', baseRate:58 },
+  { name:'Sarah Rodriguez, RN',  city:'Los Angeles', state:'CA', baseRate:65 },
+  { name:'Dr. Kevin Liang, MD',  city:'Chicago', state:'IL', baseRate:72 },
+  { name:'Tanya Collins, CRNA',  city:'Nashville', state:'TN', baseRate:80 },
+  { name:'Priya Waller, PharmD', city:'New York', state:'NY', baseRate:68 },
+];
+
+/* ══ GSA LOOKUP (via HealthBoard backend proxy /api/gsa/rates) ══
+   Falls back to the local FY2025 table if the backend is unreachable. */
+async function lookupGSA() {
+  const cityInput = document.getElementById('gsa-city').value.trim();
+  const state = document.getElementById('gsa-state').value;
+  try {
+    const res = await fetch(`/api/gsa/rates?city=${encodeURIComponent(cityInput)}&state=${encodeURIComponent(state)}`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const d = await res.json();
+    const curMonth = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][new Date().getMonth()];
+    const monthly = d.monthly || {};
+    currentGSA = { lodging: monthly[curMonth] || d.lodging, mie: d.mie };
+  } catch(err) {
+    console.warn('GSA proxy unavailable, using local table:', err.message);
+    const city = cityInput.toLowerCase();
+    currentGSA = GSA_CITY_OVERRIDES[city] || GSA_RATES[state] || { lodging:98, mie:59 };
+  }
+
+  const lodging = currentGSA.lodging;
+  const mie = currentGSA.mie;
+  const totalDay = lodging + mie;
+  const weeklyMax = Math.round((lodging * 7 + mie * 7));
+
+  document.getElementById('gsa-lodging').textContent = `$${lodging}/night`;
+  document.getElementById('gsa-mie').textContent = `$${mie}/day`;
+  document.getElementById('gsa-total-day').textContent = `$${totalDay}/day`;
+  document.getElementById('gsa-weekly').textContent = `$${weeklyMax}/wk`;
+  document.getElementById('gsa-panel').querySelector('.gsa-panel-title').childNodes[0].textContent =
+    `🏛 GSA FY2025 Per Diem — ${document.getElementById('gsa-city').value}, ${state} `;
+
+  const dispCity = document.getElementById('gsa-city').value;
+  document.getElementById('gsa-location-display').textContent = `${dispCity}, ${state}`;
+  document.getElementById('gib-lodging').textContent = `$${lodging}`;
+  document.getElementById('gib-mie').textContent = `$${mie}`;
+  document.getElementById('gib-weekly').textContent = `$${weeklyMax.toLocaleString()}`;
+
+  recalc();
+}
+
+/* ══ CORE CALCULATION ENGINE ══ */
+function recalc() {
+  const billRate    = parseFloat(document.getElementById('bill-rate').value) || 82;
+  const marginPct   = parseFloat(document.getElementById('margin-slider').value) / 100;
+  const weeks       = parseInt(document.getElementById('contract-weeks').value) || 13;
+  const hrsPerWk    = parseInt(document.getElementById('hrs-week').value) || 36;
+  const otHrs       = parseFloat(document.getElementById('ot-hrs').value) || 0;
+  const burdenMult  = parseFloat(document.getElementById('burden-slider').value) / 100;
+  const benefitsCost= parseFloat(document.getElementById('benefits-cost').value) || 4.50;
+  const completionBonus = parseFloat(document.getElementById('completion-bonus').value) || 500;
+  const travelAllow = parseFloat(document.getElementById('travel-allow').value) || 500;
+  const reimb       = parseFloat(document.getElementById('reimb').value) || 200;
+  const housingOvr  = parseFloat(document.getElementById('housing-override').value) || 0;
+  const mieOvr      = parseFloat(document.getElementById('mie-override').value) || 0;
+
+  // ── REVENUE SIDE ──
+  const agencyMarginPerHr = billRate * marginPct;
+  const availablePerHr    = billRate - agencyMarginPerHr;
+  const weeklyRevenue     = billRate * hrsPerWk;
+  const agencyWeeklyRev   = agencyMarginPerHr * hrsPerWk;
+  const agencyContractRev = agencyWeeklyRev * weeks;
+
+  // ── OPTION A: PURE W2 ──
+  // Available pool / burden multiplier = W2 taxable rate
+  // Burden: payroll taxes + benefits + workers comp + admin = 1.20×
+  // So if we pay X as W2, real cost = X * burdenMult + benefitsCost
+  // X * burdenMult + benefitsCost = availablePerHr
+  // X = (availablePerHr - benefitsCost) / burdenMult
+  const w2Rate      = (availablePerHr - benefitsCost) / burdenMult;
+  const otRateW2    = w2Rate * 1.5;
+  const regularPayW2 = w2Rate * hrsPerWk;
+  const otPayW2     = otRateW2 * otHrs;
+  const weeklyGrossW2 = regularPayW2 + otPayW2;
+  const contractGrossW2 = weeklyGrossW2 * weeks;
+  const grandTotalW2 = contractGrossW2 + completionBonus + travelAllow + reimb;
+  const netW2       = weeklyGrossW2 * 0.72; // approx 28% tax
+
+  // ── OPTION B: W2 + PER DIEM ──
+  const gsaLodgingNight = currentGSA.lodging;
+  const gsaMieDay       = currentGSA.mie;
+  // Weekly stipends (7 days for lodging, 7 days for M&IE)
+  const lodgingWk = housingOvr > 0 ? Math.min(housingOvr, gsaLodgingNight * 7) : gsaLodgingNight * 7;
+  const mieWk     = mieOvr > 0 ? Math.min(mieOvr, gsaMieDay * 7) : gsaMieDay * 7;
+  const totalStipendWk = lodgingWk + mieWk;
+  const totalStipendPerHr = totalStipendWk / hrsPerWk; // equivalent hourly cost
+
+  // For per diem: pool = W2 pay cost + stipend cost
+  // W2 cost per hr = w2RatePD * burdenMult + benefitsCost
+  // totalCost/hr = (w2RatePD * burdenMult + benefitsCost) + stipendPerHr = availablePerHr
+  // w2RatePD = (availablePerHr - benefitsCost - stipendPerHr) / burdenMult
+  const w2RatePD   = Math.max(0, (availablePerHr - benefitsCost - totalStipendPerHr) / burdenMult);
+  const otRatePD   = w2RatePD * 1.5;
+  const regularPayPD = w2RatePD * hrsPerWk;
+  const otPayPD    = otRatePD * otHrs;
+  const weeklyGrossPD  = regularPayPD + otPayPD;
+  const weeklyTotalPD  = weeklyGrossPD + totalStipendWk;
+  const contractGrossPD = weeklyTotalPD * weeks;
+  const grandTotalPD   = contractGrossPD + completionBonus + travelAllow + reimb;
+  // Net: tax on W2 portion only (stipends tax-free)
+  const netPD = weeklyGrossPD * 0.72 + totalStipendWk;
+  const pdAdvantage = grandTotalPD - grandTotalW2;
+
+  // ── BURDEN BREAKDOWN ──
+  const burdenCostPerHr = w2Rate * (burdenMult - 1); // the extra beyond W2
+  const burdenPct = (burdenCostPerHr / billRate) * 100;
+  const w2PayPct  = (w2Rate / billRate) * 100;
+  const marginPctDisplay = marginPct * 100;
+  const benefitsPct = (benefitsCost / billRate) * 100;
+  const stipendPct = (totalStipendPerHr / billRate) * 100;
+  const w2PayPctPD = (w2RatePD / billRate) * 100;
+
+  // ── UPDATE UI ──
+  setEl('show-bill',         `$${fmt(billRate)}/hr`);
+  setEl('show-margin-$',     `$${fmt(agencyMarginPerHr)}/hr`);
+  setEl('show-available',    `$${fmt(availablePerHr)}/hr`);
+
+  setEl('rc-bill',           `$${fmt(billRate)}`);
+  setEl('rc-margin-pct',     `${marginPct*100}%`);
+  setEl('rc-margin-dollar',  `$${fmt(agencyMarginPerHr)}`);
+  setEl('rc-margin-week',    `$${fmt(agencyWeeklyRev).replace(/\.00$/,'')}`);
+  setEl('rc-w2-rate',        `$${fmt(w2Rate)}`);
+  setEl('rc-pd-rate',        `$${fmt(w2RatePD)}`);
+
+  // Table W2 column
+  setEl('t-bill-w2',             `$${fmt(billRate)}/hr`);
+  setEl('t-bill-pd',             `$${fmt(billRate)}/hr`);
+  setEl('t-hrs-w2',              `${hrsPerWk} hrs`);
+  setEl('t-hrs-pd',              `${hrsPerWk} hrs`);
+  setEl('t-rev-w2',              `$${fmt(weeklyRevenue)}`);
+  setEl('t-rev-pd',              `$${fmt(weeklyRevenue)}`);
+  setEl('t-margin-pct-w2',       `${marginPct*100}%`);
+  setEl('t-margin-pct-pd',       `${marginPct*100}%`);
+  setEl('t-margin-hr-w2',        `$${fmt(agencyMarginPerHr)}`);
+  setEl('t-margin-hr-pd',        `$${fmt(agencyMarginPerHr)}`);
+  setEl('t-margin-wk-w2',        `$${fmt(agencyWeeklyRev)}`);
+  setEl('t-margin-wk-pd',        `$${fmt(agencyWeeklyRev)}`);
+  setEl('t-margin-contract-w2',  `$${fmt(agencyContractRev)}`);
+  setEl('t-margin-contract-pd',  `$${fmt(agencyContractRev)}`);
+  setEl('t-pool-w2',             `$${fmt(availablePerHr)}`);
+  setEl('t-pool-pd',             `$${fmt(availablePerHr)}`);
+  setEl('t-w2-rate',             `<strong>$${fmt(w2Rate)}</strong>`);
+  setEl('t-pd-taxable-rate',     `<strong>$${fmt(w2RatePD)}</strong>`);
+  setEl('t-ot-w2',               `$${fmt(otRateW2)}`);
+  setEl('t-ot-pd',               `$${fmt(otRatePD)}`);
+  setEl('t-benefits-w2',         `$${fmt(benefitsCost)}/hr`);
+  setEl('t-benefits-pd',         `$${fmt(benefitsCost)}/hr`);
+  setEl('t-lodging-wk',          `$${fmt(lodgingWk)}`);
+  setEl('t-mie-wk',              `$${fmt(mieWk)}`);
+  setEl('t-stipend-total',       `<strong>$${fmt(totalStipendWk)}</strong>`);
+  setEl('t-gross-w2',            `$${fmt(weeklyGrossW2)}`);
+  setEl('t-gross-pd',            `$${fmt(weeklyGrossPD)}`);
+  setEl('t-stipend-pd',          `$${fmt(totalStipendWk)}`);
+  setEl('t-total-w2',            `<strong>$${fmt(weeklyGrossW2)}</strong>`);
+  setEl('t-total-pd',            `<strong>$${fmt(weeklyTotalPD)}</strong>`);
+  setEl('t-net-w2',              `~$${Math.round(netW2).toLocaleString()}`);
+  setEl('t-net-pd',              `~$${Math.round(netPD).toLocaleString()}`);
+  setEl('t-contract-gross-w2',   `$${Math.round(contractGrossW2).toLocaleString()}`);
+  setEl('t-contract-gross-pd',   `$${Math.round(contractGrossPD).toLocaleString()}`);
+  setEl('t-bonus-w2',            `$${completionBonus.toLocaleString()}`);
+  setEl('t-bonus-pd',            `$${completionBonus.toLocaleString()}`);
+  setEl('t-travel-w2',           `$${travelAllow.toLocaleString()}`);
+  setEl('t-travel-pd',           `$${travelAllow.toLocaleString()}`);
+  setEl('t-reimb-w2',            `$${reimb.toLocaleString()}`);
+  setEl('t-reimb-pd',            `$${reimb.toLocaleString()}`);
+  setEl('t-grand-w2',            `<strong>$${Math.round(grandTotalW2).toLocaleString()}</strong>`);
+  setEl('t-grand-pd',            `<strong>$${Math.round(grandTotalPD).toLocaleString()}</strong>`);
+
+  // Margin bars
+  barW('mb-margin-bar', marginPctDisplay); setEl('mb-margin-val', `${marginPctDisplay}% · $${fmt(agencyMarginPerHr)}/hr`);
+  barW('mb-burden-bar', burdenPct.toFixed(1)); setEl('mb-burden-val', `${burdenPct.toFixed(1)}% · $${fmt(burdenCostPerHr)}/hr`);
+  barW('mb-w2pay-bar', w2PayPct.toFixed(1)); setEl('mb-w2pay-val', `${w2PayPct.toFixed(1)}% · $${fmt(w2Rate)}/hr`);
+
+  // Stacked bar
+  barW('sb-margin',  `${marginPctDisplay}`);
+  barW('sb-burden',  `${burdenPct.toFixed(1)}`);
+  barW('sb-w2',      `${w2PayPctPD.toFixed(1)}`);
+  barW('sb-stipend', `${stipendPct.toFixed(1)}`);
+  barW('sb-benefits',`${benefitsPct.toFixed(1)}`);
+
+  // Choice cards
+  setEl('cc-w2-headline', `$${fmt(w2Rate)}/hr`);
+  setEl('cc-w2-rate',     `$${fmt(w2Rate)}`);
+  setEl('cc-w2-weekly',   `$${fmt(weeklyGrossW2)}`);
+  setEl('cc-w2-total',    `$${Math.round(grandTotalW2).toLocaleString()}`);
+  setEl('cc-pd-headline', `$${fmt(w2RatePD)}/hr + stipend`);
+  setEl('cc-pd-rate',     `$${fmt(w2RatePD)}`);
+  setEl('cc-pd-lodging',  `$${fmt(lodgingWk)}`);
+  setEl('cc-pd-mie',      `$${fmt(mieWk)}`);
+  setEl('cc-pd-weekly',   `$${fmt(weeklyTotalPD)}`);
+  setEl('cc-pd-total',    `$${Math.round(grandTotalPD).toLocaleString()}`);
+  setEl('savings-tag',    `+$${Math.round(pdAdvantage).toLocaleString()} vs W2`);
+
+  // Offer letter
+  updateOfferLetter(w2Rate, weeklyGrossW2, grandTotalW2, w2RatePD, lodgingWk, mieWk, weeklyTotalPD, grandTotalPD, weeks, completionBonus, travelAllow, reimb);
+
+  // Weekly chart
+  renderChart(weeklyGrossW2, totalStipendWk, agencyWeeklyRev, weeks);
+}
+
+function updateOfferLetter(w2Rate, weeklyW2, totalW2, w2RatePD, lodgingWk, mieWk, weeklyPD, totalPD, weeks, bonus, travel, reimb) {
+  const candName = document.getElementById('cand-name-display').textContent.split(',')[0];
+  const city = document.getElementById('gsa-city').value;
+  const state = document.getElementById('gsa-state').value;
+  const el = document.getElementById('offer-preview');
+  el.innerHTML = `
+    Dear <strong>${candName}</strong>,<br><br>
+    We're excited to extend a formal pay package offer for the position at <strong>${city}, ${state}</strong>.<br><br>
+    <strong>📋 Contract Summary:</strong><br>
+    Duration: ${weeks} weeks | Shift: 3×12 Nights | Benefits: Day 1 Medical + Dental + Vision<br><br>
+    <strong>💰 Your Pay Package — Choose One:</strong><br><br>
+    <strong style="color:var(--teal);">✅ Option A — Pure W2:</strong><br>
+    • Hourly rate: <strong>$${fmt(w2Rate)}/hr</strong><br>
+    • Weekly gross: <strong>$${fmt(weeklyW2)}</strong><br>
+    • ${weeks}-week contract total: <strong>$${Math.round(totalW2).toLocaleString()}</strong><br><br>
+    <strong class="gold-text">⭐ Option B — W2 + GSA Per Diem (Max Take-Home):</strong><br>
+    • Taxable W2 rate: <strong class="gold-text">$${fmt(w2RatePD)}/hr</strong><br>
+    • Housing stipend: <strong class="gold-text">$${fmt(lodgingWk)}/wk</strong> (tax-free · GSA ${city} rate)<br>
+    • M&amp;IE stipend: <strong class="gold-text">$${fmt(mieWk)}/wk</strong> (tax-free · GSA ${city} rate)<br>
+    • Total weekly compensation: <strong class="gold-text">$${fmt(weeklyPD)}</strong><br>
+    • ${weeks}-week contract total: <strong class="gold-text">$${Math.round(totalPD).toLocaleString()}</strong><br><br>
+    <strong>🎁 Included in Both Options:</strong><br>
+    Completion bonus: $${bonus.toLocaleString()} | Travel allowance: $${travel.toLocaleString()} | Reimbursements: $${reimb.toLocaleString()}<br><br>
+    Please reply with your preferred option (A or B) to proceed. We look forward to welcoming you to the team!<br><br>
+    — HealthBoard Recruiting Team
+  `;
+}
+
+function renderChart(weeklyW2, stipendWk, agencyWkly, weeks) {
+  const barsEl   = document.getElementById('wc-bars');
+  const labelsEl = document.getElementById('wc-labels');
+  barsEl.innerHTML = '';
+  labelsEl.innerHTML = '';
+
+  // Show weeks 1–10 (sampled)
+  const showWeeks = Math.min(weeks, 10);
+  const maxH = 100;
+  const maxVal = Math.max(weeklyW2 + stipendWk, agencyWkly) * 1.1;
+
+  for(let w=1;w<=showWeeks;w++){
+    const grp = document.createElement('div');
+    grp.className = 'wc-bar-group';
+
+    const w2H = Math.round((weeklyW2/maxVal)*maxH);
+    const stH = Math.round((stipendWk/maxVal)*maxH);
+    const agH = Math.round((agencyWkly/maxVal)*maxH);
+
+    grp.innerHTML = `
+      <div class="wc-bar" style="height:${w2H}px;background:var(--teal);opacity:.85;"></div>
+      <div class="wc-bar" style="height:${stH}px;background:var(--gold);opacity:.85;"></div>
+      <div class="wc-bar" style="height:${agH}px;background:var(--coral);opacity:.7;"></div>
+    `;
+    barsEl.appendChild(grp);
+
+    const lbl = document.createElement('div');
+    lbl.style.cssText='font-size:10px;color:var(--slate);text-align:center;flex:1;';
+    lbl.textContent = 'Wk'+w;
+    labelsEl.appendChild(lbl);
+  }
+  if(weeks > 10) {
+    const more = document.createElement('div');
+    more.style.cssText='font-size:10px;color:var(--slate2);align-self:flex-end;padding-bottom:4px;';
+    more.textContent = `+${weeks-10} more`;
+    barsEl.appendChild(more);
+  }
+}
+
+/* ══ UI HELPERS ══ */
+function setEl(id, html) {
+  const el = document.getElementById(id);
+  if(el) el.innerHTML = html;
+}
+
+function barW(id, pct) {
+  const el = document.getElementById(id);
+  if(el) el.style.width = Math.min(100, parseFloat(pct)) + '%';
+}
+
+function fmt(n) {
+  return parseFloat(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function updateMarginSlider(v) {
+  const slider = document.getElementById('margin-slider');
+  slider.style.setProperty('--pct', v + '%');
+  document.getElementById('margin-val').textContent = v + '%';
+  document.getElementById('margin-note').textContent = `→ ${v}% margin`;
+}
+
+function updateBurdenSlider(v) {
+  const pct = v/100;
+  const slider = document.getElementById('burden-slider');
+  const prog = ((v-110)/(140-110))*100;
+  slider.style.setProperty('--pct', prog + '%');
+  document.getElementById('burden-val').textContent = pct.toFixed(2)+'×';
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('mode-w2').className = mode==='w2' ? 'mode-btn active-teal' : 'mode-btn';
+  document.getElementById('mode-pd').className = mode==='perdiem' ? 'mode-btn active-gold' : 'mode-btn';
+}
+
+function selectChoice(which) {
+  currentChoice = which;
+  document.getElementById('choice-w2').classList.toggle('selected', which==='w2');
+  document.getElementById('choice-pd').classList.toggle('selected', which==='perdiem');
+  const label = which==='w2' ? '🏦 Option A (W2) selected' : '✈️ Option B (Per Diem) selected';
+  toast(label, 'Offer letter updated with candidate\'s choice...');
+}
+
+function selectCand(el, name, city, state, baseRate, idx) {
+  document.querySelectorAll('.cand-pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  const c = CAND_DATA[idx];
+  document.getElementById('cand-name-display').textContent = c.name;
+  document.getElementById('gsa-city').value = c.city;
+  document.getElementById('gsa-state').value = c.state;
+  document.getElementById('bill-rate').value = Math.round(c.baseRate * 1.33); // derive bill from desired rate
+  lookupGSA();
+  toast('👤 Loaded: '+c.name, 'GSA rates updated for '+c.city+', '+c.state);
+}
+
+/* ══ TOAST ══ */
+function toast(msg, sub) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-text').textContent = msg + (sub ? ' — '+sub : '');
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 3200);
+}
+
+/* ══ INIT ══ */
+document.addEventListener('DOMContentLoaded', () => {
+  // Init sliders visual
+  updateMarginSlider(20);
+  updateBurdenSlider(120);
+  lookupGSA();
+  recalc();
+});
+</script>
+</body>
+</html>

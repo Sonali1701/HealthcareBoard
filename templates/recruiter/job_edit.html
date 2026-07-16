@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Post a job{% endblock %}
+{% block content %}
+<div class="container mt2" style="max-width:720px">
+  <a href="/recruiter" class="small">← Back to dashboard</a>
+  <h2 class="mt">Post a job</h2>
+  <form method="post" action="/recruiter/jobs/new" class="panel">
+    <div class="field"><label class="label">Job title *</label>
+      <input class="input" name="title" placeholder="Travel ICU RN — Nights" required></div>
+    <div class="row" style="gap:12px">
+      <div class="field" style="flex:1"><label class="label">Specialty</label>
+        <input class="input" name="specialty" placeholder="ICU"></div>
+      <div class="field" style="flex:1"><label class="label">Profession</label>
+        <input class="input" name="profession_type" placeholder="RN, MD"></div>
+    </div>
+    <div class="row" style="gap:12px">
+      <div class="field" style="flex:1"><label class="label">Job type</label>
+        <select class="select" name="job_type">
+          {% for t in ['travel','staff','per_diem','contract'] %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select></div>
+      <div class="field" style="flex:1"><label class="label">Shift</label>
+        <input class="input" name="shift_type" placeholder="days, nights"></div>
+    </div>
+    <div class="row" style="gap:12px">
+      <div class="field" style="flex:1"><label class="label">City</label><input class="input" name="city"></div>
+      <div class="field" style="width:90px"><label class="label">State</label><input class="input" name="state_code" maxlength="2"></div>
+      <div class="field" style="flex:1"><label class="label">Pay min ($/hr)</label><input class="input" type="number" name="pay_rate_min"></div>
+      <div class="field" style="flex:1"><label class="label">Pay max ($/hr)</label><input class="input" type="number" name="pay_rate_max"></div>
+    </div>
+    <div class="field"><label class="label">Required skills (comma-separated)</label>
+      <input class="input" name="required_skills" placeholder="ICU, Ventilator, ACLS"></div>
+    <div class="field"><label class="label">Description</label>
+      <textarea class="textarea" name="description"></textarea></div>
+    <label class="row items-center" style="gap:8px"><input type="checkbox" name="is_urgent"> Mark as urgent</label>
+    <button class="btn btn-primary mt" type="submit">Publish job</button>
+  </form>
+</div>
+{% endblock %}

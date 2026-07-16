@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.git/
+.idea/
+.vscode/
+*.db
+*.sqlite*
+uploads/
+.env
+.env.*
+!.env.production.example
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+scratchpad/

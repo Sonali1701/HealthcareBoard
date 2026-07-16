@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Find Jobs{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <h2>Find your next role</h2>
+  <div class="app-grid">
+    <aside>
+      <div class="panel">
+        <form id="job-filters" hx-get="/jobs" hx-target="#job-results" hx-trigger="change, submit, keyup delay:400ms from:[name=q]"
+              hx-push-url="true">
+          <div class="field">
+            <label class="label">Search</label>
+            <input class="input" name="q" value="{{ f.q }}" placeholder="title or skill">
+          </div>
+          <div class="field">
+            <label class="label">Specialty</label>
+            <select class="select" name="specialty">
+              <option value="">All</option>
+              {% for s in specialties %}<option value="{{ s }}" {% if f.specialty==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label class="label">Job type</label>
+            <select class="select" name="job_type">
+              <option value="">All</option>
+              {% for t in job_types %}<option value="{{ t }}" {% if f.job_type==t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="row" style="gap:8px">
+            <div class="field" style="flex:1">
+              <label class="label">State</label>
+              <input class="input" name="state" value="{{ f.state }}" maxlength="2" placeholder="TX">
+            </div>
+            <div class="field" style="flex:1">
+              <label class="label">Min pay</label>
+              <input class="input" name="pay_min" value="{{ f.pay_min }}" type="number" placeholder="50">
+            </div>
+          </div>
+          <a class="btn btn-ghost btn-sm btn-block" href="/jobs">Reset</a>
+        </form>
+      </div>
+    </aside>
+    <div>
+      <div id="job-results">
+        {% include "public/_job_results.html" %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HealthBoard — GSA Live Pay Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#05080F;--bg2:#0B1120;--bg3:#111827;--bg4:#182033;--surface:#1E2940;--surface2:#263452;
+  --teal:#00C9A7;--teal2:#00A088;--teal3:rgba(0,201,167,.13);--teal4:rgba(0,201,167,.06);
+  --gold:#FFC84A;--gold2:#D4A020;--gold3:rgba(255,200,74,.12);--gold4:rgba(255,200,74,.05);
+  --red:#FF5A5A;--red2:rgba(255,90,90,.12);
+  --blue:#4B9EFF;--blue2:rgba(75,158,255,.12);
+  --green:#3EC97B;--green2:rgba(62,201,123,.12);
+  --purple:#A78BFA;--purple2:rgba(167,139,250,.12);
+  --slate:#6B7E99;--slate2:#4A5C75;--slate3:#2E3D55;
+  --white:#E4EAF5;--white2:#B8C5D9;--white3:#8A9BB5;
+  --border:rgba(255,255,255,.065);--border2:rgba(255,255,255,.11);
+  --f:'DM Sans',sans-serif;--fm:'JetBrains Mono',monospace;
+  --r:8px;--r2:12px;--r3:16px;--r4:24px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{background:var(--bg);color:var(--white);font-family:var(--f);min-height:100vh;overflow-x:hidden;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:var(--bg2);}
+::-webkit-scrollbar-thumb{background:var(--surface);border-radius:4px;}
+input,select,button,textarea{font-family:var(--f);}
+
+/* ── TOPBAR ──────────────────────── */
+.topbar{position:fixed;top:0;left:0;right:0;height:52px;background:rgba(5,8,15,.95);
+  backdrop-filter:blur(24px);border-bottom:1px solid var(--border);z-index:300;
+  display:flex;align-items:center;padding:0 20px;gap:14px;}
+.tl{font-size:15px;font-weight:700;color:var(--white);display:flex;align-items:center;gap:9px;}
+.tl-icon{width:27px;height:27px;background:var(--teal);border-radius:7px;
+  display:flex;align-items:center;justify-content:center;font-size:14px;}
+.tl span{color:var(--teal);}
+.feat-tag{background:rgba(0,201,167,.15);border:1px solid rgba(0,201,167,.25);
+  color:var(--teal);font-size:10.5px;font-weight:700;padding:3px 10px;
+  border-radius:100px;letter-spacing:.06em;}
+.tr{margin-left:auto;display:flex;align-items:center;gap:10px;}
+/* GSA live badge */
+.gsa-live-badge{display:flex;align-items:center;gap:7px;padding:5px 13px;
+  border-radius:100px;font-size:11.5px;font-weight:600;border:1px solid;transition:all .3s;}
+.gsa-live-badge.connecting{background:rgba(75,158,255,.1);border-color:rgba(75,158,255,.3);color:var(--blue);}
+.gsa-live-badge.live{background:rgba(62,201,123,.1);border-color:rgba(62,201,123,.3);color:var(--green);}
+.gsa-live-badge.fallback{background:rgba(255,200,74,.1);border-color:rgba(255,200,74,.3);color:var(--gold);}
+.gsa-live-badge.error{background:var(--red2);border-color:rgba(255,90,90,.3);color:var(--red);}
+.status-dot{width:7px;height:7px;border-radius:50%;animation:pulse 2s infinite;}
+.dot-blue{background:var(--blue);}
+.dot-green{background:var(--green);box-shadow:0 0 6px var(--green);}
+.dot-gold{background:var(--gold);}
+.dot-red{background:var(--red);}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.tb-btn{padding:6px 14px;border-radius:var(--r);font-size:12px;font-weight:600;
+  cursor:pointer;background:var(--surface);border:1px solid var(--border2);
+  color:var(--white2);transition:all .2s;}
+.tb-btn:hover{background:var(--surface2);}
+.tb-btn.primary{background:var(--teal);color:var(--bg);border-color:var(--teal);}
+.tb-btn.primary:hover{background:var(--teal2);}
+
+/* ── CANDIDATE BAR ──────────────── */
+.cand-bar{background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:10px 20px;display:flex;align-items:center;gap:12px;
+  margin-top:52px;overflow-x:auto;}
+.cbar-label{font-size:10.5px;font-weight:700;color:var(--slate);
+  text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;}
+.cpill{display:flex;align-items:center;gap:8px;padding:7px 13px;
+  border-radius:100px;border:1px solid var(--border2);background:var(--bg3);
+  cursor:pointer;transition:all .2s;white-space:nowrap;flex-shrink:0;}
+.cpill:hover{border-color:var(--teal);}
+.cpill.active{border-color:var(--teal);background:var(--teal3);}
+.cav{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;}
+.cpill-name{font-size:12px;font-weight:600;}
+.cpill-score{font-family:var(--fm);font-size:10px;font-weight:700;color:var(--teal);
+  background:var(--teal3);padding:1px 6px;border-radius:4px;}
+
+/* ── LAYOUT ─────────────────────── */
+.app{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 116px);}
+
+/* ── LEFT PANEL ─────────────────── */
+.lp{background:var(--bg2);border-right:1px solid var(--border);
+  overflow-y:auto;height:100%;}
+.lp-head{padding:18px 20px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;
+  background:var(--bg2);z-index:10;}
+.lp-title{font-size:15px;font-weight:700;color:var(--white);}
+.lp-sub{font-size:11.5px;color:var(--slate);margin-top:2px;}
+.lp-body{padding:16px 20px;}
+.sec{margin-bottom:20px;}
+.sec-lbl{font-size:10px;font-weight:700;color:var(--teal);letter-spacing:.1em;
+  text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+.sec-lbl::after{content:'';flex:1;height:1px;background:var(--teal3);}
+.fld{margin-bottom:11px;}
+.fld-lbl{font-size:11.5px;font-weight:600;color:var(--white2);margin-bottom:4px;
+  display:flex;justify-content:space-between;align-items:center;}
+.fld-hint{font-size:10.5px;color:var(--slate);font-weight:400;}
+.fin{width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:8px 11px;font-size:13px;color:var(--white);
+  outline:none;transition:all .2s;}
+.fin:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--teal4);}
+.fin::placeholder{color:var(--slate2);}
+.fsel{width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:8px 11px;font-size:13px;color:var(--white);
+  outline:none;cursor:pointer;transition:all .2s;-webkit-appearance:none;}
+.fsel:focus{border-color:var(--teal);}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.pfx-wrap{position:relative;}
+.pfx{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  font-size:12px;color:var(--slate);font-family:var(--fm);}
+.fin.pl{padding-left:22px;}
+
+/* slider */
+.sl-row{display:flex;align-items:center;gap:10px;}
+.fslider{flex:1;-webkit-appearance:none;height:4px;border-radius:3px;
+  background:linear-gradient(to right,var(--teal) 0%,var(--teal) var(--v,20%),var(--surface) var(--v,20%));
+  outline:none;cursor:pointer;}
+.fslider::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;
+  border-radius:50%;background:var(--teal);box-shadow:0 0 8px rgba(0,201,167,.5);
+  cursor:pointer;border:2px solid var(--bg);}
+.sl-val{font-family:var(--fm);font-size:12.5px;font-weight:700;color:var(--teal);min-width:36px;text-align:right;}
+
+/* mini calc panel */
+.mini-calc{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);
+  padding:10px 12px;display:flex;flex-direction:column;gap:5px;}
+.mc-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;}
+.mc-lbl{color:var(--slate);}
+.mc-val{font-family:var(--fm);font-weight:600;}
+.mc-divider{height:1px;background:var(--border);margin:3px 0;}
+
+/* GSA fetch box */
+.gsa-fetch-box{border-radius:var(--r2);padding:14px;margin-bottom:14px;transition:all .3s;}
+.gfb-connecting{background:var(--blue2);border:1px solid rgba(75,158,255,.25);}
+.gfb-live{background:var(--green2);border:1px solid rgba(62,201,123,.25);}
+.gfb-fallback{background:var(--gold3);border:1px solid rgba(255,200,74,.25);}
+.gfb-error{background:var(--red2);border:1px solid rgba(255,90,90,.25);}
+.gfb-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.gfb-title{font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;}
+.gfb-time{font-size:10px;color:var(--slate);font-family:var(--fm);}
+.gfb-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.gfb-item{background:rgba(0,0,0,.2);border-radius:var(--r);padding:8px 10px;}
+.gfb-item-lbl{font-size:10px;color:var(--white3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+.gfb-item-val{font-family:var(--fm);font-size:14px;font-weight:700;}
+.gfb-item-sub{font-size:10px;color:var(--white3);margin-top:2px;}
+.gfb-monthly{margin-top:10px;}
+.gfb-monthly-title{font-size:10px;color:var(--white3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+.month-rates{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;}
+.mr-cell{background:rgba(0,0,0,.2);border-radius:4px;padding:4px 3px;text-align:center;}
+.mr-month{font-size:8.5px;color:var(--white3);}
+.mr-rate{font-family:var(--fm);font-size:9.5px;font-weight:600;}
+.retry-btn{width:100%;padding:7px;background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.1);
+  border-radius:var(--r);color:var(--white2);font-size:12px;cursor:pointer;
+  margin-top:8px;transition:all .2s;font-family:var(--f);}
+.retry-btn:hover{background:rgba(0,0,0,.35);}
+.api-key-row{display:flex;gap:6px;margin-bottom:10px;}
+.api-key-input{flex:1;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:7px 10px;font-size:12px;color:var(--white);
+  outline:none;font-family:var(--fm);}
+.api-key-input:focus{border-color:var(--teal);}
+.api-key-btn{padding:7px 12px;background:var(--teal);color:var(--bg);
+  border:none;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer;
+  white-space:nowrap;font-family:var(--f);transition:all .2s;}
+.api-key-btn:hover{background:var(--teal2);}
+
+.calc-btn{width:100%;padding:11px;background:linear-gradient(135deg,var(--teal),var(--teal2));
+  color:var(--bg);font-size:13.5px;font-weight:700;border:none;border-radius:var(--r2);
+  cursor:pointer;transition:all .3s;display:flex;align-items:center;justify-content:center;
+  gap:8px;box-shadow:0 4px 18px rgba(0,201,167,.2);margin-top:6px;}
+.calc-btn:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(0,201,167,.3);}
+
+/* ── RIGHT PANEL ─────────────────── */
+.rp{overflow-y:auto;height:100%;padding:20px 24px;background:var(--bg);}
+
+/* options toggle */
+.opt-toggle{display:grid;grid-template-columns:1fr 1fr;background:var(--bg2);
+  border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:20px;}
+.opt-btn{padding:14px 16px;border:none;background:transparent;cursor:pointer;
+  transition:all .2s;text-align:left;position:relative;}
+.opt-btn.sel-teal{background:var(--teal3);border-right:1px solid rgba(0,201,167,.2);}
+.opt-btn.sel-gold{background:var(--gold3);}
+.opt-icon{font-size:20px;margin-bottom:5px;}
+.opt-name{font-size:12.5px;font-weight:700;color:var(--white);}
+.opt-desc{font-size:11px;color:var(--slate);margin-top:2px;}
+.opt-tag{position:absolute;top:10px;right:10px;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:100px;}
+.tag-teal{background:var(--teal3);color:var(--teal);border:1px solid rgba(0,201,167,.2);}
+.tag-gold{background:var(--gold3);color:var(--gold);border:1px solid rgba(255,200,74,.2);}
+
+/* rate summary row */
+.rate-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+.rc{border-radius:var(--r2);padding:14px 16px;}
+.rc-teal{background:var(--teal3);border:1px solid rgba(0,201,167,.2);}
+.rc-gold{background:var(--gold3);border:1px solid rgba(255,200,74,.2);}
+.rc-red{background:var(--red2);border:1px solid rgba(255,90,90,.2);}
+.rc-blue{background:var(--blue2);border:1px solid rgba(75,158,255,.2);}
+.rc-lbl{font-size:10px;font-weight:700;color:var(--white3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
+.rc-val{font-family:var(--fm);font-size:22px;font-weight:700;margin-bottom:2px;}
+.rc-sub{font-size:11px;color:var(--white3);}
+
+/* comparison table */
+.ctbl{width:100%;border-collapse:collapse;background:var(--bg2);
+  border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:20px;}
+.ctbl th{background:var(--bg3);padding:9px 14px;font-size:10.5px;font-weight:700;
+  color:var(--slate);text-transform:uppercase;letter-spacing:.07em;
+  border-bottom:1px solid var(--border);text-align:left;}
+.ctbl th.th-teal{color:var(--teal);background:rgba(0,201,167,.06);}
+.ctbl th.th-gold{color:var(--gold);background:rgba(255,200,74,.06);}
+.ctbl td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--white2);}
+.ctbl tr:last-child td{border-bottom:none;}
+.ctbl tr:hover td{background:rgba(255,255,255,.015);}
+.lbl-cell{color:var(--slate);font-size:12px;}
+.vm{font-family:var(--fm);}
+.vteal{font-family:var(--fm);font-weight:700;color:var(--teal);}
+.vgold{font-family:var(--fm);font-weight:700;color:var(--gold);}
+.sep-row td{background:var(--bg3);font-size:10px;font-weight:700;
+  color:var(--slate);text-transform:uppercase;letter-spacing:.07em;padding:7px 14px;}
+.hl-teal td{background:rgba(0,201,167,.05);}
+.hl-gold td{background:rgba(255,200,74,.05);}
+.hl-both td{background:linear-gradient(90deg,rgba(0,201,167,.05),rgba(255,200,74,.05));}
+
+/* bar chart */
+.bar-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);
+  padding:16px 18px;margin-bottom:20px;}
+.bar-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:14px;}
+.bar-row{margin-bottom:12px;}
+.bar-hd{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;}
+.bar-lbl{color:var(--white2);font-weight:500;}
+.bar-track{height:9px;background:var(--bg3);border-radius:5px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:5px;transition:width .7s ease;}
+.stk-bar{height:13px;background:var(--bg3);border-radius:5px;overflow:hidden;display:flex;margin-bottom:8px;}
+.stk-seg{height:100%;transition:width .7s ease;}
+.stk-legend{display:flex;gap:12px;flex-wrap:wrap;}
+.stk-leg{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--slate);}
+.stk-dot{width:8px;height:8px;border-radius:2px;}
+
+/* choice cards */
+.choice-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;}
+.ch-card{border-radius:var(--r3);padding:18px;cursor:pointer;transition:all .25s;position:relative;}
+.ch-teal{background:var(--teal3);border:1px solid rgba(0,201,167,.2);}
+.ch-teal:hover,.ch-teal.sel{border-color:var(--teal);box-shadow:0 0 20px rgba(0,201,167,.1);}
+.ch-gold{background:var(--gold3);border:1px solid rgba(255,200,74,.2);}
+.ch-gold:hover,.ch-gold.sel{border-color:var(--gold);box-shadow:0 0 20px rgba(255,200,74,.1);}
+.ch-sel-badge{position:absolute;top:10px;right:10px;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:100px;}
+.ch-icon{font-size:24px;margin-bottom:8px;}
+.ch-type{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;}
+.ch-hl{font-family:var(--fm);font-size:20px;font-weight:700;margin-bottom:4px;}
+.ch-sub{font-size:11.5px;color:var(--white3);margin-bottom:12px;line-height:1.5;}
+.ch-rows{display:flex;flex-direction:column;gap:5px;}
+.ch-row{display:flex;justify-content:space-between;font-size:12px;}
+.ch-row-lbl{color:var(--white3);}
+.ch-row-val{font-family:var(--fm);font-weight:600;}
+.ch-divider{height:1px;background:var(--border);margin:6px 0;}
+.ch-total{display:flex;justify-content:space-between;font-size:13.5px;font-weight:700;}
+.ch-savings{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:100px;
+  display:inline-block;margin-top:8px;}
+
+/* weekly chart */
+.wchart{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);
+  padding:16px 18px;margin-bottom:20px;}
+.wchart-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:12px;}
+.wchart-bars{display:flex;gap:8px;align-items:flex-end;height:100px;}
+.wchart-grp{flex:1;display:flex;gap:2px;align-items:flex-end;}
+.wchart-bar{border-radius:3px 3px 0 0;transition:height .6s ease;flex:1;}
+.wchart-labels{display:flex;gap:8px;margin-top:6px;}
+.wchart-lbl{flex:1;font-size:9.5px;color:var(--slate);text-align:center;}
+.wchart-legend{display:flex;gap:12px;margin-top:8px;}
+.wcl{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--slate);}
+.wcl-dot{width:8px;height:8px;border-radius:2px;}
+
+/* offer box */
+.offer-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);
+  padding:16px 18px;margin-bottom:20px;}
+.offer-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.offer-title{font-size:13px;font-weight:700;color:var(--white);}
+.offer-btns{display:flex;gap:7px;}
+.ob{padding:7px 14px;border-radius:var(--r);font-size:12px;font-weight:600;
+  cursor:pointer;border:1px solid var(--border2);background:var(--bg3);
+  color:var(--white2);transition:all .2s;font-family:var(--f);}
+.ob:hover{background:var(--surface);}
+.ob.teal{background:var(--teal);color:var(--bg);border-color:var(--teal);}
+.ob.teal:hover{background:var(--teal2);}
+.ob.gold{background:var(--gold);color:var(--bg);border-color:var(--gold);}
+.offer-body{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);
+  padding:14px;font-size:12.5px;color:var(--white2);line-height:1.75;}
+.offer-body strong{color:var(--teal);}
+.offer-body .gd{color:var(--gold);}
+
+/* disclaimer */
+.disc{background:rgba(255,90,90,.06);border:1px solid rgba(255,90,90,.15);
+  border-radius:var(--r);padding:10px 14px;font-size:11.5px;color:var(--slate);
+  line-height:1.6;margin-bottom:20px;}
+.disc strong{color:var(--red);}
+
+/* toast */
+.toast{position:fixed;bottom:22px;right:22px;background:var(--surface2);border:1px solid var(--teal);
+  color:var(--white);padding:11px 16px;border-radius:var(--r2);font-size:13px;z-index:500;
+  display:flex;align-items:center;gap:9px;box-shadow:0 4px 18px rgba(0,201,167,.12);
+  transform:translateY(80px);opacity:0;transition:all .3s;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast-dot{width:7px;height:7px;border-radius:50%;background:var(--teal);flex-shrink:0;}
+
+/* api modal */
+.api-modal{position:fixed;inset:0;background:rgba(5,8,15,.85);z-index:400;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .25s;}
+.api-modal.open{opacity:1;pointer-events:all;}
+.api-modal-box{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r3);
+  width:480px;padding:24px;transform:scale(.96);transition:transform .25s;}
+.api-modal.open .api-modal-box{transform:scale(1);}
+.ami-title{font-size:16px;font-weight:700;color:var(--white);margin-bottom:6px;}
+.ami-sub{font-size:13px;color:var(--slate);margin-bottom:18px;line-height:1.6;}
+.ami-steps{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
+.ami-step{display:flex;gap:10px;font-size:13px;color:var(--white2);line-height:1.5;}
+.ami-step-num{width:22px;height:22px;border-radius:50%;background:var(--teal);color:var(--bg);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;}
+.ami-step a{color:var(--teal);text-decoration:none;}
+.ami-step a:hover{text-decoration:underline;}
+.ami-input{width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:10px 12px;font-size:13px;color:var(--white);
+  outline:none;font-family:var(--fm);margin-bottom:10px;}
+.ami-input:focus{border-color:var(--teal);}
+.ami-btns{display:flex;gap:8px;justify-content:flex-end;}
+.ami-btn{padding:9px 20px;border-radius:var(--r);font-size:13px;font-weight:600;
+  cursor:pointer;font-family:var(--f);transition:all .2s;}
+.ami-btn.cancel{background:var(--bg3);border:1px solid var(--border2);color:var(--white2);}
+.ami-btn.save{background:var(--teal);color:var(--bg);border:none;}
+.ami-btn.save:hover{background:var(--teal2);}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.fade-up{animation:fadeUp .35s ease both;}
+</style>
+</head>
+<body>
+
+<!-- ── TOPBAR ── -->
+<nav class="topbar">
+  <div class="tl">
+    <div class="tl-icon">💰</div>
+    Health<span>Board</span>
+    <div class="feat-tag">GSA LIVE PAY ENGINE</div>
+  </div>
+  <div class="tr">
+    <div class="gsa-live-badge connecting" id="gsa-badge">
+      <div class="status-dot dot-blue" id="status-dot"></div>
+      <span id="gsa-badge-text">Connecting to GSA API…</span>
+    </div>
+    <button class="tb-btn" onclick="openApiModal()">🔑 API Key</button>
+    <button class="tb-btn" onclick="toast('📤 Exported','Package PDF ready for download...')">Export PDF</button>
+    <button class="tb-btn primary" onclick="toast('📩 Sent','Pay package delivered to candidate chat...')">Send to Candidate</button>
+  </div>
+</nav>
+
+<!-- ── CANDIDATE BAR ── -->
+<div class="cand-bar">
+  <div class="cbar-label">Matched Candidates →</div>
+  <div class="cpill active" onclick="loadCand(this,0)">
+    <div class="cav" style="background:linear-gradient(135deg,#00C9A7,#00A088);color:#05080F;">JM</div>
+    <div><div class="cpill-name">Jessica Martinez, RN</div><div style="font-size:10px;color:var(--slate);">ICU · Houston, TX 77002</div></div>
+    <div class="cpill-score">94</div>
+  </div>
+  <div class="cpill" onclick="loadCand(this,1)">
+    <div class="cav" style="background:linear-gradient(135deg,#A78BFA,#7C5CDB);color:#fff;">AM</div>
+    <div><div class="cpill-name">Alex Moore, RN</div><div style="font-size:10px;color:var(--slate);">ER · Dallas, TX 75201</div></div>
+    <div class="cpill-score">88</div>
+  </div>
+  <div class="cpill" onclick="loadCand(this,2)">
+    <div class="cav" style="background:linear-gradient(135deg,#FFC84A,#D4A020);color:#05080F;">SR</div>
+    <div><div class="cpill-name">Sarah Rodriguez, RN</div><div style="font-size:10px;color:var(--slate);">ICU · Los Angeles, CA 90012</div></div>
+    <div class="cpill-score">86</div>
+  </div>
+  <div class="cpill" onclick="loadCand(this,3)">
+    <div class="cav" style="background:linear-gradient(135deg,#FF5A5A,#CC2020);color:#fff;">KL</div>
+    <div><div class="cpill-name">Dr. Kevin Liang, MD</div><div style="font-size:10px;color:var(--slate);">EM · Chicago, IL 60601</div></div>
+    <div class="cpill-score">82</div>
+  </div>
+  <div class="cpill" onclick="loadCand(this,4)">
+    <div class="cav" style="background:linear-gradient(135deg,#4B9EFF,#1A6ACC);color:#fff;">TC</div>
+    <div><div class="cpill-name">Tanya Collins, CRNA</div><div style="font-size:10px;color:var(--slate);">CRNA · Nashville, TN 37201</div></div>
+    <div class="cpill-score">79</div>
+  </div>
+  <div class="cpill" onclick="loadCand(this,5)">
+    <div class="cav" style="background:linear-gradient(135deg,#3EC97B,#1A8A4A);color:#05080F;">PW</div>
+    <div><div class="cpill-name">Priya Waller, PharmD</div><div style="font-size:10px;color:var(--slate);">Onco · New York, NY 10001</div></div>
+    <div class="cpill-score">76</div>
+  </div>
+</div>
+
+<!-- ── MAIN APP ── -->
+<div class="app">
+
+<!-- ════ LEFT PANEL ════ -->
+<div class="lp">
+  <div class="lp-head">
+    <div class="lp-title">Pay Package Configuration</div>
+    <div class="lp-sub" id="cand-sub-label">Candidate: <strong style="color:var(--teal);">Jessica Martinez, RN</strong> · Houston, TX</div>
+  </div>
+  <div class="lp-body">
+
+    <div class="sec">
+      <div class="sec-lbl">Job & Contract</div>
+      <div class="frow">
+        <div class="fld">
+          <div class="fld-lbl">Bill Rate ($/hr) <span class="fld-hint">Client pays</span></div>
+          <div class="pfx-wrap"><span class="pfx">$</span>
+            <input class="fin pl" id="bill-rate" type="number" value="82" min="20" max="500" oninput="recalc()">
+          </div>
+        </div>
+        <div class="fld">
+          <div class="fld-lbl">Contract Weeks</div>
+          <select class="fsel" id="weeks" onchange="recalc()">
+            <option value="13" selected>13 weeks</option>
+            <option value="26">26 weeks</option>
+            <option value="39">39 weeks</option>
+            <option value="52">52 weeks</option>
+          </select>
+        </div>
+      </div>
+      <div class="frow">
+        <div class="fld">
+          <div class="fld-lbl">Hrs/Week</div>
+          <select class="fsel" id="hrs" onchange="recalc()">
+            <option value="36" selected>36 (3×12)</option>
+            <option value="40">40 hrs</option>
+            <option value="48">48 hrs</option>
+          </select>
+        </div>
+        <div class="fld">
+          <div class="fld-lbl">OT hrs/week</div>
+          <input class="fin" id="ot" type="number" value="0" min="0" oninput="recalc()">
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-lbl">Margin & Burden</div>
+      <div class="fld">
+        <div class="fld-lbl">Agency Margin <span class="fld-hint" id="margin-hint">20% default</span></div>
+        <div class="sl-row">
+          <input type="range" class="fslider" id="margin-sl" min="10" max="35" value="20" oninput="updateSl('margin');recalc()">
+          <div class="sl-val" id="margin-slv">20%</div>
+        </div>
+      </div>
+      <div class="fld">
+        <div class="fld-lbl">Burden Multiplier <span class="fld-hint">1.20× = fully loaded</span></div>
+        <div class="sl-row">
+          <input type="range" class="fslider" id="burden-sl" min="110" max="140" value="120" step="1" oninput="updateSl('burden');recalc()">
+          <div class="sl-val" id="burden-slv">1.20×</div>
+        </div>
+      </div>
+      <div class="fld">
+        <div class="fld-lbl">Benefits Cost ($/hr)</div>
+        <div class="pfx-wrap"><span class="pfx">$</span>
+          <input class="fin pl" id="benefits" type="number" value="4.50" step="0.25" oninput="recalc()">
+        </div>
+      </div>
+      <div class="mini-calc">
+        <div class="mc-row"><span class="mc-lbl">Bill Rate</span><span class="mc-val" id="mc-bill" style="color:var(--white);">$82.00/hr</span></div>
+        <div class="mc-row"><span class="mc-lbl">Agency Margin</span><span class="mc-val" id="mc-margin" style="color:var(--red);">$16.40/hr</span></div>
+        <div class="mc-divider"></div>
+        <div class="mc-row"><span class="mc-lbl">Pool for Pay</span><span class="mc-val" id="mc-pool" style="color:var(--teal);">$65.60/hr</span></div>
+        <div class="mc-row"><span class="mc-lbl">÷ Burden 1.20×</span><span class="mc-val" id="mc-w2" style="color:var(--teal);">$54.67/hr W2</span></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-lbl">GSA Location Lookup</div>
+      <!-- API KEY ROW -->
+      <div class="api-key-row">
+        <input class="api-key-input" id="api-key-inline" placeholder="Paste GSA API key here…" type="password">
+        <button class="api-key-btn" onclick="saveAndFetch()">Fetch Live</button>
+      </div>
+      <div class="frow">
+        <div class="fld">
+          <div class="fld-lbl">City</div>
+          <input class="fin" id="gsa-city" value="Houston" oninput="scheduleGSA()">
+        </div>
+        <div class="fld">
+          <div class="fld-lbl">State</div>
+          <select class="fsel" id="gsa-state" onchange="triggerGSA()">
+            <option value="TX" selected>TX</option>
+            <option value="CA">CA</option>
+            <option value="NY">NY</option>
+            <option value="FL">FL</option>
+            <option value="IL">IL</option>
+            <option value="TN">TN</option>
+            <option value="WA">WA</option>
+            <option value="CO">CO</option>
+            <option value="GA">GA</option>
+            <option value="NC">NC</option>
+            <option value="AZ">AZ</option>
+            <option value="OH">OH</option>
+            <option value="PA">PA</option>
+          </select>
+        </div>
+      </div>
+      <div class="fld">
+        <div class="fld-lbl">ZIP Code <span class="fld-hint">Most accurate for GSA</span></div>
+        <input class="fin" id="gsa-zip" placeholder="e.g. 77002" oninput="scheduleGSA()">
+      </div>
+
+      <!-- GSA STATUS BOX -->
+      <div class="gsa-fetch-box gfb-connecting" id="gsa-fetch-box">
+        <div class="gfb-head">
+          <div class="gfb-title" id="gfb-title" style="color:var(--blue);">
+            <span id="gfb-icon">⟳</span> Connecting to api.gsa.gov…
+          </div>
+          <div class="gfb-time" id="gfb-time"></div>
+        </div>
+        <div class="gfb-grid" id="gfb-grid">
+          <div class="gfb-item">
+            <div class="gfb-item-lbl">Lodging/night</div>
+            <div class="gfb-item-val" id="gfb-lodging" style="color:var(--blue);">—</div>
+            <div class="gfb-item-sub" id="gfb-lodging-sub">fetching…</div>
+          </div>
+          <div class="gfb-item">
+            <div class="gfb-item-lbl">M&IE/day</div>
+            <div class="gfb-item-val" id="gfb-mie" style="color:var(--blue);">—</div>
+            <div class="gfb-item-sub" id="gfb-mie-sub">fetching…</div>
+          </div>
+          <div class="gfb-item">
+            <div class="gfb-item-lbl">Weekly Stipend</div>
+            <div class="gfb-item-val" id="gfb-weekly" style="color:var(--blue);">—</div>
+            <div class="gfb-item-sub">max tax-free/wk</div>
+          </div>
+          <div class="gfb-item">
+            <div class="gfb-item-lbl">Fiscal Year</div>
+            <div class="gfb-item-val" id="gfb-fy" style="color:var(--blue);">FY2025</div>
+            <div class="gfb-item-sub" id="gfb-src">via api.gsa.gov</div>
+          </div>
+        </div>
+        <!-- Monthly seasonal rates -->
+        <div class="gfb-monthly" id="gfb-monthly" style="display:none;">
+          <div class="gfb-monthly-title">Seasonal Lodging Rates ($/night)</div>
+          <div class="month-rates" id="month-rates-grid"></div>
+        </div>
+        <button class="retry-btn" id="retry-btn" onclick="triggerGSA()" style="display:none;">↻ Retry GSA Fetch</button>
+      </div>
+
+      <div class="fld">
+        <div class="fld-lbl">Housing Override ($/wk) <span class="fld-hint">0 = use GSA rate</span></div>
+        <div class="pfx-wrap"><span class="pfx">$</span>
+          <input class="fin pl" id="housing-ovr" type="number" value="0" oninput="recalc()">
+        </div>
+      </div>
+      <div class="fld">
+        <div class="fld-lbl">M&IE Override ($/wk) <span class="fld-hint">0 = use GSA rate</span></div>
+        <div class="pfx-wrap"><span class="pfx">$</span>
+          <input class="fin pl" id="mie-ovr" type="number" value="0" oninput="recalc()">
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-lbl">Extras</div>
+      <div class="frow">
+        <div class="fld">
+          <div class="fld-lbl">Completion Bonus</div>
+          <div class="pfx-wrap"><span class="pfx">$</span>
+            <input class="fin pl" id="bonus" type="number" value="500" oninput="recalc()">
+          </div>
+        </div>
+        <div class="fld">
+          <div class="fld-lbl">Travel Allowance</div>
+          <div class="pfx-wrap"><span class="pfx">$</span>
+            <input class="fin pl" id="travel" type="number" value="500" oninput="recalc()">
+          </div>
+        </div>
+      </div>
+      <div class="fld">
+        <div class="fld-lbl">Scrubs / Licensing</div>
+        <div class="pfx-wrap"><span class="pfx">$</span>
+          <input class="fin pl" id="reimb" type="number" value="200" oninput="recalc()">
+        </div>
+      </div>
+    </div>
+
+    <button class="calc-btn" onclick="recalc();toast('✅ Calculated','Both packages updated with live GSA rates...')">
+      ⚡ Calculate Pay Package
+    </button>
+
+  </div>
+</div>
+
+<!-- ════ RIGHT PANEL ════ -->
+<div class="rp">
+
+  <!-- OPTIONS -->
+  <div class="opt-toggle fade-up">
+    <button class="opt-btn sel-teal" id="opt-w2" onclick="setOpt('w2')">
+      <div class="opt-icon">🏦</div>
+      <div class="opt-name">Option A — Pure W2</div>
+      <div class="opt-desc">Full taxable hourly rate. Simple, no stipends.</div>
+      <div class="opt-tag tag-teal">TRANSPARENT</div>
+    </button>
+    <button class="opt-btn" id="opt-pd" onclick="setOpt('pd')">
+      <div class="opt-icon">✈️</div>
+      <div class="opt-name">Option B — W2 + Per Diem</div>
+      <div class="opt-desc">Lower taxable W2 + GSA tax-free stipends = max take-home.</div>
+      <div class="opt-tag tag-gold">MAX TAKE-HOME</div>
+    </button>
+  </div>
+
+  <!-- RATE SUMMARY -->
+  <div class="rate-row fade-up">
+    <div class="rc rc-teal">
+      <div class="rc-lbl">Bill Rate</div>
+      <div class="rc-val" style="color:var(--teal);" id="rc-bill">$82.00</div>
+      <div class="rc-sub">per hour · to client</div>
+    </div>
+    <div class="rc rc-red">
+      <div class="rc-lbl">Agency Margin</div>
+      <div class="rc-val" style="color:var(--red);" id="rc-margin">20%</div>
+      <div class="rc-sub" id="rc-margin-sub">$16.40/hr protected</div>
+    </div>
+    <div class="rc rc-blue">
+      <div class="rc-lbl">W2 Rate (Option A)</div>
+      <div class="rc-val" style="color:var(--blue);" id="rc-w2">$54.67</div>
+      <div class="rc-sub">taxable hourly</div>
+    </div>
+    <div class="rc rc-gold" style="background:var(--gold3);border:1px solid rgba(255,200,74,.2);">
+      <div class="rc-lbl">W2 Rate (Option B)</div>
+      <div class="rc-val" style="color:var(--gold);" id="rc-pd">$32.40</div>
+      <div class="rc-sub">+GSA stipend</div>
+    </div>
+  </div>
+
+  <!-- COMPARISON TABLE -->
+  <div class="fade-up">
+  <div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+    Full Package Comparison
+    <span style="flex:1;height:1px;background:var(--border);display:inline-block;"></span>
+    <span id="gsa-source-note" style="font-size:10.5px;font-weight:400;color:var(--slate);">Loading GSA data…</span>
+  </div>
+  <table class="ctbl">
+    <thead>
+      <tr>
+        <th>Component</th>
+        <th class="th-teal">Option A: Pure W2</th>
+        <th class="th-gold">Option B: W2 + Per Diem</th>
+      </tr>
+    </thead>
+    <tbody id="table-body">
+      <!-- filled by JS -->
+    </tbody>
+  </table>
+  </div>
+
+  <!-- BILL RATE BREAKDOWN BARS -->
+  <div class="bar-section fade-up">
+    <div class="bar-title">💹 Bill Rate Allocation Breakdown</div>
+    <div class="bar-row">
+      <div class="bar-hd"><span class="bar-lbl">Agency Margin</span><span style="font-family:var(--fm);font-size:12px;color:var(--red);" id="bar-margin-lbl">20% · $16.40/hr</span></div>
+      <div class="bar-track"><div class="bar-fill" id="bar-margin" style="background:var(--red);"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-hd"><span class="bar-lbl">Burden (taxes + admin)</span><span style="font-family:var(--fm);font-size:12px;color:var(--blue);" id="bar-burden-lbl">12.4% · $10.17/hr</span></div>
+      <div class="bar-track"><div class="bar-fill" id="bar-burden" style="background:var(--blue);"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-hd"><span class="bar-lbl">Benefits included</span><span style="font-family:var(--fm);font-size:12px;color:var(--purple);" id="bar-benefits-lbl">5.5% · $4.50/hr</span></div>
+      <div class="bar-track"><div class="bar-fill" id="bar-benefits" style="background:var(--purple);"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-hd"><span class="bar-lbl">W2 Taxable Pay (Option A)</span><span style="font-family:var(--fm);font-size:12px;color:var(--teal);" id="bar-w2-lbl">66.7% · $54.67/hr</span></div>
+      <div class="bar-track"><div class="bar-fill" id="bar-w2" style="background:var(--teal);"></div></div>
+    </div>
+
+    <div style="margin-top:14px;">
+      <div style="font-size:11.5px;font-weight:600;color:var(--white2);margin-bottom:7px;">Option B Split (per $1 of bill rate)</div>
+      <div class="stk-bar" id="stk-bar"></div>
+      <div class="stk-legend">
+        <div class="stk-leg"><div class="stk-dot" style="background:var(--red);"></div>Margin</div>
+        <div class="stk-leg"><div class="stk-dot" style="background:var(--blue);"></div>Burden</div>
+        <div class="stk-leg"><div class="stk-dot" style="background:var(--purple);"></div>Benefits</div>
+        <div class="stk-leg"><div class="stk-dot" style="background:var(--gold);"></div>W2 Pay</div>
+        <div class="stk-leg"><div class="stk-dot" style="background:var(--teal);"></div>Tax-Free Stipend</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CANDIDATE CHOICE CARDS -->
+  <div class="fade-up">
+    <div style="font-size:13px;font-weight:700;color:var(--white);margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+      Candidate Decision — Select Package
+      <span style="flex:1;height:1px;background:var(--border);display:inline-block;"></span>
+    </div>
+    <div class="choice-row">
+      <div class="ch-card ch-teal" id="ch-w2" onclick="selectPkg('w2')">
+        <div class="ch-icon">🏦</div>
+        <div class="ch-type" style="color:var(--teal);">Option A · Pure W2</div>
+        <div class="ch-hl" style="color:var(--teal);" id="ch-w2-hl">$54.67/hr</div>
+        <div class="ch-sub">Full taxable rate. Straightforward and transparent. Best for local candidates or those who prefer simplicity.</div>
+        <div class="ch-rows">
+          <div class="ch-row"><span class="ch-row-lbl">W2 Hourly Rate</span><span class="ch-row-val" style="color:var(--teal);" id="ch-w2-rate">$54.67</span></div>
+          <div class="ch-row"><span class="ch-row-lbl">Weekly Gross</span><span class="ch-row-val" id="ch-w2-wk">$1,968</span></div>
+          <div class="ch-row"><span class="ch-row-lbl">OT Rate (1.5×)</span><span class="ch-row-val" id="ch-w2-ot">$82.00</span></div>
+          <div class="ch-divider"></div>
+          <div class="ch-total"><span>Contract Total</span><span style="color:var(--teal);" id="ch-w2-tot">$26,784</span></div>
+        </div>
+        <div class="ch-savings" style="background:var(--teal3);color:var(--teal);border:1px solid rgba(0,201,167,.2);">Transparent · W2 Only</div>
+      </div>
+
+      <div class="ch-card ch-gold" id="ch-pd" onclick="selectPkg('pd')">
+        <div class="ch-icon">✈️</div>
+        <div class="ch-type" style="color:var(--gold);">Option B · W2 + Per Diem</div>
+        <div class="ch-hl" style="color:var(--gold);" id="ch-pd-hl">$32.40/hr + stipend</div>
+        <div class="ch-sub">Lower taxable W2 + tax-free GSA housing & M&IE. Higher take-home. Requires qualifying tax home.</div>
+        <div class="ch-rows">
+          <div class="ch-row"><span class="ch-row-lbl">W2 Taxable Rate</span><span class="ch-row-val" style="color:var(--gold);" id="ch-pd-rate">$32.40</span></div>
+          <div class="ch-row"><span class="ch-row-lbl">Housing Stipend/wk <span id="ch-pd-gsatag" style="font-size:9px;color:var(--teal);">(GSA live)</span></span><span class="ch-row-val" style="color:var(--teal);" id="ch-pd-housing">$924</span></div>
+          <div class="ch-row"><span class="ch-row-lbl">M&IE Stipend/wk</span><span class="ch-row-val" style="color:var(--teal);" id="ch-pd-mie">$476</span></div>
+          <div class="ch-row"><span class="ch-row-lbl">Total Weekly Comp</span><span class="ch-row-val" style="color:var(--gold);" id="ch-pd-wk">$2,566</span></div>
+          <div class="ch-divider"></div>
+          <div class="ch-total"><span>Contract Total</span><span style="color:var(--gold);" id="ch-pd-tot">$34,563</span></div>
+        </div>
+        <div class="ch-savings" style="background:var(--gold3);color:var(--gold);border:1px solid rgba(255,200,74,.2);" id="ch-savings">+$7,779 more than W2</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WEEKLY CHART -->
+  <div class="wchart fade-up">
+    <div class="wchart-title">📈 Weekly Earnings Visualization (13-week contract)</div>
+    <div class="wchart-bars" id="wchart-bars"></div>
+    <div class="wchart-labels" id="wchart-labels"></div>
+    <div class="wchart-legend">
+      <div class="wcl"><div class="wcl-dot" style="background:var(--teal);"></div>W2 Taxable Pay</div>
+      <div class="wcl"><div class="wcl-dot" style="background:var(--gold);"></div>Tax-Free Stipend</div>
+      <div class="wcl"><div class="wcl-dot" style="background:var(--red);"></div>Agency Margin</div>
+    </div>
+  </div>
+
+  <!-- OFFER LETTER -->
+  <div class="offer-box fade-up">
+    <div class="offer-hd">
+      <div class="offer-title">📄 Auto-Generated Offer Letter</div>
+      <div class="offer-btns">
+        <button class="ob" onclick="toast('📋 Copied','Package copied to clipboard...')">Copy</button>
+        <button class="ob teal" onclick="toast('💬 Sent via Chat','Pay package sent to candidate chat...')">Send via Chat</button>
+        <button class="ob gold" onclick="toast('📧 Emailed','Formal offer email delivered...')">Email</button>
+      </div>
+    </div>
+    <div class="offer-body" id="offer-body">Loading…</div>
+  </div>
+
+  <!-- DISCLAIMER -->
+  <div class="disc fade-up">
+    <strong>⚠️ GSA Compliance Notice:</strong> Per diem rates are sourced live from the U.S. General Services Administration API (api.gsa.gov) per FY2025 CONUS tables. Tax-free stipends apply only when the candidate maintains a legitimate tax home and is traveling away from home per IRS guidelines. Stipends above GSA limits become taxable income. Candidates should consult a licensed tax professional. This system is for compensation modeling only and is not legal or tax advice.
+    <br><strong>API Integration:</strong> Real-time data via <code style="font-family:var(--fm);font-size:10.5px;">https://api.gsa.gov/travel/perdiem/v2/</code> — requires a free API key from <a href="https://api.data.gov/signup" target="_blank" style="color:var(--teal);">api.data.gov</a>.
+  </div>
+
+</div><!-- /rp -->
+</div><!-- /app -->
+
+<!-- ── API KEY MODAL ── -->
+<div class="api-modal" id="api-modal" onclick="if(event.target===this)closeApiModal()">
+  <div class="api-modal-box">
+    <div class="ami-title">🔑 GSA API Key Setup</div>
+    <div class="ami-sub">The GSA Per Diem API is <strong>free</strong> but requires an API key to use. It takes under a minute to get one.</div>
+    <div class="ami-steps">
+      <div class="ami-step">
+        <div class="ami-step-num">1</div>
+        <div>Go to <a href="https://api.data.gov/signup" target="_blank">api.data.gov/signup</a> and register with your work email. Your key arrives instantly.</div>
+      </div>
+      <div class="ami-step">
+        <div class="ami-step-num">2</div>
+        <div>Copy the key from your confirmation email (format: <code style="font-family:var(--fm);font-size:11px;color:var(--teal);">DEMO_KEY</code> for testing, real key for production).</div>
+      </div>
+      <div class="ami-step">
+        <div class="ami-step-num">3</div>
+        <div>Paste it below. Your backend should store it in an environment variable <code style="font-family:var(--fm);font-size:11px;color:var(--teal);">GSA_API_KEY</code> — never expose in client-side code in production.</div>
+      </div>
+    </div>
+    <input class="ami-input" id="modal-api-key" placeholder="Paste your GSA API key here…" type="password">
+    <div style="font-size:11.5px;color:var(--slate);margin-bottom:14px;line-height:1.6;">
+      Rate limit: 1,000 req/hr (free tier). Endpoint used: <code style="font-family:var(--fm);font-size:10.5px;">GET /travel/perdiem/v2/rates/city/{city}/state/{ST}/year/2025</code>
+    </div>
+    <div class="ami-btns">
+      <button class="ami-btn cancel" onclick="closeApiModal()">Cancel</button>
+      <button class="ami-btn save" onclick="saveApiKeyFromModal()">Save & Fetch Live Data</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"><div class="toast-dot"></div><span id="toast-msg"></span></div>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   REAL GSA API INTEGRATION
+   Endpoint: https://api.gsa.gov/travel/perdiem/v2/rates/city/{city}/state/{ST}/year/2025
+   Fallback:  /rates/state/{ST}/year/2025  (state-wide standard rate)
+   CORS note: Direct browser calls to api.gsa.gov work because GSA has CORS open.
+   In production: route through your backend proxy to protect your API key.
+══════════════════════════════════════════════════════ */
+
+const GSA_BASE   = 'https://api.gsa.gov/travel/perdiem/v2';
+const GSA_YEAR   = 2025;
+const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// Comprehensive fallback database (FY2025 standard rates by state + key cities)
+// Used when: no API key, API down, or city not in GSA database
+const FALLBACK_RATES = {
+  // State: {lodging, mie} — Standard rate if city not found
+  'TX':{ lodging:98, mie:68 }, 'CA':{ lodging:157, mie:79 },
+  'NY':{ lodging:118, mie:79 }, 'FL':{ lodging:107, mie:74 },
+  'IL':{ lodging:98,  mie:74 }, 'TN':{ lodging:98,  mie:66 },
+  'WA':{ lodging:137, mie:79 }, 'CO':{ lodging:98,  mie:74 },
+  'GA':{ lodging:98,  mie:68 }, 'NC':{ lodging:98,  mie:68 },
+  'AZ':{ lodging:98,  mie:68 }, 'OH':{ lodging:98,  mie:68 },
+  'PA':{ lodging:98,  mie:74 },
+  // City overrides (FY2025 per GSA published tables)
+  'houston-TX':      { lodging:132, mie:68, months:{Jan:132,Feb:132,Mar:132,Apr:132,May:132,Jun:132,Jul:132,Aug:132,Sep:132,Oct:132,Nov:132,Dec:132} },
+  'dallas-TX':       { lodging:142, mie:68, months:{Jan:131,Feb:131,Mar:142,Apr:142,May:131,Jun:131,Jul:131,Aug:131,Sep:142,Oct:142,Nov:131,Dec:131} },
+  'austin-TX':       { lodging:185, mie:68, months:{Jan:165,Feb:165,Mar:275,Apr:275,May:175,Jun:165,Jul:165,Aug:165,Sep:185,Oct:275,Nov:175,Dec:165} },
+  'los angeles-CA':  { lodging:239, mie:79, months:{Jan:205,Feb:205,Mar:239,Apr:239,May:239,Jun:239,Jul:218,Aug:218,Sep:239,Oct:239,Nov:239,Dec:218} },
+  'san francisco-CA':{ lodging:292, mie:92, months:{Jan:268,Feb:268,Mar:292,Apr:292,May:292,Jun:292,Jul:270,Aug:270,Sep:292,Oct:292,Nov:292,Dec:268} },
+  'new york-NY':     { lodging:296, mie:92, months:{Jan:296,Feb:296,Mar:296,Apr:296,May:296,Jun:296,Jul:296,Aug:296,Sep:296,Oct:296,Nov:296,Dec:296} },
+  'chicago-IL':      { lodging:182, mie:76, months:{Jan:170,Feb:170,Mar:182,Apr:182,May:182,Jun:182,Jul:182,Aug:182,Sep:182,Oct:182,Nov:170,Dec:170} },
+  'nashville-TN':    { lodging:119, mie:66, months:{Jan:107,Feb:107,Mar:119,Apr:119,May:119,Jun:119,Jul:107,Aug:107,Sep:119,Oct:119,Nov:119,Dec:107} },
+  'miami-FL':        { lodging:220, mie:74, months:{Jan:246,Feb:246,Mar:220,Apr:165,May:161,Jun:161,Jul:161,Aug:161,Sep:220,Oct:228,Nov:246,Dec:246} },
+  'orlando-FL':      { lodging:145, mie:74, months:{Jan:152,Feb:152,Mar:145,Apr:145,May:131,Jun:131,Jul:131,Aug:131,Sep:145,Oct:152,Nov:152,Dec:152} },
+  'seattle-WA':      { lodging:207, mie:79, months:{Jan:193,Feb:193,Mar:207,Apr:207,May:207,Jun:207,Jul:207,Aug:207,Sep:207,Oct:207,Nov:193,Dec:193} },
+  'denver-CO':       { lodging:177, mie:74, months:{Jan:165,Feb:165,Mar:177,Apr:177,May:177,Jun:177,Jul:177,Aug:177,Sep:177,Oct:177,Nov:165,Dec:165} },
+};
+
+// Candidate database
+const CANDS = [
+  { name:'Jessica Martinez, RN', short:'Jessica', city:'Houston',     state:'TX', zip:'77002', billBase:82 },
+  { name:'Alex Moore, RN',       short:'Alex',    city:'Dallas',      state:'TX', zip:'75201', billBase:78 },
+  { name:'Sarah Rodriguez, RN',  short:'Sarah',   city:'Los Angeles', state:'CA', zip:'90012', billBase:88 },
+  { name:'Dr. Kevin Liang, MD',  short:'Kevin',   city:'Chicago',     state:'IL', zip:'60601', billBase:96 },
+  { name:'Tanya Collins, CRNA',  short:'Tanya',   city:'Nashville',   state:'TN', zip:'37201', billBase:110 },
+  { name:'Priya Waller, PharmD', short:'Priya',   city:'New York',    state:'NY', zip:'10001', billBase:90 },
+];
+
+/* ── State ── */
+let gsaApiKey   = localStorage.getItem('gsa_api_key') || '';
+let gsaData     = { lodging:132, mie:68, monthly:{}, source:'fallback', city:'Houston', state:'TX' };
+let gsaFetching = false;
+let gsaTimer    = null;
+let calcData    = {};
+let selectedPkg = null;
+let toastTimer  = null;
+
+/* ════════ GSA RATES (via HealthBoard backend proxy) ════════
+   Routes through /api/gsa/rates so the api.data.gov key stays server-side and
+   FY2025 fallback rates are served automatically when no key is configured. */
+async function fetchGSALive(city, state, zip) {
+  setGSAStatus('connecting');
+  gsaFetching = true;
+  try {
+    const res = await fetch(`/api/gsa/rates?city=${encodeURIComponent(city)}&state=${encodeURIComponent(state)}`);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    const curMonth = MONTHS[new Date().getMonth()];
+    const monthly  = d.monthly || {};
+    const lodging  = monthly[curMonth] || d.lodging;
+    const live     = d.source === 'api.gsa.gov';
+    gsaData = {
+      lodging, mie: d.mie, monthly,
+      source: live ? 'live' : 'fallback',
+      city: d.city || city, state: d.state_code || state,
+      county: '', fetchedAt: new Date().toISOString(),
+      fallbackReason: live ? '' : (d.fallback_reason || 'FY2025 offline rates'),
+    };
+    setGSAStatus(live ? 'live' : 'fallback');
+    renderGSABox();
+    recalc();
+  } catch(err) {
+    console.warn('GSA proxy error:', err.message);
+    useFallback(city, state, 'Backend unavailable — offline rates');
+  } finally {
+    gsaFetching = false;
+  }
+}
+
+async function fetchGSAByState(city, state) {
+  const url = `${GSA_BASE}/rates/state/${state}/year/${GSA_YEAR}?api_key=${gsaApiKey}`;
+  try {
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    // State returns all cities — find standard rate (first record)
+    if(data.rates && data.rates.length > 0) {
+      const rate = data.rates[0].rate[0];
+      const months = rate.months.month;
+      const monthly = {};
+      months.forEach(m => { monthly[m.short] = m.value; });
+      const now = new Date();
+      const curMonth = MONTHS[now.getMonth()];
+      const lodging = monthly[curMonth] || months[0].value;
+      const mie = rate.meals;
+      gsaData = { lodging, mie, monthly, source:'live-state', city, state,
+        county:'Standard Rate', fetchedAt: new Date().toISOString() };
+      setGSAStatus('live');
+      renderGSABox();
+      recalc();
+    } else {
+      useFallback(city, state, 'City not in GSA database');
+    }
+  } catch {
+    useFallback(city, state, 'State lookup failed — offline rates');
+  }
+}
+
+function useFallback(city, state, reason) {
+  const key = `${city.toLowerCase()}-${state}`;
+  const stateRate = FALLBACK_RATES[state] || { lodging:98, mie:59 };
+  const cityRate  = FALLBACK_RATES[key];
+  const now = new Date();
+  const curMonth = MONTHS[now.getMonth()];
+
+  let lodging = stateRate.lodging;
+  let monthly = {};
+  if(cityRate) {
+    lodging = cityRate.months ? (cityRate.months[curMonth] || cityRate.lodging) : cityRate.lodging;
+    monthly = cityRate.months || {};
+  }
+  const mie = cityRate ? cityRate.mie : stateRate.mie;
+
+  gsaData = { lodging, mie, monthly, source:'fallback', city, state, fallbackReason: reason };
+  setGSAStatus('fallback');
+  renderGSABox();
+  recalc();
+}
+
+function setGSAStatus(status) {
+  const badge = document.getElementById('gsa-badge');
+  const dot   = document.getElementById('status-dot');
+  const text  = document.getElementById('gsa-badge-text');
+  const box   = document.getElementById('gsa-fetch-box');
+  const retry = document.getElementById('retry-btn');
+
+  badge.className = `gsa-live-badge ${status}`;
+  box.className   = `gsa-fetch-box gfb-${status}`;
+
+  const map = {
+    connecting:{ dot:'dot-blue', text:'Connecting to GSA API…' },
+    live:      { dot:'dot-green', text:'GSA Live — FY2025 Rates' },
+    fallback:  { dot:'dot-gold', text:'GSA Offline — Fallback Rates' },
+    error:     { dot:'dot-red', text:'GSA API Error' },
+  };
+  const cfg = map[status] || map.connecting;
+  dot.className = `status-dot ${cfg.dot}`;
+  text.textContent = cfg.text;
+  retry.style.display = (status === 'fallback' || status === 'error') ? 'block' : 'none';
+}
+
+function renderGSABox() {
+  const d = gsaData;
+  const lodging = d.lodging;
+  const mie     = d.mie;
+  const weeklyMax = (lodging * 7) + (mie * 7);
+  const now     = new Date();
+  const fetchedAt = d.fetchedAt ? new Date(d.fetchedAt).toLocaleTimeString() : 'offline';
+
+  const icons = { live:'✓ GSA Live Data', 'live-state':'✓ GSA State Rate', fallback:'⚠ Offline Fallback' };
+  const colors= { live:var_('--green'), 'live-state':var_('--teal'), fallback:var_('--gold') };
+
+  document.getElementById('gfb-title').innerHTML =
+    `<span>${icons[d.source]||'⟳'}</span> ${d.city}, ${d.state} — FY${GSA_YEAR}`;
+  document.getElementById('gfb-title').style.color = colors[d.source] || var_('--blue');
+  document.getElementById('gfb-time').textContent  = d.source==='fallback' ? (d.fallbackReason||'offline') : `Fetched: ${fetchedAt}`;
+  document.getElementById('gfb-lodging').textContent     = `$${lodging}`;
+  document.getElementById('gfb-lodging-sub').textContent = 'per night';
+  document.getElementById('gfb-mie').textContent         = `$${mie}`;
+  document.getElementById('gfb-mie-sub').textContent     = 'per day';
+  document.getElementById('gfb-weekly').textContent      = `$${weeklyMax.toLocaleString()}`;
+  document.getElementById('gfb-fy').textContent          = `FY${GSA_YEAR}`;
+  document.getElementById('gfb-src').textContent         = d.source==='fallback' ? 'HealthBoard offline DB' : 'api.gsa.gov';
+  document.getElementById('gsa-source-note').textContent =
+    d.source==='fallback' ? `⚠ Offline rates (${d.fallbackReason||''})` : `✓ Live: api.gsa.gov · ${fetchedAt}`;
+
+  // Color values
+  const col = colors[d.source] || var_('--blue');
+  ['gfb-lodging','gfb-mie','gfb-weekly','gfb-fy'].forEach(id=>{
+    document.getElementById(id).style.color = col;
+  });
+
+  // Monthly rates grid
+  const hasMonthly = d.monthly && Object.keys(d.monthly).length > 0;
+  const monthEl = document.getElementById('gfb-monthly');
+  monthEl.style.display = hasMonthly ? 'block' : 'none';
+  if(hasMonthly) {
+    const curMon = MONTHS[now.getMonth()];
+    const grid = document.getElementById('month-rates-grid');
+    grid.innerHTML = MONTHS.map(m=>{
+      const rate = d.monthly[m] || d.lodging;
+      const isNow = m === curMon;
+      return `<div class="mr-cell" style="${isNow?'border:1px solid var(--teal);':''}">
+        <div class="mr-month" style="${isNow?'color:var(--teal);':''}">${m}</div>
+        <div class="mr-rate" style="color:${isNow?'var(--teal)':'var(--white2)'}">$${rate}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+function var_(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+/* ════════ CALCULATION ENGINE ════════ */
+function recalc() {
+  const bill      = parseFloat(document.getElementById('bill-rate').value) || 82;
+  const margin    = parseFloat(document.getElementById('margin-sl').value) / 100;
+  const weeks     = parseInt(document.getElementById('weeks').value) || 13;
+  const hrs       = parseInt(document.getElementById('hrs').value) || 36;
+  const otHrs     = parseFloat(document.getElementById('ot').value) || 0;
+  const burden    = parseFloat(document.getElementById('burden-sl').value) / 100;
+  const benefits  = parseFloat(document.getElementById('benefits').value) || 4.50;
+  const bonus     = parseFloat(document.getElementById('bonus').value) || 500;
+  const travel    = parseFloat(document.getElementById('travel').value) || 500;
+  const reimb     = parseFloat(document.getElementById('reimb').value) || 200;
+  const housingOvr= parseFloat(document.getElementById('housing-ovr').value) || 0;
+  const mieOvr    = parseFloat(document.getElementById('mie-ovr').value) || 0;
+
+  // Revenue
+  const agencyHr   = bill * margin;
+  const poolHr     = bill - agencyHr;
+  const weeklyRev  = bill * hrs;
+  const agencyWkly = agencyHr * hrs;
+  const agencyCont = agencyWkly * weeks;
+
+  // ── Option A: Pure W2 ──
+  // Pool = W2 * burden + benefits → W2 = (pool - benefits) / burden
+  const w2Rate  = (poolHr - benefits) / burden;
+  const otW2    = w2Rate * 1.5;
+  const grossWkW2 = (w2Rate * hrs) + (otW2 * otHrs);
+  const contW2  = grossWkW2 * weeks;
+  const totalW2 = contW2 + bonus + travel + reimb;
+  const netWkW2 = grossWkW2 * 0.72;
+
+  // ── Option B: W2 + GSA Per Diem ──
+  const lodging = gsaData.lodging;
+  const mie     = gsaData.mie;
+  const lodgingWk = housingOvr > 0 ? Math.min(housingOvr, lodging * 7) : lodging * 7;
+  const mieWk    = mieOvr > 0     ? Math.min(mieOvr, mie * 7)         : mie * 7;
+  const stipendWk   = lodgingWk + mieWk;
+  const stipendHr   = stipendWk / hrs;  // cost per hour equivalent
+
+  // Pool = W2pd * burden + benefits + stipendHr → W2pd = (pool - benefits - stipendHr) / burden
+  const w2RatePD = Math.max(0, (poolHr - benefits - stipendHr) / burden);
+  const otPD     = w2RatePD * 1.5;
+  const grossWkPD = (w2RatePD * hrs) + (otPD * otHrs);
+  const totalWkPD = grossWkPD + stipendWk;
+  const contPD    = totalWkPD * weeks;
+  const totalPD   = contPD + bonus + travel + reimb;
+  const netWkPD   = (grossWkPD * 0.72) + stipendWk;
+
+  const advantage = totalPD - totalW2;
+
+  // Percentages for bars
+  const pctMargin   = margin * 100;
+  const burdenCostHr = w2Rate * (burden - 1);
+  const pctBurden   = (burdenCostHr / bill) * 100;
+  const pctBenefits = (benefits / bill) * 100;
+  const pctW2A      = (w2Rate / bill) * 100;
+  const pctW2B      = (w2RatePD / bill) * 100;
+  const pctStipend  = (stipendHr / bill) * 100;
+
+  calcData = { bill, margin, weeks, hrs, otHrs, burden, benefits, bonus, travel, reimb,
+    agencyHr, poolHr, weeklyRev, agencyWkly, agencyCont,
+    w2Rate, otW2, grossWkW2, contW2, totalW2, netWkW2,
+    w2RatePD, otPD, grossWkPD, lodgingWk, mieWk, stipendWk, totalWkPD, contPD, totalPD, netWkPD,
+    advantage, pctMargin, pctBurden, pctBenefits, pctW2A, pctW2B, pctStipend };
+
+  updateUI();
+}
+
+function updateUI() {
+  const d = calcData;
+  const f = (n,dec=2) => parseFloat(n).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+  const fi= n => Math.round(n).toLocaleString();
+
+  // Mini calc
+  sel('mc-bill',   `$${f(d.bill)}/hr`);
+  sel('mc-margin', `$${f(d.agencyHr)}/hr`);
+  sel('mc-pool',   `$${f(d.poolHr)}/hr`);
+  sel('mc-w2',     `$${f(d.w2Rate)}/hr W2`);
+
+  // Rate cards
+  sel('rc-bill',       `$${f(d.bill)}`);
+  sel('rc-margin',     `${d.margin*100}%`);
+  sel('rc-margin-sub', `$${f(d.agencyHr)}/hr · $${fi(d.agencyWkly)}/wk`);
+  sel('rc-w2',         `$${f(d.w2Rate)}`);
+  sel('rc-pd',         `$${f(d.w2RatePD)}`);
+
+  // Comparison table
+  buildTable(d);
+
+  // Bars
+  setBar('bar-margin',   d.pctMargin);
+  sel('bar-margin-lbl',  `${d.pctMargin}% · $${f(d.agencyHr)}/hr`);
+  setBar('bar-burden',   d.pctBurden);
+  sel('bar-burden-lbl',  `${d.pctBurden.toFixed(1)}% · $${f(calcData.w2Rate*(calcData.burden-1))}/hr`);
+  setBar('bar-benefits', d.pctBenefits);
+  sel('bar-benefits-lbl',`${d.pctBenefits.toFixed(1)}% · $${f(d.benefits)}/hr`);
+  setBar('bar-w2',       d.pctW2A);
+  sel('bar-w2-lbl',      `${d.pctW2A.toFixed(1)}% · $${f(d.w2Rate)}/hr`);
+
+  // Stacked bar
+  document.getElementById('stk-bar').innerHTML = [
+    `<div class="stk-seg" style="width:${d.pctMargin}%;background:var(--red);"></div>`,
+    `<div class="stk-seg" style="width:${d.pctBurden.toFixed(1)}%;background:var(--blue);"></div>`,
+    `<div class="stk-seg" style="width:${d.pctBenefits.toFixed(1)}%;background:var(--purple);"></div>`,
+    `<div class="stk-seg" style="width:${d.pctW2B.toFixed(1)}%;background:var(--gold);"></div>`,
+    `<div class="stk-seg" style="width:${d.pctStipend.toFixed(1)}%;background:var(--teal);"></div>`,
+  ].join('');
+
+  // Choice cards
+  sel('ch-w2-hl',     `$${f(d.w2Rate)}/hr`);
+  sel('ch-w2-rate',   `$${f(d.w2Rate)}`);
+  sel('ch-w2-wk',     `$${fi(d.grossWkW2)}`);
+  sel('ch-w2-ot',     `$${f(d.otW2)}`);
+  sel('ch-w2-tot',    `$${fi(d.totalW2)}`);
+  sel('ch-pd-hl',     `$${f(d.w2RatePD)}/hr + stipend`);
+  sel('ch-pd-rate',   `$${f(d.w2RatePD)}`);
+  sel('ch-pd-housing',`$${fi(d.lodgingWk)}`);
+  sel('ch-pd-mie',    `$${fi(d.mieWk)}`);
+  sel('ch-pd-wk',     `$${fi(d.totalWkPD)}`);
+  sel('ch-pd-tot',    `$${fi(d.totalPD)}`);
+  sel('ch-savings',   `+$${fi(d.advantage)} more than W2`);
+
+  // Chart
+  buildChart(d);
+  // Offer letter
+  buildOffer(d);
+}
+
+function buildTable(d) {
+  const f  = (n,dec=2)=>parseFloat(n).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+  const fi = n=>Math.round(n).toLocaleString();
+  const gsaSrc = gsaData.source==='fallback' ? '⚠ offline' : '✓ GSA live';
+
+  document.getElementById('table-body').innerHTML = `
+    <tr class="sep-row"><td colspan="3">📥 Revenue (per week)</td></tr>
+    <tr><td class="lbl-cell">Bill Rate (to client)</td><td class="vteal">$${f(d.bill)}/hr</td><td class="vgold">$${f(d.bill)}/hr</td></tr>
+    <tr><td class="lbl-cell">Weekly Revenue</td><td class="vm">$${fi(d.weeklyRev)}</td><td class="vm">$${fi(d.weeklyRev)}</td></tr>
+
+    <tr class="sep-row"><td colspan="3">🏢 Agency (protected)</td></tr>
+    <tr><td class="lbl-cell">Margin %</td><td class="vm">${d.margin*100}%</td><td class="vm">${d.margin*100}%</td></tr>
+    <tr><td class="lbl-cell">Margin $/hr</td><td class="vm">$${f(d.agencyHr)}</td><td class="vm">$${f(d.agencyHr)}</td></tr>
+    <tr><td class="lbl-cell">Agency Revenue / week</td><td class="vm">$${fi(d.agencyWkly)}</td><td class="vm">$${fi(d.agencyWkly)}</td></tr>
+    <tr><td class="lbl-cell">Agency Revenue (contract)</td><td class="vm">$${fi(d.agencyCont)}</td><td class="vm">$${fi(d.agencyCont)}</td></tr>
+
+    <tr class="sep-row"><td colspan="3">👩‍⚕️ Candidate Pay Calculation</td></tr>
+    <tr><td class="lbl-cell">Pool available ($/hr)</td><td class="vm">$${f(d.poolHr)}</td><td class="vm">$${f(d.poolHr)}</td></tr>
+    <tr><td class="lbl-cell">Burden multiplier</td><td class="vm">${d.burden.toFixed(2)}×</td><td class="vm">${d.burden.toFixed(2)}×</td></tr>
+    <tr><td class="lbl-cell">Benefits cost ($/hr)</td><td class="vm">$${f(d.benefits)}</td><td class="vm">$${f(d.benefits)}</td></tr>
+    <tr class="hl-teal"><td class="lbl-cell"><strong>Taxable W2 Rate ($/hr)</strong></td><td class="vteal"><strong>$${f(d.w2Rate)}</strong></td><td class="vgold"><strong>$${f(d.w2RatePD)}</strong></td></tr>
+    <tr><td class="lbl-cell">OT Rate (1.5×)</td><td class="vm">$${f(d.otW2)}</td><td class="vm">$${f(d.otPD)}</td></tr>
+
+    <tr class="sep-row"><td colspan="3">🏠 GSA Tax-Free Stipends (Option B only) — ${gsaSrc}</td></tr>
+    <tr><td class="lbl-cell">GSA Lodging Rate</td><td style="color:var(--slate2);font-family:var(--fm);">—</td><td class="vgold">$${gsaData.lodging}/night</td></tr>
+    <tr><td class="lbl-cell">GSA M&IE Rate</td><td style="color:var(--slate2);font-family:var(--fm);">—</td><td class="vgold">$${gsaData.mie}/day</td></tr>
+    <tr><td class="lbl-cell">Housing Stipend / week</td><td style="color:var(--slate2);font-family:var(--fm);">—</td><td class="vgold">$${fi(d.lodgingWk)}</td></tr>
+    <tr><td class="lbl-cell">M&IE Stipend / week</td><td style="color:var(--slate2);font-family:var(--fm);">—</td><td class="vgold">$${fi(d.mieWk)}</td></tr>
+    <tr class="hl-gold"><td class="lbl-cell"><strong>Total Tax-Free / week</strong></td><td style="color:var(--slate2);font-family:var(--fm);">—</td><td class="vgold"><strong>$${fi(d.stipendWk)}</strong></td></tr>
+
+    <tr class="sep-row"><td colspan="3">💵 Weekly Take-Home</td></tr>
+    <tr><td class="lbl-cell">Gross Taxable Pay / week</td><td class="vteal">$${fi(d.grossWkW2)}</td><td class="vgold">$${fi(d.grossWkPD)}</td></tr>
+    <tr><td class="lbl-cell">Tax-Free Stipend / week</td><td style="color:var(--slate2);font-family:var(--fm);">$0</td><td class="vgold">$${fi(d.stipendWk)}</td></tr>
+    <tr class="hl-both"><td class="lbl-cell"><strong>Total Weekly Comp</strong></td><td class="vteal"><strong>$${fi(d.grossWkW2)}</strong></td><td class="vgold"><strong>$${fi(d.totalWkPD)}</strong></td></tr>
+    <tr><td class="lbl-cell">Est. Net Take-Home/wk (~28% tax)</td><td class="vm">~$${fi(d.netWkW2)}</td><td class="vm">~$${fi(d.netWkPD)}</td></tr>
+
+    <tr class="sep-row"><td colspan="3">📅 Contract Totals (${d.weeks} weeks)</td></tr>
+    <tr><td class="lbl-cell">Total Gross Earnings</td><td class="vteal">$${fi(d.contW2)}</td><td class="vgold">$${fi(d.contPD)}</td></tr>
+    <tr><td class="lbl-cell">Completion Bonus</td><td class="vm">$${fi(d.bonus)}</td><td class="vm">$${fi(d.bonus)}</td></tr>
+    <tr><td class="lbl-cell">Travel Allowance</td><td class="vm">$${fi(d.travel)}</td><td class="vm">$${fi(d.travel)}</td></tr>
+    <tr><td class="lbl-cell">Reimbursements</td><td class="vm">$${fi(d.reimb)}</td><td class="vm">$${fi(d.reimb)}</td></tr>
+    <tr class="hl-both"><td class="lbl-cell"><strong>TOTAL CONTRACT VALUE</strong></td>
+      <td class="vteal" style="font-size:14px;"><strong>$${fi(d.totalW2)}</strong></td>
+      <td class="vgold" style="font-size:14px;"><strong>$${fi(d.totalPD)}</strong></td></tr>
+  `;
+}
+
+function buildChart(d) {
+  const barsEl   = document.getElementById('wchart-bars');
+  const labelsEl = document.getElementById('wchart-labels');
+  barsEl.innerHTML = ''; labelsEl.innerHTML = '';
+  const show = Math.min(d.weeks, 10);
+  const maxV = Math.max(d.grossWkW2, d.totalWkPD, d.agencyWkly) * 1.1;
+  const H = 90;
+  for(let w=1;w<=show;w++){
+    const grp = document.createElement('div'); grp.className='wchart-grp';
+    const h1 = Math.round((d.grossWkW2/maxV)*H);
+    const h2 = Math.round((d.stipendWk/maxV)*H);
+    const h3 = Math.round((d.agencyWkly/maxV)*H);
+    grp.innerHTML=`
+      <div class="wchart-bar" style="height:${h1}px;background:var(--teal);opacity:.85;"></div>
+      <div class="wchart-bar" style="height:${h2}px;background:var(--gold);opacity:.85;"></div>
+      <div class="wchart-bar" style="height:${h3}px;background:var(--red);opacity:.7;"></div>`;
+    barsEl.appendChild(grp);
+    const lb = document.createElement('div'); lb.className='wchart-lbl';
+    lb.textContent='W'+w; labelsEl.appendChild(lb);
+  }
+  if(d.weeks>10){
+    const m=document.createElement('div');
+    m.style.cssText='font-size:9px;color:var(--slate2);align-self:flex-end;padding-bottom:4px;';
+    m.textContent=`+${d.weeks-10}`;
+    barsEl.appendChild(m);
+  }
+}
+
+function buildOffer(d) {
+  const candName = document.getElementById('cand-sub-label').querySelector('strong')?.textContent || 'Candidate';
+  const city  = gsaData.city;
+  const state = gsaData.state;
+  const f  = (n,dec=2)=>parseFloat(n).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+  const fi = n=>Math.round(n).toLocaleString();
+  const src = gsaData.source==='fallback' ? '(offline fallback rates)' : `(GSA FY${GSA_YEAR} live · ${city}, ${state})`;
+
+  document.getElementById('offer-body').innerHTML = `
+    Dear <strong>${candName.split(',')[0]}</strong>,<br><br>
+    We're pleased to present your official pay package offer for <strong>${city}, ${state}</strong>.<br><br>
+    <strong>💰 Option A — Pure W2:</strong><br>
+    • Base rate: <strong>$${f(d.w2Rate)}/hr</strong> | OT: $${f(d.otW2)}/hr<br>
+    • Weekly gross: <strong>$${fi(d.grossWkW2)}</strong> | ${d.weeks}-wk total: <strong>$${fi(d.totalW2)}</strong><br><br>
+    <span class="gd"><strong>⭐ Option B — W2 + GSA Per Diem ${src}:</strong></span><br>
+    • Taxable W2: <span class="gd"><strong>$${f(d.w2RatePD)}/hr</strong></span><br>
+    • Housing stipend: <span class="gd"><strong>$${fi(d.lodgingWk)}/wk</strong></span> (tax-free · GSA lodging $${gsaData.lodging}/night)<br>
+    • M&IE stipend: <span class="gd"><strong>$${fi(d.mieWk)}/wk</strong></span> (tax-free · GSA M&IE $${gsaData.mie}/day)<br>
+    • Total weekly: <span class="gd"><strong>$${fi(d.totalWkPD)}</strong></span> | ${d.weeks}-wk total: <span class="gd"><strong>$${fi(d.totalPD)}</strong></span><br>
+    • Additional savings vs W2: <span class="gd"><strong>+$${fi(d.advantage)}</strong></span><br><br>
+    <strong>✅ Both options include:</strong> $${fi(d.bonus)} completion bonus · $${fi(d.travel)} travel allowance · $${fi(d.reimb)} reimbursements · Day 1 Medical/Dental/Vision<br><br>
+    Reply with <strong>A</strong> or <strong>B</strong> to confirm your preference.<br><br>
+    — HealthBoard Recruiting Team
+  `;
+}
+
+/* ════════ UI HELPERS ════════ */
+function sel(id,html){const e=document.getElementById(id);if(e)e.innerHTML=html;}
+function setBar(id,pct){const e=document.getElementById(id);if(e)e.style.width=Math.min(100,Math.max(0,pct))+'%';}
+
+function updateSl(which) {
+  if(which==='margin'){
+    const v=document.getElementById('margin-sl').value;
+    const pct=((v-10)/(35-10))*100;
+    document.getElementById('margin-sl').style.setProperty('--v',pct+'%');
+    document.getElementById('margin-slv').textContent=v+'%';
+  } else {
+    const v=document.getElementById('burden-sl').value;
+    const pct=((v-110)/(140-110))*100;
+    document.getElementById('burden-sl').style.setProperty('--v',pct+'%');
+    document.getElementById('burden-slv').textContent=(v/100).toFixed(2)+'×';
+  }
+}
+
+function setOpt(which){
+  document.getElementById('opt-w2').className = 'opt-btn'+(which==='w2'?' sel-teal':'');
+  document.getElementById('opt-pd').className = 'opt-btn'+(which==='pd'?' sel-gold':'');
+}
+
+function selectPkg(which){
+  selectedPkg = which;
+  document.getElementById('ch-w2').classList.toggle('sel', which==='w2');
+  document.getElementById('ch-pd').classList.toggle('sel', which==='pd');
+  toast(which==='w2'?'🏦 Option A (W2) selected':'✈️ Option B (Per Diem) selected','Offer letter updated...');
+}
+
+/* ════════ CANDIDATE LOADER ════════ */
+function loadCand(el, idx){
+  document.querySelectorAll('.cpill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  const c = CANDS[idx];
+  document.getElementById('cand-sub-label').innerHTML =
+    `Candidate: <strong style="color:var(--teal);">${c.name}</strong> · ${c.city}, ${c.state}`;
+  document.getElementById('bill-rate').value = c.billBase;
+  document.getElementById('gsa-city').value  = c.city;
+  document.getElementById('gsa-state').value = c.state;
+  document.getElementById('gsa-zip').value   = c.zip || '';
+  triggerGSA();
+  toast('👤 '+c.name,'GSA rates loading for '+c.city+', '+c.state+'...');
+}
+
+/* ════════ GSA TRIGGER / SCHEDULE ════════ */
+let gsaDebounce = null;
+function scheduleGSA(){ clearTimeout(gsaDebounce); gsaDebounce=setTimeout(triggerGSA,800); }
+function triggerGSA(){
+  const city  = document.getElementById('gsa-city').value.trim();
+  const state = document.getElementById('gsa-state').value;
+  fetchGSALive(city, state);
+}
+function saveAndFetch(){
+  const key = document.getElementById('api-key-inline').value.trim();
+  if(key){ gsaApiKey = key; localStorage.setItem('gsa_api_key', key); }
+  triggerGSA();
+}
+
+/* ════════ API KEY MODAL ════════ */
+function openApiModal(){ document.getElementById('api-modal').classList.add('open'); }
+function closeApiModal(){ document.getElementById('api-modal').classList.remove('open'); }
+function saveApiKeyFromModal(){
+  const key = document.getElementById('modal-api-key').value.trim();
+  if(!key){ toast('⚠️ No key entered','Paste your api.data.gov key first'); return; }
+  gsaApiKey = key;
+  localStorage.setItem('gsa_api_key', key);
+  document.getElementById('api-key-inline').value = key;
+  closeApiModal();
+  triggerGSA();
+  toast('🔑 API key saved','Fetching live GSA rates now...');
+}
+
+/* ════════ TOAST ════════ */
+function toast(msg, sub){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg+(sub?' — '+sub:'');
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),3400);
+}
+
+/* ════════ INIT ════════ */
+document.addEventListener('DOMContentLoaded', ()=>{
+  // Load saved API key
+  if(gsaApiKey) document.getElementById('api-key-inline').value = gsaApiKey;
+  // Init sliders
+  updateSl('margin'); updateSl('burden');
+  // Initial GSA fetch (will use fallback if no key)
+  triggerGSA();
+});
+</script>
+</body>
+</html>

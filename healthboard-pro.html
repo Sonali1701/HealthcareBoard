@@ -1,0 +1,2962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HealthBoard Pro — Healthcare Careers & Community</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+/* ── TOKENS ─────────────────────────────────── */
+:root{
+  --teal:#1261D8;--teal-light:#EAF2FF;--teal-mid:#2F7AF6;--teal-dark:#0B46A3;
+  --navy:#082452;--navy-mid:#0F3D82;--sky:#4BA3FF;
+  --coral:#F05A28;--coral-light:#FEF0EB;
+  --cream:#FAF8F4;--white:#FFFFFF;
+  --gray-50:#F7F9FC;--gray-100:#EDF1F7;--gray-200:#D5DCE8;--gray-400:#8A97AB;--gray-600:#4A5568;--gray-800:#1A202C;
+  --gold:#D4A843;
+  --font-display:'DM Serif Display',serif;
+  --font-body:'DM Sans',sans-serif;
+  --radius-sm:6px;--radius-md:10px;--radius-lg:16px;--radius-xl:24px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06);
+  --shadow-md:0 4px 16px rgba(0,0,0,.10),0 2px 6px rgba(0,0,0,.07);
+  --shadow-lg:0 12px 40px rgba(0,0,0,.14);
+  --sidebar:240px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{font-family:var(--font-body);background:var(--gray-50);color:var(--gray-800);min-height:100vh;overflow-x:hidden;}
+
+/* ── LAYOUT ─────────────────────────────────── */
+.app{display:flex;min-height:100vh;}
+.sidebar{
+  width:var(--sidebar);flex-shrink:0;background:var(--navy);
+  display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;
+  transition:transform .3s ease;
+}
+.main-content{margin-left:var(--sidebar);flex:1;display:flex;flex-direction:column;}
+.page{display:none;flex:1;flex-direction:column;}
+.page.active{display:flex;}
+
+/* ── SIDEBAR ─────────────────────────────────── */
+.sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,.08);}
+.sidebar-logo .logo-mark{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:36px;height:36px;background:var(--teal-mid);border-radius:10px;display:flex;align-items:center;justify-content:center;}
+.logo-icon i{color:#fff;font-size:18px;}
+.logo-text{font-family:var(--font-display);color:#fff;font-size:17px;line-height:1.2;}
+.logo-text span{color:var(--teal-mid);}
+.logo-sub{font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
+
+.nav-section{padding:16px 12px 8px;font-size:10px;color:rgba(255,255,255,.3);letter-spacing:.1em;text-transform:uppercase;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;margin:1px 8px;border-radius:var(--radius-md);cursor:pointer;color:rgba(255,255,255,.55);font-size:13.5px;font-weight:400;transition:all .18s;text-decoration:none;}
+.nav-item:hover{background:rgba(255,255,255,.07);color:rgba(255,255,255,.9);}
+.nav-item.active{background:rgba(26,158,158,.2);color:#fff;font-weight:500;}
+.nav-item.active i{color:var(--teal-mid);}
+.nav-item i{font-size:15px;width:18px;text-align:center;}
+.nav-badge{margin-left:auto;background:var(--coral);color:#fff;font-size:10px;padding:2px 6px;border-radius:20px;font-weight:600;}
+
+.sidebar-footer{margin-top:auto;padding:16px;border-top:1px solid rgba(255,255,255,.08);}
+.user-mini{display:flex;align-items:center;gap:10px;}
+.avatar-sm{width:32px;height:32px;border-radius:50%;background:var(--teal-mid);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;flex-shrink:0;}
+.user-mini-info{flex:1;min-width:0;}
+.user-mini-name{font-size:12.5px;color:#fff;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.user-mini-role{font-size:11px;color:rgba(255,255,255,.4);}
+
+/* ── TOP BAR ─────────────────────────────────── */
+.topbar{background:#fff;border-bottom:1px solid var(--gray-200);padding:0 28px;height:62px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:50;}
+.topbar-search{flex:1;max-width:480px;display:flex;align-items:center;gap:8px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:0 14px;height:38px;}
+.topbar-search input{border:none;background:transparent;font-family:var(--font-body);font-size:14px;color:var(--gray-800);outline:none;flex:1;}
+.topbar-search i{color:var(--gray-400);font-size:14px;}
+.topbar-actions{display:flex;align-items:center;gap:8px;margin-left:auto;}
+.icon-btn{width:36px;height:36px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--gray-600);border:1px solid var(--gray-200);background:#fff;position:relative;transition:all .15s;}
+.icon-btn:hover{background:var(--gray-50);}
+.notif-dot{position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--coral);border:1.5px solid #fff;}
+.topbar-user{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 10px;border-radius:var(--radius-md);transition:background .15s;}
+.topbar-user:hover{background:var(--gray-50);}
+.topbar-user .avatar{width:32px;height:32px;border-radius:50%;background:var(--teal);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;}
+.topbar-user-name{font-size:13px;font-weight:500;}
+
+/* ── HERO / DASHBOARD ─────────────────────────── */
+.dash-hero{
+  background:linear-gradient(135deg,var(--navy) 0%,var(--navy-mid) 60%,#1E5080 100%);
+  padding:36px 32px;color:#fff;position:relative;overflow:hidden;
+}
+.dash-hero::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");}
+.dash-hero-inner{position:relative;z-index:1;}
+.dash-greeting{font-size:13px;color:rgba(255,255,255,.5);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px;}
+.dash-title{font-family:var(--font-display);font-size:28px;margin-bottom:6px;}
+.dash-title em{color:var(--teal-mid);font-style:normal;}
+.dash-sub{font-size:14px;color:rgba(255,255,255,.55);margin-bottom:24px;}
+.dash-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
+.metric-card{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:var(--radius-lg);padding:18px 20px;backdrop-filter:blur(8px);}
+.metric-val{font-size:26px;font-weight:600;font-family:var(--font-display);margin-bottom:2px;}
+.metric-val .unit{font-size:14px;font-weight:400;opacity:.6;}
+.metric-label{font-size:12px;color:rgba(255,255,255,.5);margin-bottom:10px;}
+.metric-trend{font-size:11px;display:flex;align-items:center;gap:4px;}
+.metric-trend.up{color:#5DEBA0;}
+.metric-trend.neutral{color:rgba(255,255,255,.4);}
+
+/* ── PAGE BODY ─────────────────────────────────── */
+.page-body{padding:28px 32px;flex:1;}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.section-title{font-family:var(--font-display);font-size:20px;color:var(--gray-800);}
+.section-sub{font-size:13px;color:var(--gray-400);margin-top:2px;}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:var(--radius-md);font-family:var(--font-body);font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .18s;}
+.btn-primary{background:var(--teal);color:#fff;}
+.btn-primary:hover{background:var(--teal-dark);}
+.btn-outline{background:#fff;color:var(--gray-800);border:1px solid var(--gray-200);}
+.btn-outline:hover{background:var(--gray-50);}
+.btn-coral{background:var(--coral);color:#fff;}
+.btn-coral:hover{background:#C94820;}
+.btn-sm{padding:6px 12px;font-size:12px;}
+.btn-lg{padding:12px 24px;font-size:15px;}
+
+/* ── JOB CARDS ─────────────────────────────────── */
+.jobs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
+.job-card{background:#fff;border-radius:var(--radius-lg);border:1px solid var(--gray-200);padding:20px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;}
+.job-card:hover{border-color:var(--teal-mid);box-shadow:var(--shadow-md);transform:translateY(-1px);}
+.job-card.featured::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold);}
+.job-card-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;}
+.employer-logo{width:44px;height:44px;border-radius:var(--radius-md);background:var(--teal-light);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.job-title{font-size:15px;font-weight:600;color:var(--gray-800);margin-bottom:3px;line-height:1.3;}
+.job-employer{font-size:13px;color:var(--gray-400);}
+.job-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500;}
+.badge-teal{background:var(--teal-light);color:var(--teal-dark);}
+.badge-navy{background:#EDF1F7;color:var(--navy-mid);}
+.badge-gold{background:#FFF9EC;color:#855A00;}
+.badge-coral{background:var(--coral-light);color:#9A3210;}
+.badge-green{background:#EAFAF1;color:#1A6B3A;}
+.job-footer{display:flex;align-items:center;justify-content:space-between;padding-top:12px;border-top:1px solid var(--gray-100);}
+.job-pay{font-size:14px;font-weight:600;color:var(--teal-dark);}
+.job-pay-sub{font-size:11px;color:var(--gray-400);font-weight:400;}
+.job-date{font-size:11px;color:var(--gray-400);}
+.job-actions{display:flex;gap:6px;}
+.save-btn{width:30px;height:30px;border-radius:50%;border:1px solid var(--gray-200);background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--gray-400);transition:all .15s;}
+.save-btn:hover,.save-btn.saved{border-color:var(--coral);color:var(--coral);}
+.urgent-tag{background:var(--coral);color:#fff;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;letter-spacing:.04em;}
+
+/* ── PROFILE ─────────────────────────────────── */
+.profile-hero{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-xl);overflow:hidden;margin-bottom:24px;}
+.profile-cover{height:140px;background:linear-gradient(135deg,var(--teal) 0%,var(--navy-mid) 100%);position:relative;}
+.profile-cover-edit{position:absolute;top:12px;right:12px;}
+.profile-info{padding:0 28px 28px;}
+.profile-avatar-wrap{position:relative;display:inline-block;margin-top:-44px;margin-bottom:12px;}
+.profile-avatar{width:88px;height:88px;border-radius:50%;background:var(--teal-mid);display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;font-weight:700;border:4px solid #fff;box-shadow:var(--shadow-sm);}
+.profile-avatar-edit{position:absolute;bottom:2px;right:2px;width:24px;height:24px;background:var(--teal);border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;cursor:pointer;}
+.profile-avatar-edit i{color:#fff;font-size:10px;}
+.profile-name{font-family:var(--font-display);font-size:22px;margin-bottom:2px;}
+.profile-headline{font-size:14px;color:var(--gray-600);margin-bottom:8px;}
+.profile-meta{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
+.profile-meta-item{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gray-400);}
+.profile-meta-item i{font-size:13px;}
+.profile-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--gray-100);border:1px solid var(--gray-100);border-radius:var(--radius-md);overflow:hidden;margin-bottom:20px;}
+.p-stat{background:#fff;padding:14px;text-align:center;}
+.p-stat-val{font-size:18px;font-weight:700;color:var(--teal-dark);}
+.p-stat-label{font-size:11px;color:var(--gray-400);margin-top:2px;}
+.progress-bar-wrap{margin-bottom:16px;}
+.progress-label{display:flex;justify-content:space-between;font-size:12px;color:var(--gray-400);margin-bottom:6px;}
+.progress-track{height:6px;background:var(--gray-100);border-radius:20px;overflow:hidden;}
+.progress-fill{height:100%;background:var(--teal-mid);border-radius:20px;transition:width .6s ease;}
+
+.card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:22px;margin-bottom:16px;}
+.card-title{font-size:14px;font-weight:600;color:var(--gray-800);margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;}
+.card-title i{color:var(--teal);margin-right:8px;}
+
+/* ── SEARCH & FILTER ─────────────────────────── */
+.search-hero{background:linear-gradient(135deg,var(--teal-dark) 0%,var(--navy) 100%);padding:40px 32px;position:relative;overflow:hidden;}
+.search-hero::after{content:'';position:absolute;right:-80px;top:-60px;width:300px;height:300px;background:rgba(255,255,255,.04);border-radius:50%;}
+.search-hero-title{font-family:var(--font-display);font-size:28px;color:#fff;margin-bottom:8px;position:relative;z-index:1;}
+.search-hero-sub{font-size:14px;color:rgba(255,255,255,.5);margin-bottom:24px;position:relative;z-index:1;}
+.search-bar-big{display:flex;gap:0;background:#fff;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);position:relative;z-index:1;}
+.search-bar-big input{flex:1;padding:16px 20px;font-family:var(--font-body);font-size:15px;border:none;outline:none;color:var(--gray-800);}
+.search-bar-big .search-divider{width:1px;background:var(--gray-200);align-self:stretch;margin:10px 0;}
+.search-bar-big select{padding:16px 14px;font-family:var(--font-body);font-size:14px;border:none;outline:none;color:var(--gray-600);background:transparent;cursor:pointer;min-width:160px;}
+.search-bar-big .btn-search{padding:12px 24px;margin:8px;border-radius:var(--radius-md);background:var(--teal);color:#fff;border:none;font-family:var(--font-body);font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap;}
+.search-bar-big .btn-search:hover{background:var(--teal-dark);}
+.filter-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;position:relative;z-index:1;}
+.chip{padding:6px 14px;border-radius:20px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.8);font-size:12.5px;cursor:pointer;border:1px solid rgba(255,255,255,.2);transition:all .15s;}
+.chip:hover,.chip.active{background:rgba(255,255,255,.25);color:#fff;}
+.search-layout{display:grid;grid-template-columns:280px 1fr;gap:20px;padding:24px 32px;}
+.filter-sidebar{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:20px;height:fit-content;position:sticky;top:80px;}
+.filter-group{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--gray-100);}
+.filter-group:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}
+.filter-group-title{font-size:13px;font-weight:600;color:var(--gray-800);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;}
+.filter-item{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;}
+.filter-item input[type=checkbox]{width:15px;height:15px;accent-color:var(--teal);}
+.filter-item label{font-size:13px;color:var(--gray-600);cursor:pointer;flex:1;}
+.filter-item .count{font-size:11px;color:var(--gray-400);}
+.range-slider{width:100%;accent-color:var(--teal);margin:8px 0;}
+.range-labels{display:flex;justify-content:space-between;font-size:12px;color:var(--gray-400);}
+.jobs-list{display:flex;flex-direction:column;gap:14px;}
+.job-list-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:20px;cursor:pointer;transition:all .2s;display:grid;grid-template-columns:48px 1fr auto;gap:16px;align-items:start;}
+.job-list-card:hover{border-color:var(--teal-mid);box-shadow:var(--shadow-sm);}
+.results-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.results-count{font-size:14px;color:var(--gray-600);}
+.results-count strong{color:var(--gray-800);}
+.sort-select{padding:7px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-family:var(--font-body);font-size:13px;color:var(--gray-600);background:#fff;cursor:pointer;}
+
+/* ── SOCIAL / FEED ─────────────────────────────── */
+.feed-layout{display:grid;grid-template-columns:1fr 320px;gap:20px;padding:24px 32px;}
+.feed-col{display:flex;flex-direction:column;gap:16px;}
+.compose-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:18px;}
+.compose-area{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;}
+.compose-input{flex:1;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:12px 16px;font-family:var(--font-body);font-size:14px;color:var(--gray-800);resize:none;height:72px;outline:none;transition:border-color .15s;}
+.compose-input:focus{border-color:var(--teal-mid);}
+.compose-actions{display:flex;gap:8px;align-items:center;}
+.compose-action-btn{display:flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--radius-md);border:1px solid var(--gray-200);background:#fff;font-family:var(--font-body);font-size:12.5px;color:var(--gray-600);cursor:pointer;transition:all .15s;}
+.compose-action-btn:hover{background:var(--gray-50);}
+.post-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;}
+.post-header{display:flex;align-items:flex-start;gap:12px;padding:18px 18px 14px;}
+.post-avatar{width:44px;height:44px;border-radius:50%;background:var(--teal-mid);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;flex-shrink:0;}
+.post-meta{flex:1;}
+.post-name{font-size:14px;font-weight:600;color:var(--gray-800);}
+.post-role{font-size:12px;color:var(--gray-400);}
+.post-time{font-size:11px;color:var(--gray-400);margin-left:auto;}
+.post-body{padding:0 18px 14px;font-size:14px;color:var(--gray-700);line-height:1.65;}
+.post-image{width:100%;height:200px;object-fit:cover;background:linear-gradient(135deg,var(--teal-light),#E8F4FF);}
+.post-image-placeholder{height:180px;background:linear-gradient(135deg,var(--teal-light) 0%,#E8F4FF 100%);display:flex;align-items:center;justify-content:center;margin:0 18px 14px;border-radius:var(--radius-md);}
+.post-image-placeholder i{font-size:40px;color:var(--teal-mid);opacity:.5;}
+.post-actions{display:flex;border-top:1px solid var(--gray-100);padding:10px 18px;gap:4px;}
+.post-action{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:7px;border-radius:var(--radius-md);cursor:pointer;font-size:13px;color:var(--gray-400);transition:all .15s;}
+.post-action:hover{background:var(--gray-50);color:var(--teal);}
+.post-action.liked{color:var(--coral);}
+.post-tags{padding:0 18px 14px;display:flex;gap:6px;flex-wrap:wrap;}
+.tag{font-size:12px;color:var(--teal);background:var(--teal-light);padding:3px 9px;border-radius:20px;cursor:pointer;}
+.sidebar-widget{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:18px;margin-bottom:16px;}
+.widget-title{font-size:14px;font-weight:600;color:var(--gray-800);margin-bottom:14px;}
+.trending-item{display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--gray-100);}
+.trending-item:last-child{border-bottom:none;}
+.trending-num{font-size:18px;font-weight:700;color:var(--gray-200);width:24px;flex-shrink:0;}
+.trending-topic{font-size:13px;font-weight:500;color:var(--gray-800);}
+.trending-posts{font-size:11px;color:var(--gray-400);margin-top:2px;}
+.suggest-user{display:flex;align-items:center;gap:10px;padding:8px 0;}
+.suggest-user-info{flex:1;}
+.suggest-name{font-size:13px;font-weight:500;color:var(--gray-800);}
+.suggest-title{font-size:11px;color:var(--gray-400);}
+.btn-follow{padding:5px 14px;border-radius:20px;border:1px solid var(--teal);color:var(--teal);background:#fff;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;}
+.btn-follow:hover,.btn-follow.following{background:var(--teal);color:#fff;}
+
+/* ── PROFESSIONALS ─────────────────────────────── */
+.pros-header{background:#fff;border-bottom:1px solid var(--gray-200);padding:24px 32px 0;}
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--gray-200);}
+.tab{padding:10px 20px;font-size:14px;color:var(--gray-400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .18s;font-weight:400;}
+.tab.active{color:var(--teal);border-bottom-color:var(--teal);font-weight:500;}
+.tab:hover{color:var(--gray-800);}
+.professionals-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:24px 32px;}
+.hb-resume-doc .hb-r-head{padding-bottom:14px;margin-bottom:6px;border-bottom:2px solid #E7EBF1;}
+.hb-resume-doc h2.hb-r-name{font-size:22px;font-weight:800;margin:0 0 3px;color:var(--navy,#1A202C);}
+.hb-resume-doc .hb-r-role{font-size:14px;font-weight:600;color:var(--teal,#0D6E6E);margin-bottom:6px;}
+.hb-resume-doc .hb-r-meta{font-size:12.5px;color:#64748b;margin:2px 0;}
+.hb-resume-doc .hb-r-meta i{margin-right:5px;color:#94a3b8;}
+.hb-resume-doc .hb-r-board{display:inline-block;margin-top:8px;font-size:12.5px;font-weight:600;color:#0D6E6E;background:#E6F4F1;border-radius:8px;padding:5px 11px;}
+.hb-resume-doc .hb-r-board i{margin-right:5px;}
+.hb-resume-doc h3.hb-r-sec{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--teal,#0D6E6E);margin:18px 0 6px;border-bottom:1px solid #E7EBF1;padding-bottom:4px;}
+.hb-resume-doc .hb-r-body p{margin:2px 0;color:#334155;}
+.hb-resume-doc p{margin:2px 0;color:#334155;}
+#page-professionals .sort-select{min-width:130px;}
+.pro-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;cursor:pointer;transition:all .2s;}
+.pro-card:hover{box-shadow:var(--shadow-md);border-color:var(--teal-mid);}
+.pro-cover{height:70px;background:linear-gradient(135deg,var(--teal) 0%,var(--navy-mid) 100%);}
+.pro-body{padding:0 18px 18px;}
+.pro-avatar{width:58px;height:58px;border-radius:50%;background:var(--teal-mid);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;border:3px solid #fff;margin-top:-29px;margin-bottom:10px;}
+.pro-name{font-size:15px;font-weight:600;color:var(--gray-800);margin-bottom:2px;}
+.pro-role{font-size:12.5px;color:var(--gray-400);margin-bottom:10px;}
+.pro-specialties{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;}
+.provider-contact-lock{display:flex;flex-direction:column;gap:7px;align-items:stretch;margin:8px 0 10px;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius-md);background:#F8FBFF;text-align:left;}
+.provider-contact-lock .state{display:flex;align-items:center;gap:7px;color:var(--gray-600);font-size:12.5px;font-weight:600;}
+.provider-contact-lock .state i{color:var(--teal);}
+.provider-contact-lock.released a{color:var(--teal-dark);font-size:12px;font-weight:600;text-decoration:none;overflow-wrap:anywhere;}
+.provider-contact-lock.released a i{width:14px;margin-right:6px;color:var(--teal);}
+.release-note{display:flex;align-items:center;gap:6px;color:var(--gray-400);font-size:11.5px;}
+.release-note i{color:var(--teal);}
+.btn-release{background:var(--teal-light);border-color:#B7D0FF;color:var(--teal-dark);}
+.btn-release i{color:var(--teal);}
+.btn-release:hover{background:#DBEAFE;border-color:#8DB6FF;}
+.pro-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;padding:12px;background:var(--gray-50);border-radius:var(--radius-md);}
+.pro-stat-val{font-size:16px;font-weight:700;color:var(--teal-dark);}
+.pro-stat-lab{font-size:10px;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;}
+.verified-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--teal);margin-bottom:8px;}
+
+/* ── MESSAGES ─────────────────────────────────── */
+.messages-layout{display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 62px);overflow:hidden;}
+.msg-list{border-right:1px solid var(--gray-200);overflow-y:auto;background:#fff;}
+.msg-list-header{padding:18px 16px;border-bottom:1px solid var(--gray-200);position:sticky;top:0;background:#fff;z-index:1;}
+.msg-list-search{display:flex;align-items:center;gap:8px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:7px 12px;margin-top:10px;}
+.msg-list-search input{border:none;background:transparent;font-family:var(--font-body);font-size:13px;outline:none;flex:1;}
+.msg-thread{display:flex;gap:10px;padding:14px 16px;cursor:pointer;border-bottom:1px solid var(--gray-100);transition:background .15s;position:relative;}
+.msg-thread:hover{background:var(--gray-50);}
+.msg-thread.active{background:var(--teal-light);}
+.msg-thread-avatar{width:42px;height:42px;border-radius:50%;background:var(--teal-mid);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;flex-shrink:0;}
+.msg-thread-info{flex:1;min-width:0;}
+.msg-thread-name{font-size:13.5px;font-weight:500;color:var(--gray-800);}
+.msg-thread-preview{font-size:12px;color:var(--gray-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.msg-thread-time{font-size:11px;color:var(--gray-400);flex-shrink:0;}
+.unread-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);position:absolute;right:16px;top:50%;transform:translateY(-50%);}
+.msg-body{display:flex;flex-direction:column;background:var(--gray-50);}
+.msg-body-header{background:#fff;border-bottom:1px solid var(--gray-200);padding:16px 20px;display:flex;align-items:center;gap:12px;}
+.chat-area{flex:1;overflow-y:auto;padding:20px;}
+.chat-messages{display:flex;flex-direction:column;gap:16px;}
+.msg-bubble-wrap{display:flex;gap:10px;align-items:flex-end;}
+.msg-bubble-wrap.me{flex-direction:row-reverse;}
+.bubble{max-width:68%;padding:12px 16px;border-radius:16px;font-size:14px;line-height:1.55;}
+.bubble.them{background:#fff;border:1px solid var(--gray-200);border-bottom-left-radius:4px;color:var(--gray-800);}
+.bubble.me{background:var(--teal);color:#fff;border-bottom-right-radius:4px;}
+.bubble-time{font-size:10px;color:var(--gray-400);margin-top:4px;}
+.msg-input-bar{background:#fff;border-top:1px solid var(--gray-200);padding:14px 20px;display:flex;gap:10px;align-items:flex-end;}
+.msg-input{flex:1;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:10px 16px;font-family:var(--font-body);font-size:14px;outline:none;resize:none;height:44px;transition:border-color .15s;}
+.msg-input:focus{border-color:var(--teal-mid);}
+.msg-send-btn{width:40px;height:40px;background:var(--teal);border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s;}
+.msg-send-btn:hover{background:var(--teal-dark);}
+.msg-send-btn i{color:#fff;font-size:15px;}
+
+/* ── NOTIFICATIONS ─────────────────────────────── */
+.notif-page{padding:24px 32px;max-width:720px;}
+.notif-group-title{font-size:12px;font-weight:600;color:var(--gray-400);letter-spacing:.06em;text-transform:uppercase;margin:20px 0 10px;}
+.notif-item{display:flex;gap:12px;padding:14px 18px;background:#fff;border-radius:var(--radius-lg);border:1px solid var(--gray-200);margin-bottom:8px;cursor:pointer;transition:all .15s;}
+.notif-item:hover{border-color:var(--gray-400);}
+.notif-item.unread{border-left:3px solid var(--teal);}
+.notif-icon{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.ni-teal{background:var(--teal-light);color:var(--teal);}
+.ni-coral{background:var(--coral-light);color:var(--coral);}
+.ni-gold{background:#FFF9EC;color:var(--gold);}
+.ni-navy{background:#EDF1F7;color:var(--navy-mid);}
+.notif-content{flex:1;}
+.notif-text{font-size:13.5px;color:var(--gray-800);line-height:1.5;}
+.notif-text strong{font-weight:500;}
+.notif-sub{font-size:12px;color:var(--gray-400);margin-top:3px;}
+.notif-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);flex-shrink:0;margin-top:6px;}
+
+/* ── SETTINGS ─────────────────────────────────── */
+.settings-layout{display:grid;grid-template-columns:220px 1fr;gap:24px;padding:24px 32px;}
+.settings-nav{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:12px;height:fit-content;}
+.settings-nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);cursor:pointer;font-size:13.5px;color:var(--gray-600);transition:all .15s;}
+.settings-nav-item:hover{background:var(--gray-50);}
+.settings-nav-item.active{background:var(--teal-light);color:var(--teal-dark);font-weight:500;}
+.settings-nav-item i{font-size:15px;width:18px;}
+.settings-main{}
+.settings-section{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:24px;margin-bottom:16px;}
+.settings-section-title{font-size:15px;font-weight:600;color:var(--gray-800);margin-bottom:4px;}
+.settings-section-sub{font-size:13px;color:var(--gray-400);margin-bottom:20px;}
+.form-group{margin-bottom:18px;}
+.form-label{font-size:13px;font-weight:500;color:var(--gray-700);margin-bottom:6px;display:block;}
+.form-input{width:100%;padding:9px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-family:var(--font-body);font-size:14px;color:var(--gray-800);outline:none;transition:border-color .15s;}
+.form-input:focus{border-color:var(--teal-mid);box-shadow:0 0 0 3px rgba(26,158,158,.1);}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--gray-100);}
+.toggle-row:last-child{border-bottom:none;}
+.toggle-info{}
+.toggle-title{font-size:14px;font-weight:500;color:var(--gray-800);}
+.toggle-sub{font-size:12px;color:var(--gray-400);margin-top:2px;}
+.toggle{position:relative;width:42px;height:24px;}
+.toggle input{opacity:0;width:0;height:0;}
+.toggle-slider{position:absolute;inset:0;background:var(--gray-200);border-radius:20px;cursor:pointer;transition:.2s;}
+.toggle input:checked+.toggle-slider{background:var(--teal);}
+.toggle-slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15);}
+.toggle input:checked+.toggle-slider:before{transform:translateX(18px);}
+
+/* ── JOB DETAIL MODAL ─────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:flex-start;justify-content:flex-end;opacity:0;pointer-events:none;transition:opacity .25s;}
+.modal-overlay.open{opacity:1;pointer-events:all;}
+.job-detail-panel{width:560px;height:100vh;background:#fff;overflow-y:auto;transform:translateX(100%);transition:transform .3s ease;display:flex;flex-direction:column;}
+.modal-overlay.open .job-detail-panel{transform:translateX(0);}
+.jd-header{padding:24px;border-bottom:1px solid var(--gray-100);display:flex;align-items:flex-start;gap:14px;position:sticky;top:0;background:#fff;z-index:1;}
+.jd-logo{width:56px;height:56px;border-radius:var(--radius-lg);background:var(--teal-light);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;}
+.jd-title{font-family:var(--font-display);font-size:20px;color:var(--gray-800);margin-bottom:4px;}
+.jd-employer{font-size:14px;color:var(--gray-400);}
+.jd-close{margin-left:auto;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--gray-400);border:1px solid var(--gray-200);flex-shrink:0;}
+.jd-close:hover{background:var(--gray-50);}
+.jd-body{padding:24px;flex:1;}
+.jd-key-facts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;}
+.jd-fact{background:var(--gray-50);border-radius:var(--radius-md);padding:14px 16px;}
+.jd-fact-label{font-size:11px;color:var(--gray-400);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+.jd-fact-val{font-size:14px;font-weight:500;color:var(--gray-800);}
+.jd-section-title{font-size:15px;font-weight:600;color:var(--gray-800);margin:20px 0 10px;}
+.jd-body p,.jd-body li{font-size:14px;color:var(--gray-600);line-height:1.7;margin-bottom:8px;}
+.jd-body ul{padding-left:20px;}
+.jd-footer{padding:20px 24px;border-top:1px solid var(--gray-100);display:flex;gap:10px;position:sticky;bottom:0;background:#fff;}
+
+/* ── ANALYTICS ─────────────────────────────────── */
+.analytics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:24px 32px 0;}
+.analytics-body{padding:0 32px 24px;}
+.stat-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:20px;}
+.stat-card-icon{width:40px;height:40px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;margin-bottom:14px;}
+.icon-teal{background:var(--teal-light);}
+.icon-teal i{color:var(--teal);}
+.icon-coral{background:var(--coral-light);}
+.icon-coral i{color:var(--coral);}
+.icon-gold{background:#FFF9EC;}
+.icon-gold i{color:var(--gold);}
+.icon-navy{background:#EDF1F7;}
+.icon-navy i{color:var(--navy-mid);}
+.stat-val{font-size:28px;font-weight:700;color:var(--gray-800);font-family:var(--font-display);}
+.stat-label{font-size:13px;color:var(--gray-400);margin-bottom:4px;}
+.stat-change{font-size:12px;margin-top:6px;}
+.stat-change.pos{color:#1A7A4A;}
+.stat-change.neg{color:var(--coral);}
+.chart-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:22px;margin-top:16px;}
+.chart-placeholder{height:200px;background:linear-gradient(180deg,var(--teal-light) 0%,rgba(230,247,247,0) 100%);border-radius:var(--radius-md);position:relative;overflow:hidden;display:flex;align-items:flex-end;}
+.chart-bars{display:flex;align-items:flex-end;gap:8px;padding:0 12px 12px;width:100%;}
+.chart-bar{flex:1;background:var(--teal-mid);border-radius:4px 4px 0 0;opacity:.75;transition:opacity .2s;}
+.chart-bar:hover{opacity:1;}
+
+/* ── EMPLOYER DASHBOARD ─────────────────────────── */
+.emp-header{background:linear-gradient(135deg,var(--navy) 0%,#1E5080 100%);padding:32px;color:#fff;}
+.emp-company{display:flex;align-items:center;gap:16px;margin-bottom:24px;}
+.emp-logo{width:64px;height:64px;border-radius:var(--radius-lg);background:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;}
+.emp-name{font-family:var(--font-display);font-size:24px;margin-bottom:4px;}
+.emp-type{font-size:14px;color:rgba(255,255,255,.5);}
+.emp-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;}
+.emp-stat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:var(--radius-md);padding:16px;}
+.emp-stat-val{font-size:22px;font-weight:700;margin-bottom:2px;}
+.emp-stat-label{font-size:12px;color:rgba(255,255,255,.5);}
+.emp-body{padding:24px 32px;}
+.data-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;}
+.data-table th{background:var(--gray-50);font-size:12px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:.06em;padding:12px 16px;text-align:left;border-bottom:1px solid var(--gray-200);}
+.data-table td{padding:14px 16px;border-bottom:1px solid var(--gray-100);font-size:13.5px;color:var(--gray-700);}
+.data-table tr:last-child td{border-bottom:none;}
+.data-table tr:hover td{background:var(--gray-50);}
+.status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;}
+.sp-active{background:var(--teal-light);color:var(--teal-dark);}
+.sp-paused{background:#FFF9EC;color:#8A5A00;}
+.sp-closed{background:var(--gray-100);color:var(--gray-400);}
+.sp-urgent{background:var(--coral-light);color:#9A3210;}
+
+/* ── RESUME PARSER ─────────────────────────────── */
+.parser-page{padding:24px 32px;}
+.upload-zone{border:2px dashed var(--gray-200);border-radius:var(--radius-xl);padding:60px;text-align:center;cursor:pointer;transition:all .2s;background:#fff;margin-bottom:24px;}
+.upload-zone:hover,.upload-zone.dragging{border-color:var(--teal-mid);background:var(--teal-light);}
+.upload-icon{font-size:48px;color:var(--gray-200);margin-bottom:16px;}
+.upload-zone:hover .upload-icon,.upload-zone.dragging .upload-icon{color:var(--teal-mid);}
+.upload-title{font-size:18px;font-weight:500;color:var(--gray-800);margin-bottom:6px;}
+.upload-sub{font-size:14px;color:var(--gray-400);}
+.upload-sub span{color:var(--teal);cursor:pointer;}
+.parser-results{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.parsed-profile{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:24px;}
+.json-preview{background:var(--navy);border-radius:var(--radius-md);padding:18px;font-family:monospace;font-size:12px;color:#A8D8A8;overflow:auto;max-height:300px;}
+.json-key{color:#7EC8E3;}
+.json-str{color:#FFD78C;}
+.json-num{color:#F08080;}
+
+/* ── ANIMATIONS ─────────────────────────────────── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+@keyframes shimmer{0%{opacity:.5;}50%{opacity:1;}100%{opacity:.5;}}
+.fade-up{animation:fadeUp .4s ease both;}
+.fade-up:nth-child(1){animation-delay:.05s;}
+.fade-up:nth-child(2){animation-delay:.1s;}
+.fade-up:nth-child(3){animation-delay:.15s;}
+.fade-up:nth-child(4){animation-delay:.2s;}
+
+/* ── RESPONSIVE / UTILITY ─────────────────────── */
+.text-teal{color:var(--teal);}
+.text-muted{color:var(--gray-400);}
+.text-sm{font-size:12px;}
+.font-semibold{font-weight:600;}
+.flex{display:flex;}
+.flex-center{display:flex;align-items:center;}
+.gap-8{gap:8px;}
+.gap-12{gap:12px;}
+.mt-16{margin-top:16px;}
+.mt-8{margin-top:8px;}
+.ml-auto{margin-left:auto;}
+.divider{height:1px;background:var(--gray-100);margin:16px 0;}
+.empty-state{text-align:center;padding:60px 20px;color:var(--gray-400);}
+.empty-state i{font-size:48px;margin-bottom:16px;display:block;}
+.scrollable{overflow-y:auto;}
+
+/* ── ONBOARDING BANNER ─────────────────────────── */
+.onboard-banner{background:linear-gradient(90deg,var(--teal-dark) 0%,var(--teal-mid) 100%);color:#fff;padding:14px 28px;display:flex;align-items:center;gap:14px;}
+.onboard-banner i{font-size:18px;flex-shrink:0;}
+.onboard-steps{display:flex;gap:6px;margin-left:auto;}
+.onboard-step{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500;border:1px solid rgba(255,255,255,.3);cursor:pointer;transition:all .15s;}
+.onboard-step.done{background:rgba(255,255,255,.2);}
+.onboard-step:hover{background:rgba(255,255,255,.15);}
+
+/* scrollbar */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--gray-200);border-radius:20px;}
+</style>
+</head>
+<body>
+<style>.hb-locked body>*:not(#hb-gate){visibility:hidden}</style>
+<script>if(!localStorage.getItem('hb_token'))document.documentElement.classList.add('hb-locked');</script>
+<div class="app">
+
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <div class="logo-icon"><i class="fas fa-heartbeat"></i></div>
+      <div>
+        <div class="logo-text">Health<span>Board</span></div>
+        <div class="logo-sub">Pro Platform</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-section">Main</div>
+  <a class="nav-item active" onclick="showPage('dashboard')"><i class="fas fa-th-large"></i>Dashboard</a>
+  <a class="nav-item" onclick="showPage('search')"><i class="fas fa-search"></i>Find Jobs</a>
+  <a class="nav-item" onclick="showPage('social')"><i class="fas fa-stream"></i>Community Feed</a>
+  <a class="nav-item hb-recruiter-only" onclick="showPage('professionals')"><i class="fas fa-user-md"></i>Providers</a>
+
+  <div class="nav-section">My Space</div>
+  <a class="nav-item" onclick="showPage('profile')"><i class="fas fa-id-card"></i>My Profile</a>
+  <a class="nav-item" onclick="showPage('messages')"><i class="fas fa-comment-dots"></i>Messages<span class="nav-badge">4</span></a>
+  <a class="nav-item" onclick="showPage('notifications')"><i class="fas fa-bell"></i>Notifications<span class="nav-badge">12</span></a>
+  <a class="nav-item" onclick="showPage('resume')"><i class="fas fa-file-alt"></i>Resume Parser</a>
+
+  <div class="nav-section">Employer</div>
+  <a class="nav-item" onclick="showPage('employer')"><i class="fas fa-building"></i>Employer Portal</a>
+  <a class="nav-item" onclick="showPage('analytics')"><i class="fas fa-chart-line"></i>Analytics</a>
+  <a class="nav-item" href="/match"><i class="fas fa-wand-magic-sparkles"></i>AI Matching</a>
+  <a class="nav-item" href="/chat"><i class="fas fa-headset"></i>Recruiter CRM</a>
+
+  <div class="nav-section">Tools</div>
+  <a class="nav-item" href="/calculator"><i class="fas fa-calculator"></i>Pay Calculator</a>
+  <a class="nav-item" onclick="showPage('settings')"><i class="fas fa-cog"></i>Settings</a>
+
+  <div class="sidebar-footer">
+    <div class="user-mini">
+      <div class="avatar-sm" id="hb-user-av">JM</div>
+      <div class="user-mini-info">
+        <div class="user-mini-name" id="hb-user-name">Guest</div>
+        <div class="user-mini-role" id="hb-user-role">Not signed in</div>
+      </div>
+      <a href="#" id="hb-auth-link" onclick="hbAuthClick();return false" style="color:rgba(255,255,255,.5)" title="Sign in / out"><i class="fas fa-right-from-bracket"></i></a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<div class="main-content">
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="topbar-search">
+    <i class="fas fa-search"></i>
+    <input placeholder="Search jobs, professionals, topics...">
+  </div>
+  <div class="topbar-actions">
+    <div class="icon-btn" onclick="showPage('messages')"><i class="fas fa-comment-dots"></i></div>
+    <div class="icon-btn" onclick="showPage('notifications')"><i class="fas fa-bell"></i><div class="notif-dot"></div></div>
+    <div class="topbar-user" onclick="showPage('profile')">
+      <div class="avatar">JM</div>
+      <span class="topbar-user-name">Jessica M.</span>
+      <i class="fas fa-chevron-down" style="font-size:10px;color:var(--gray-400);margin-left:2px;"></i>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ PAGE: DASHBOARD ═══ -->
+<div class="page active" id="page-dashboard">
+  <div class="dash-hero">
+    <div class="dash-hero-inner">
+      <div class="dash-greeting">Good morning</div>
+      <h1 class="dash-title">Welcome back, <em>Jessica</em> 👋</h1>
+      <p class="dash-sub" id="hb-dash-sub">Find your next role and connect with recruiters.</p>
+      <div class="dash-metrics">
+        <div class="metric-card fade-up">
+          <div class="metric-label">Profile Complete</div>
+          <div class="metric-val">—</div>
+          <div class="metric-trend neutral"></div>
+        </div>
+        <div class="metric-card fade-up">
+          <div class="metric-label">Applications Sent</div>
+          <div class="metric-val">—</div>
+          <div class="metric-trend neutral"></div>
+        </div>
+        <div class="metric-card fade-up">
+          <div class="metric-label">Saved Jobs</div>
+          <div class="metric-val">—</div>
+          <div class="metric-trend neutral"></div>
+        </div>
+        <div class="metric-card fade-up">
+          <div class="metric-label">Network Connections</div>
+          <div class="metric-val">—</div>
+          <div class="metric-trend neutral"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="onboard-banner">
+    <i class="fas fa-info-circle"></i>
+    <span style="font-size:13.5px;">Complete your profile to get <strong>3x more recruiter views</strong> — you're <span id="hb-dash-complete">—</span> done</span>
+    <div class="onboard-steps">
+      <div class="onboard-step done"><i class="fas fa-check" style="margin-right:5px;font-size:11px;"></i>Basics</div>
+      <div class="onboard-step done"><i class="fas fa-check" style="margin-right:5px;font-size:11px;"></i>Experience</div>
+      <div class="onboard-step">Add Licenses</div>
+      <div class="onboard-step">Upload Resume</div>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:24px;">
+      <div>
+        <div class="section-header">
+          <div>
+            <div class="section-title">Recommended Jobs</div>
+            <div class="section-sub">Based on your specialty, location & pay preferences</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="showPage('search')"><i class="fas fa-search"></i>Browse All</button>
+        </div>
+        <div class="jobs-grid">
+          <div class="job-card featured fade-up" onclick="openJobDetail()">
+            <div class="job-card-header">
+              <div class="employer-logo">🏥</div>
+              <div>
+                <div class="job-title">Travel ICU RN — Critical Care</div>
+                <div class="job-employer">Memorial Hermann Health System</div>
+              </div>
+            </div>
+            <div class="job-badges">
+              <span class="badge badge-teal"><i class="fas fa-plane"></i>Travel</span>
+              <span class="badge badge-gold">⭐ Featured</span>
+              <span class="badge badge-green">ICU · Critical Care</span>
+            </div>
+            <div class="job-footer">
+              <div><div class="job-pay">$62/hr <span class="job-pay-sub">+ Housing + Benefits</span></div></div>
+              <div class="job-actions">
+                <div class="job-date">2h ago</div>
+                <div class="save-btn" onclick="toggleSave(event,this)"><i class="fas fa-bookmark"></i></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="job-card fade-up" onclick="openJobDetail()">
+            <div class="job-card-header">
+              <div class="employer-logo">🏨</div>
+              <div>
+                <div class="job-title">Staff RN — Emergency Department</div>
+                <div class="job-employer">Houston Methodist Hospital</div>
+              </div>
+            </div>
+            <div class="job-badges">
+              <span class="badge badge-navy">Permanent</span>
+              <span class="badge badge-coral"><span class="urgent-tag">URGENT</span></span>
+              <span class="badge badge-teal">Emergency</span>
+            </div>
+            <div class="job-footer">
+              <div><div class="job-pay">$48/hr <span class="job-pay-sub">Full Benefits</span></div></div>
+              <div class="job-actions">
+                <div class="job-date">5h ago</div>
+                <div class="save-btn" onclick="toggleSave(event,this)"><i class="fas fa-bookmark"></i></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="job-card fade-up" onclick="openJobDetail()">
+            <div class="job-card-header">
+              <div class="employer-logo">🧬</div>
+              <div>
+                <div class="job-title">Per Diem RN — Med/Surg Float Pool</div>
+                <div class="job-employer">Texas Children's Hospital</div>
+              </div>
+            </div>
+            <div class="job-badges">
+              <span class="badge badge-teal">Per Diem</span>
+              <span class="badge badge-navy">Pediatrics</span>
+              <span class="badge badge-green">Med/Surg</span>
+            </div>
+            <div class="job-footer">
+              <div><div class="job-pay">$55/hr <span class="job-pay-sub">Flexible Schedule</span></div></div>
+              <div class="job-actions">
+                <div class="job-date">1d ago</div>
+                <div class="save-btn" onclick="toggleSave(event,this)"><i class="fas fa-bookmark"></i></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="job-card fade-up" onclick="openJobDetail()">
+            <div class="job-card-header">
+              <div class="employer-logo">💊</div>
+              <div>
+                <div class="job-title">CRNA — Anesthesiology</div>
+                <div class="job-employer">HCA Healthcare</div>
+              </div>
+            </div>
+            <div class="job-badges">
+              <span class="badge badge-gold">⭐ Premium</span>
+              <span class="badge badge-teal">Anesthesia</span>
+            </div>
+            <div class="job-footer">
+              <div><div class="job-pay">$210K/yr <span class="job-pay-sub">+ Signing Bonus</span></div></div>
+              <div class="job-actions">
+                <div class="job-date">2d ago</div>
+                <div class="save-btn" onclick="toggleSave(event,this)"><i class="fas fa-bookmark"></i></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right sidebar -->
+      <div>
+        <div class="sidebar-widget">
+          <div class="widget-title">Application Tracker</div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:var(--teal);flex-shrink:0;"></div>
+              <div style="flex:1;font-size:13px;color:var(--gray-700);">Travel ICU RN — Cedars-Sinai</div>
+              <span class="badge badge-teal" style="font-size:11px;">Reviewing</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:var(--gold);flex-shrink:0;"></div>
+              <div style="flex:1;font-size:13px;color:var(--gray-700);">Staff RN — Mayo Clinic</div>
+              <span class="badge badge-gold" style="font-size:11px;">Interview</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:var(--coral);flex-shrink:0;"></div>
+              <div style="flex:1;font-size:13px;color:var(--gray-700);">ER RN — Mass General</div>
+              <span class="badge badge-coral" style="font-size:11px;">Applied</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:var(--gray-200);flex-shrink:0;"></div>
+              <div style="flex:1;font-size:13px;color:var(--gray-700);">ICU RN — Cleveland Clinic</div>
+              <span style="font-size:11px;color:var(--gray-400);">Saved</span>
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" style="width:100%;margin-top:14px;justify-content:center;">View All Applications</button>
+        </div>
+
+        <div class="sidebar-widget">
+          <div class="widget-title">Trending in Nursing</div>
+          <div class="trending-item">
+            <div class="trending-num">1</div>
+            <div><div class="trending-topic">#TravelNursing2025</div><div class="trending-posts">2.4k posts this week</div></div>
+          </div>
+          <div class="trending-item">
+            <div class="trending-num">2</div>
+            <div><div class="trending-topic">#NurseStaffingCrisis</div><div class="trending-posts">1.8k posts</div></div>
+          </div>
+          <div class="trending-item">
+            <div class="trending-num">3</div>
+            <div><div class="trending-topic">#ICULife</div><div class="trending-posts">982 posts</div></div>
+          </div>
+          <div class="trending-item">
+            <div class="trending-num">4</div>
+            <div><div class="trending-topic">Nurse Pay Transparency Act</div><div class="trending-posts">Legacy topic · 4.1k posts</div></div>
+          </div>
+        </div>
+
+        <div class="sidebar-widget">
+          <div class="widget-title">Upcoming Interviews</div>
+          <div style="display:flex;gap:10px;padding:12px;background:var(--teal-light);border-radius:var(--radius-md);margin-bottom:10px;">
+            <div style="width:42px;height:42px;background:var(--teal);border-radius:var(--radius-md);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;flex-shrink:0;">
+              <div style="font-size:10px;opacity:.7;">JAN</div>
+              <div style="font-size:16px;font-weight:700;line-height:1;">14</div>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:500;color:var(--teal-dark);">Mayo Clinic — Video Interview</div>
+              <div style="font-size:12px;color:var(--teal);">2:00 PM CST · 45 min</div>
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center;"><i class="fas fa-calendar"></i>View Calendar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: SEARCH ═══ -->
+<div class="page" id="page-search">
+  <div class="search-hero">
+    <h2 class="search-hero-title">Find Your Next Healthcare Role</h2>
+    <p class="search-hero-sub">2M+ healthcare professionals · 85,000+ active job listings across the US</p>
+    <div class="search-bar-big">
+      <input placeholder="Job title, specialty, or keyword...">
+      <div class="search-divider"></div>
+      <input placeholder="City, State, or Remote" style="min-width:160px;padding:16px 20px;border:none;outline:none;font-family:var(--font-body);font-size:15px;">
+      <button class="btn-search"><i class="fas fa-search"></i>Search Jobs</button>
+    </div>
+    <div class="filter-chips">
+      <div class="chip active">🩺 RN / Nursing</div>
+      <div class="chip">💊 Pharmacy</div>
+      <div class="chip">🧠 Allied Health</div>
+      <div class="chip">⚕️ Physicians</div>
+      <div class="chip">🦷 Dental</div>
+      <div class="chip">🔬 Lab / Pathology</div>
+      <div class="chip">🧬 Research</div>
+      <div class="chip">💼 Healthcare Admin</div>
+    </div>
+  </div>
+
+  <div class="search-layout">
+    <!-- Filters -->
+    <div class="filter-sidebar">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+        <div style="font-size:14px;font-weight:600;">Filters</div>
+        <div style="font-size:12px;color:var(--coral);cursor:pointer;">Clear all</div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">Job Type</div>
+        <div class="filter-item"><input type="checkbox" checked><label>Travel Nursing</label><span class="count">8,420</span></div>
+        <div class="filter-item"><input type="checkbox" checked><label>Staff / Permanent</label><span class="count">24,100</span></div>
+        <div class="filter-item"><input type="checkbox"><label>Per Diem</label><span class="count">5,800</span></div>
+        <div class="filter-item"><input type="checkbox"><label>Contract</label><span class="count">3,200</span></div>
+        <div class="filter-item"><input type="checkbox"><label>Remote / Telehealth</label><span class="count">1,500</span></div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">Specialty</div>
+        <div class="filter-item"><input type="checkbox" checked><label>ICU / Critical Care</label><span class="count">4,800</span></div>
+        <div class="filter-item"><input type="checkbox"><label>Emergency (ER)</label><span class="count">3,600</span></div>
+        <div class="filter-item"><input type="checkbox"><label>OR / Surgical</label><span class="count">2,900</span></div>
+        <div class="filter-item"><input type="checkbox"><label>Labor & Delivery</label><span class="count">1,800</span></div>
+        <div class="filter-item"><input type="checkbox"><label>Pediatrics (PICU)</label><span class="count">1,200</span></div>
+        <div class="filter-item"><input type="checkbox"><label>Telemetry / Step-down</label><span class="count">2,100</span></div>
+        <div style="font-size:12px;color:var(--teal);cursor:pointer;margin-top:6px;">+ 24 more specialties</div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">Hourly Pay Range</div>
+        <input type="range" class="range-slider" min="25" max="120" value="65">
+        <div class="range-labels"><span>$25/hr</span><span>$65+/hr</span><span>$120/hr</span></div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">Shift</div>
+        <div class="filter-item"><input type="checkbox"><label>Days (7a–7p)</label></div>
+        <div class="filter-item"><input type="checkbox"><label>Nights (7p–7a)</label></div>
+        <div class="filter-item"><input type="checkbox"><label>Evening</label></div>
+        <div class="filter-item"><input type="checkbox"><label>Rotating</label></div>
+        <div class="filter-item"><input type="checkbox"><label>Flexible / PRN</label></div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">Benefits</div>
+        <div class="filter-item"><input type="checkbox"><label>Housing Stipend</label></div>
+        <div class="filter-item"><input type="checkbox"><label>Health Insurance</label></div>
+        <div class="filter-item"><input type="checkbox"><label>401(k) Match</label></div>
+        <div class="filter-item"><input type="checkbox"><label>Signing Bonus</label></div>
+        <div class="filter-item"><input type="checkbox"><label>Loan Forgiveness</label></div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">Experience Level</div>
+        <div class="filter-item"><input type="checkbox"><label>New Grad (0–1 yr)</label></div>
+        <div class="filter-item"><input type="checkbox" checked><label>Mid-Level (1–5 yr)</label></div>
+        <div class="filter-item"><input type="checkbox"><label>Senior (5+ yr)</label></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div>
+      <div class="results-bar">
+        <div class="results-count" id="hb-jobs-count"><strong>Loading…</strong></div>
+        <select class="sort-select">
+          <option>Most Relevant</option>
+          <option>Highest Pay</option>
+          <option>Newest First</option>
+          <option>Best Match</option>
+        </select>
+      </div>
+
+      <div class="jobs-list">
+        <div class="job-list-card" onclick="openJobDetail()">
+          <div class="employer-logo">🏥</div>
+          <div>
+            <div style="font-size:15px;font-weight:600;margin-bottom:3px;">Travel RN — ICU Nights</div>
+            <div style="font-size:13px;color:var(--gray-400);margin-bottom:8px;">Memorial Hermann • Houston, TX • 13-week contract</div>
+            <div class="job-badges">
+              <span class="badge badge-teal">Travel</span>
+              <span class="badge badge-green">ICU</span>
+              <span class="badge badge-gold">⭐ Top Rated Employer</span>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:16px;font-weight:700;color:var(--teal-dark);">$62/hr</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">+$2,400/wk housing</div>
+            <button class="btn btn-primary btn-sm">Quick Apply</button>
+          </div>
+        </div>
+
+        <div class="job-list-card" onclick="openJobDetail()">
+          <div class="employer-logo">💙</div>
+          <div>
+            <div style="font-size:15px;font-weight:600;margin-bottom:3px;">Staff RN — Emergency Department</div>
+            <div style="font-size:13px;color:var(--gray-400);margin-bottom:8px;">Houston Methodist • Houston, TX • Full-time Permanent</div>
+            <div class="job-badges">
+              <span class="badge badge-navy">Permanent</span>
+              <span class="badge badge-coral">Urgent Hire</span>
+              <span class="badge badge-teal">Emergency</span>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:16px;font-weight:700;color:var(--teal-dark);">$48/hr</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">Full benefits</div>
+            <button class="btn btn-primary btn-sm">Quick Apply</button>
+          </div>
+        </div>
+
+        <div class="job-list-card" onclick="openJobDetail()">
+          <div class="employer-logo">🌟</div>
+          <div>
+            <div style="font-size:15px;font-weight:600;margin-bottom:3px;">CRNA — Anesthesiology Team</div>
+            <div style="font-size:13px;color:var(--gray-400);margin-bottom:8px;">HCA Healthcare • Dallas, TX • Permanent</div>
+            <div class="job-badges">
+              <span class="badge badge-gold">⭐ Premium Role</span>
+              <span class="badge badge-teal">Anesthesia</span>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:16px;font-weight:700;color:var(--teal-dark);">$210K</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">+$15K signing</div>
+            <button class="btn btn-primary btn-sm">Quick Apply</button>
+          </div>
+        </div>
+
+        <div class="job-list-card" onclick="openJobDetail()">
+          <div class="employer-logo">🔬</div>
+          <div>
+            <div style="font-size:15px;font-weight:600;margin-bottom:3px;">Clinical Pharmacist — Oncology</div>
+            <div style="font-size:13px;color:var(--gray-400);margin-bottom:8px;">MD Anderson Cancer Center • Houston, TX • Full-time</div>
+            <div class="job-badges">
+              <span class="badge badge-navy">Permanent</span>
+              <span class="badge badge-green">Oncology Pharmacy</span>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:16px;font-weight:700;color:var(--teal-dark);">$65/hr</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">Full benefits</div>
+            <button class="btn btn-primary btn-sm">Quick Apply</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div style="display:flex;justify-content:center;gap:6px;margin-top:24px;">
+        <div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);background:var(--teal);color:#fff;font-size:13px;cursor:pointer;">1</div>
+        <div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);border:1px solid var(--gray-200);font-size:13px;cursor:pointer;">2</div>
+        <div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);border:1px solid var(--gray-200);font-size:13px;cursor:pointer;">3</div>
+        <div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);border:1px solid var(--gray-200);font-size:13px;cursor:pointer;">…</div>
+        <div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);border:1px solid var(--gray-200);font-size:13px;cursor:pointer;">84</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: SOCIAL FEED ═══ -->
+<div class="page" id="page-social">
+  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:18px 32px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="font-family:var(--font-display);font-size:20px;color:var(--gray-800);">Community Feed</div>
+      <div style="font-size:13px;color:var(--gray-400);">Connect with 2M+ healthcare professionals</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-outline btn-sm"><i class="fas fa-users"></i>My Network</button>
+      <button class="btn btn-primary btn-sm"><i class="fas fa-pen"></i>Create Post</button>
+    </div>
+  </div>
+
+  <div class="feed-layout">
+    <div class="feed-col">
+      <!-- Compose -->
+      <div class="compose-card">
+        <div class="compose-area">
+          <div class="post-avatar" style="font-size:14px;">JM</div>
+          <textarea class="compose-input" placeholder="Share a clinical insight, career tip, or ask the community..."></textarea>
+        </div>
+        <div class="compose-actions">
+          <button class="compose-action-btn"><i class="fas fa-image" style="color:var(--teal);"></i>Photo</button>
+          <button class="compose-action-btn"><i class="fas fa-video" style="color:var(--coral);"></i>Video</button>
+          <button class="compose-action-btn"><i class="fas fa-poll" style="color:var(--navy-mid);"></i>Poll</button>
+          <button class="compose-action-btn"><i class="fas fa-hashtag" style="color:var(--gold);"></i>Topic</button>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto;">Post</button>
+        </div>
+      </div>
+
+      <!-- Post 1 -->
+      <div class="post-card">
+        <div class="post-header">
+          <div class="post-avatar" style="background:var(--navy-mid);">SR</div>
+          <div class="post-meta">
+            <div class="post-name">Sarah Rodriguez, BSN, RN</div>
+            <div class="post-role">Travel Nurse · ICU Specialist · 8 years exp · Houston, TX</div>
+          </div>
+          <div class="post-time">2h ago</div>
+        </div>
+        <div class="post-body">
+          Just finished my 13-week assignment at Cedars-Sinai and WOW — what an experience. Night shift ICU in LA is no joke. Anyone else doing their first travel contract? Drop your questions below 👇 The pay differential alone ($58/hr + $2,200 housing) made it worth every challenge.
+        </div>
+        <div class="post-tags">
+          <span class="tag">#TravelNursing</span>
+          <span class="tag">#ICULife</span>
+          <span class="tag">#NurseLife</span>
+          <span class="tag">#CriticalCare</span>
+        </div>
+        <div class="post-actions">
+          <div class="post-action liked" onclick="this.classList.toggle('liked')"><i class="fas fa-heart"></i>284 Likes</div>
+          <div class="post-action"><i class="fas fa-comment"></i>47 Comments</div>
+          <div class="post-action"><i class="fas fa-share"></i>Share</div>
+          <div class="post-action"><i class="fas fa-bookmark"></i>Save</div>
+        </div>
+      </div>
+
+      <!-- Post 2 — with image placeholder -->
+      <div class="post-card">
+        <div class="post-header">
+          <div class="post-avatar" style="background:#2D6A4F;">KL</div>
+          <div class="post-meta">
+            <div class="post-name">Dr. Kevin Liang, MD</div>
+            <div class="post-role">Emergency Medicine Physician · Houston Methodist</div>
+          </div>
+          <div class="post-time">5h ago</div>
+        </div>
+        <div class="post-body">
+          Quick tip for new nurses entering the ER: always pre-chart your assessments and establish your primary/secondary survey workflow before the shift. This habit alone cut my documentation time by 35%. The chaos is manageable when your system is solid 💪
+        </div>
+        <div class="post-image-placeholder">
+          <i class="fas fa-chart-bar"></i>
+        </div>
+        <div class="post-tags">
+          <span class="tag">#EmergencyMedicine</span>
+          <span class="tag">#ClinicalTips</span>
+          <span class="tag">#HealthcareEducation</span>
+        </div>
+        <div class="post-actions">
+          <div class="post-action liked" onclick="this.classList.toggle('liked')"><i class="fas fa-heart"></i>512 Likes</div>
+          <div class="post-action"><i class="fas fa-comment"></i>83 Comments</div>
+          <div class="post-action"><i class="fas fa-share"></i>Share</div>
+          <div class="post-action"><i class="fas fa-bookmark"></i>Save</div>
+        </div>
+      </div>
+
+      <!-- Post 3 — Job alert -->
+      <div class="post-card" style="border-left:3px solid var(--teal);">
+        <div class="post-header">
+          <div class="post-avatar" style="background:var(--teal);border-radius:var(--radius-md);">🏥</div>
+          <div class="post-meta">
+            <div class="post-name">Memorial Hermann Health System</div>
+            <div class="post-role">Employer · Houston, TX · Verified ✓</div>
+          </div>
+          <div class="post-time">1d ago</div>
+        </div>
+        <div class="post-body">
+          🚨 We're hiring! 45 open ICU nursing positions across our 6 Houston facilities. Sign-on bonuses up to $20,000 for 2-year commitments. New grad-friendly with our RN Residency Program. Apply directly or message our recruiter team here.
+        </div>
+        <div style="padding:0 18px 14px;display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="showPage('search')"><i class="fas fa-search"></i>View Jobs</button>
+          <button class="btn btn-outline btn-sm"><i class="fas fa-bell"></i>Get Alerts</button>
+        </div>
+        <div class="post-actions">
+          <div class="post-action"><i class="fas fa-heart"></i>1.2k Interested</div>
+          <div class="post-action"><i class="fas fa-comment"></i>38 Comments</div>
+          <div class="post-action"><i class="fas fa-share"></i>Share</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right sidebar -->
+    <div>
+      <div class="sidebar-widget">
+        <div class="widget-title">Your Feed Tabs</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="padding:8px 12px;border-radius:var(--radius-md);background:var(--teal-light);color:var(--teal-dark);font-size:13px;font-weight:500;cursor:pointer;"><i class="fas fa-stream" style="margin-right:8px;"></i>For You</div>
+          <div style="padding:8px 12px;border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;"><i class="fas fa-users" style="margin-right:8px;color:var(--gray-400);"></i>My Network</div>
+          <div style="padding:8px 12px;border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;"><i class="fas fa-briefcase" style="margin-right:8px;color:var(--gray-400);"></i>Jobs</div>
+          <div style="padding:8px 12px;border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;"><i class="fas fa-graduation-cap" style="margin-right:8px;color:var(--gray-400);"></i>Education & CEUs</div>
+        </div>
+      </div>
+
+      <div class="sidebar-widget">
+        <div class="widget-title">People to Follow</div>
+        <div class="suggest-user">
+          <div class="avatar-sm" style="background:var(--coral);">AP</div>
+          <div class="suggest-user-info">
+            <div class="suggest-name">Amanda Park, NP</div>
+            <div class="suggest-title">Nurse Practitioner · Oncology</div>
+          </div>
+          <button class="btn-follow" onclick="this.classList.toggle('following');this.textContent=this.classList.contains('following')?'Following':'Follow';">Follow</button>
+        </div>
+        <div class="suggest-user">
+          <div class="avatar-sm" style="background:var(--navy-mid);">RM</div>
+          <div class="suggest-user-info">
+            <div class="suggest-name">Dr. Robert Mills</div>
+            <div class="suggest-title">Emergency Medicine · Author</div>
+          </div>
+          <button class="btn-follow" onclick="this.classList.toggle('following');this.textContent=this.classList.contains('following')?'Following':'Follow';">Follow</button>
+        </div>
+        <div class="suggest-user">
+          <div class="avatar-sm" style="background:#2D6A4F;">TC</div>
+          <div class="suggest-user-info">
+            <div class="suggest-name">Tanya Collins, CRNA</div>
+            <div class="suggest-title">Anesthesia · Travel CRNA</div>
+          </div>
+          <button class="btn-follow" onclick="this.classList.toggle('following');this.textContent=this.classList.contains('following')?'Following':'Follow';">Follow</button>
+        </div>
+      </div>
+
+      <div class="sidebar-widget">
+        <div class="widget-title">Upcoming Webinars</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="border:1px solid var(--gray-100);border-radius:var(--radius-md);padding:12px;">
+            <div style="font-size:12.5px;font-weight:500;color:var(--gray-800);">Travel Nursing 101: Pay Packages Decoded</div>
+            <div style="font-size:11px;color:var(--gray-400);margin:4px 0;">Jan 15 · 6PM CST · Free</div>
+            <button class="btn btn-outline btn-sm" style="padding:4px 10px;font-size:11px;">Register</button>
+          </div>
+          <div style="border:1px solid var(--gray-100);border-radius:var(--radius-md);padding:12px;">
+            <div style="font-size:12.5px;font-weight:500;color:var(--gray-800);">CRNA Career Path: Salary & Lifestyle</div>
+            <div style="font-size:11px;color:var(--gray-400);margin:4px 0;">Jan 22 · 7PM CST · Free</div>
+            <button class="btn btn-outline btn-sm" style="padding:4px 10px;font-size:11px;">Register</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: PROFESSIONALS ═══ -->
+<div class="page" id="page-professionals">
+  <div class="pros-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-family:var(--font-display);font-size:22px;">Providers</div>
+        <div style="font-size:13px;color:var(--gray-400);margin-top:2px;" id="hb-pros-count">Loading profiles…</div>
+      </div>
+      <div class="topbar-search" style="max-width:300px;"><i class="fas fa-search"></i><input id="hb-prov-search" placeholder="Search providers by name…"></div>
+    </div>
+    <div class="tabs" id="hb-prov-tabs">
+      <div class="tab active" data-cat="">All</div>
+      <div class="tab" data-cat="Physicians">Physicians</div>
+      <div class="tab" data-cat="Nursing">Nursing</div>
+      <div class="tab" data-cat="Allied">Allied</div>
+      <div class="tab" data-cat="APP">APP</div>
+    </div>
+    <div id="hb-prov-filters" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center;">
+      <select class="sort-select" id="hb-f-profession"><option value="">All Professions</option></select>
+      <select class="sort-select" id="hb-f-state"><option value="">All States</option></select>
+      <select class="sort-select" id="hb-f-city"><option value="">All Cities</option></select>
+      <select class="sort-select" id="hb-f-specialty"><option value="">All Specialties</option></select>
+      <select class="sort-select" id="hb-f-board"><option value="">All American Boards</option></select>
+      <button class="btn btn-outline btn-sm" id="hb-f-clear" style="display:none;"><i class="fas fa-times"></i>Clear filters</button>
+    </div>
+  </div>
+
+  <div class="professionals-grid">
+    <div class="pro-card">
+      <div class="pro-cover"></div>
+      <div class="pro-body">
+        <div class="pro-avatar">SR</div>
+        <div class="verified-badge"><i class="fas fa-check-circle"></i>Verified RN</div>
+        <div class="pro-name">Sarah Rodriguez, BSN, RN</div>
+        <div class="pro-role">Travel ICU Nurse · 8 years exp</div>
+        <div class="pro-specialties">
+          <span class="badge badge-teal">ICU</span>
+          <span class="badge badge-green">Critical Care</span>
+          <span class="badge badge-navy">ACLS</span>
+        </div>
+        <div class="pro-stats">
+          <div><div class="pro-stat-val">8</div><div class="pro-stat-lab">Years Exp</div></div>
+          <div><div class="pro-stat-val">347</div><div class="pro-stat-lab">Connections</div></div>
+        </div>
+        <button class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-user-plus"></i>Connect</button>
+      </div>
+    </div>
+
+    <div class="pro-card">
+      <div class="pro-cover" style="background:linear-gradient(135deg,var(--coral) 0%,#A0280A 100%);"></div>
+      <div class="pro-body">
+        <div class="pro-avatar" style="background:var(--coral);">KL</div>
+        <div class="verified-badge"><i class="fas fa-check-circle"></i>Verified MD</div>
+        <div class="pro-name">Dr. Kevin Liang, MD</div>
+        <div class="pro-role">Emergency Medicine Physician</div>
+        <div class="pro-specialties">
+          <span class="badge badge-coral">Emergency</span>
+          <span class="badge badge-navy">Trauma</span>
+          <span class="badge badge-teal">ATLS</span>
+        </div>
+        <div class="pro-stats">
+          <div><div class="pro-stat-val">12</div><div class="pro-stat-lab">Years Exp</div></div>
+          <div><div class="pro-stat-val">891</div><div class="pro-stat-lab">Connections</div></div>
+        </div>
+        <button class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-user-plus"></i>Connect</button>
+      </div>
+    </div>
+
+    <div class="pro-card">
+      <div class="pro-cover" style="background:linear-gradient(135deg,#2D6A4F 0%,#1B4332 100%);"></div>
+      <div class="pro-body">
+        <div class="pro-avatar" style="background:#2D6A4F;">TC</div>
+        <div class="verified-badge"><i class="fas fa-check-circle"></i>Verified CRNA</div>
+        <div class="pro-name">Tanya Collins, CRNA</div>
+        <div class="pro-role">Certified Registered Nurse Anesthetist</div>
+        <div class="pro-specialties">
+          <span class="badge badge-green">Anesthesia</span>
+          <span class="badge badge-navy">Travel CRNA</span>
+        </div>
+        <div class="pro-stats">
+          <div><div class="pro-stat-val">15</div><div class="pro-stat-lab">Years Exp</div></div>
+          <div><div class="pro-stat-val">524</div><div class="pro-stat-lab">Connections</div></div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;font-size:13px;">Following</button>
+      </div>
+    </div>
+
+    <div class="pro-card">
+      <div class="pro-cover" style="background:linear-gradient(135deg,#6B3FA0 0%,#3D1A6E 100%);"></div>
+      <div class="pro-body">
+        <div class="pro-avatar" style="background:#6B3FA0;">AP</div>
+        <div class="verified-badge"><i class="fas fa-check-circle"></i>Verified NP</div>
+        <div class="pro-name">Amanda Park, FNP-C</div>
+        <div class="pro-role">Family Nurse Practitioner · Oncology</div>
+        <div class="pro-specialties">
+          <span class="badge badge-navy">Oncology</span>
+          <span class="badge badge-teal">Primary Care</span>
+        </div>
+        <div class="pro-stats">
+          <div><div class="pro-stat-val">6</div><div class="pro-stat-lab">Years Exp</div></div>
+          <div><div class="pro-stat-val">216</div><div class="pro-stat-lab">Connections</div></div>
+        </div>
+        <button class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-user-plus"></i>Connect</button>
+      </div>
+    </div>
+
+    <div class="pro-card">
+      <div class="pro-cover" style="background:linear-gradient(135deg,var(--gold) 0%,#8A5A00 100%);"></div>
+      <div class="pro-body">
+        <div class="pro-avatar" style="background:var(--gold);">MH</div>
+        <div class="verified-badge"><i class="fas fa-check-circle"></i>Verified RT</div>
+        <div class="pro-name">Marcus Henderson, RRT</div>
+        <div class="pro-role">Respiratory Therapist · NICU/PICU</div>
+        <div class="pro-specialties">
+          <span class="badge badge-gold">Respiratory</span>
+          <span class="badge badge-navy">NICU</span>
+        </div>
+        <div class="pro-stats">
+          <div><div class="pro-stat-val">11</div><div class="pro-stat-lab">Years Exp</div></div>
+          <div><div class="pro-stat-val">438</div><div class="pro-stat-lab">Connections</div></div>
+        </div>
+        <button class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-user-plus"></i>Connect</button>
+      </div>
+    </div>
+
+    <div class="pro-card">
+      <div class="pro-cover" style="background:linear-gradient(135deg,#1A5276 0%,#0B2742 100%);"></div>
+      <div class="pro-body">
+        <div class="pro-avatar" style="background:#1A5276;">PW</div>
+        <div class="verified-badge"><i class="fas fa-check-circle"></i>Verified PharmD</div>
+        <div class="pro-name">Priya Waller, PharmD</div>
+        <div class="pro-role">Clinical Pharmacist · Oncology</div>
+        <div class="pro-specialties">
+          <span class="badge badge-navy">Pharmacy</span>
+          <span class="badge badge-teal">Oncology</span>
+        </div>
+        <div class="pro-stats">
+          <div><div class="pro-stat-val">9</div><div class="pro-stat-lab">Years Exp</div></div>
+          <div><div class="pro-stat-val">302</div><div class="pro-stat-lab">Connections</div></div>
+        </div>
+        <button class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-user-plus"></i>Connect</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: PROFILE ═══ -->
+<div class="page" id="page-profile">
+  <div class="page-body">
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;">
+      <div>
+        <div class="profile-hero">
+          <div class="profile-cover">
+            <button class="btn btn-outline btn-sm profile-cover-edit" style="background:rgba(0,0,0,.4);border-color:rgba(255,255,255,.3);color:#fff;"><i class="fas fa-camera"></i>Edit Cover</button>
+          </div>
+          <div class="profile-info">
+            <div class="profile-avatar-wrap">
+              <div class="profile-avatar">JM</div>
+              <div class="profile-avatar-edit"><i class="fas fa-camera"></i></div>
+            </div>
+            <div class="profile-name">Jessica Martinez, BSN, RN</div>
+            <div class="profile-headline">ICU Travel Nurse · Critical Care Specialist · Houston, TX</div>
+            <div class="profile-meta">
+              <div class="profile-meta-item"><i class="fas fa-map-marker-alt"></i>Houston, TX</div>
+              <div class="profile-meta-item"><i class="fas fa-briefcase"></i>8 years experience</div>
+              <div class="profile-meta-item"><i class="fas fa-users"></i>347 connections</div>
+              <div class="profile-meta-item text-teal"><i class="fas fa-check-circle"></i>Verified RN</div>
+            </div>
+            <div class="profile-stats">
+              <div class="p-stat"><div class="p-stat-val">1,284</div><div class="p-stat-label">Profile Views</div></div>
+              <div class="p-stat"><div class="p-stat-val">347</div><div class="p-stat-label">Connections</div></div>
+              <div class="p-stat"><div class="p-stat-val">24</div><div class="p-stat-label">Saved Jobs</div></div>
+              <div class="p-stat"><div class="p-stat-val">8</div><div class="p-stat-label">Applications</div></div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-primary"><i class="fas fa-edit"></i>Edit Profile</button>
+              <button class="btn btn-outline"><i class="fas fa-share-alt"></i>Share</button>
+              <button class="btn btn-outline"><i class="fas fa-download"></i>Download Resume</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Profile completion -->
+        <div class="card">
+          <div class="card-title"><span><i class="fas fa-chart-pie"></i>Profile Strength</span><span style="font-size:14px;font-weight:700;color:var(--teal);">78%</span></div>
+          <div class="progress-bar-wrap">
+            <div class="progress-track"><div class="progress-fill" style="width:78%"></div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);"><i class="fas fa-check-circle" style="color:var(--teal);"></i>Basic Info</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);"><i class="fas fa-check-circle" style="color:var(--teal);"></i>Work History</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);"><i class="fas fa-check-circle" style="color:var(--teal);"></i>Education</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-400);"><i class="fas fa-circle" style="color:var(--gray-200);"></i>Licenses & Certs</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-400);"><i class="fas fa-circle" style="color:var(--gray-200);"></i>Resume Upload</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);"><i class="fas fa-check-circle" style="color:var(--teal);"></i>Skills</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-user"></i>About</div>
+          <p style="font-size:14px;color:var(--gray-600);line-height:1.7;">Experienced ICU RN with 8+ years in high-acuity critical care settings. Specialized in multi-system organ failure, post-cardiac surgery care, and sepsis management. Passionate about travel nursing and delivering exceptional patient care across different healthcare systems. ACLS, BLS, and CCRN certified.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-briefcase"></i>Experience <button class="btn btn-outline btn-sm" style="margin-left:auto;"><i class="fas fa-plus"></i>Add</button></div>
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div style="display:flex;gap:14px;">
+              <div style="width:44px;height:44px;background:var(--teal-light);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🏥</div>
+              <div style="flex:1;">
+                <div style="font-size:14px;font-weight:600;">Travel ICU RN</div>
+                <div style="font-size:13px;color:var(--gray-400);">Cedars-Sinai Medical Center · Los Angeles, CA</div>
+                <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Oct 2024 – Jan 2025 · 13-week contract</div>
+                <div style="font-size:13px;color:var(--gray-600);margin-top:6px;line-height:1.6;">Managed 2:1 nurse-to-patient ratio in SICU. Cared for post-CABG, LVAD, and multi-organ failure patients.</div>
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div style="display:flex;gap:14px;">
+              <div style="width:44px;height:44px;background:var(--teal-light);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🏨</div>
+              <div style="flex:1;">
+                <div style="font-size:14px;font-weight:600;">Staff RN — MICU</div>
+                <div style="font-size:13px;color:var(--gray-400);">Houston Methodist Hospital · Houston, TX</div>
+                <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Jan 2019 – Sep 2024 · 5 years 8 months</div>
+                <div style="font-size:13px;color:var(--gray-600);margin-top:6px;line-height:1.6;">Senior staff nurse in 24-bed MICU. Charge nurse responsibilities, preceptored 12+ new graduates.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-certificate"></i>Licenses & Certifications <button class="btn btn-outline btn-sm" style="margin-left:auto;"><i class="fas fa-plus"></i>Add</button></div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--gray-50);border-radius:var(--radius-md);">
+              <i class="fas fa-award" style="color:var(--gold);font-size:20px;"></i>
+              <div style="flex:1;"><div style="font-size:13.5px;font-weight:500;">RN License — Texas (Active)</div><div style="font-size:12px;color:var(--gray-400);">Lic #12345678 · Exp: Dec 2026</div></div>
+              <span class="badge badge-green">Active</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--gray-50);border-radius:var(--radius-md);">
+              <i class="fas fa-award" style="color:var(--teal);font-size:20px;"></i>
+              <div style="flex:1;"><div style="font-size:13.5px;font-weight:500;">CCRN — Critical Care Registered Nurse</div><div style="font-size:12px;color:var(--gray-400);">AACN · Exp: Mar 2027</div></div>
+              <span class="badge badge-green">Active</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--gray-50);border-radius:var(--radius-md);">
+              <i class="fas fa-heart" style="color:var(--coral);font-size:20px;"></i>
+              <div style="flex:1;"><div style="font-size:13.5px;font-weight:500;">ACLS — Advanced Cardiac Life Support</div><div style="font-size:12px;color:var(--gray-400);">AHA · Exp: Jun 2025</div></div>
+              <span class="badge badge-gold">Renew Soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column -->
+      <div>
+        <div class="card">
+          <div class="card-title"><i class="fas fa-eye"></i>Open to Work</div>
+          <div style="background:var(--teal-light);border-radius:var(--radius-md);padding:14px;margin-bottom:14px;">
+            <div style="font-size:13px;font-weight:500;color:var(--teal-dark);margin-bottom:2px;"><i class="fas fa-circle" style="font-size:8px;margin-right:6px;"></i>Actively Looking</div>
+            <div style="font-size:12px;color:var(--teal);">Visible to recruiters & employers</div>
+          </div>
+          <div style="font-size:13px;color:var(--gray-600);margin-bottom:8px;"><strong>Job Types:</strong> Travel, Per Diem, Permanent</div>
+          <div style="font-size:13px;color:var(--gray-600);margin-bottom:8px;"><strong>Specialties:</strong> ICU, MICU, SICU</div>
+          <div style="font-size:13px;color:var(--gray-600);margin-bottom:8px;"><strong>Pay:</strong> $50/hr+</div>
+          <div style="font-size:13px;color:var(--gray-600);"><strong>Availability:</strong> Feb 1, 2025</div>
+          <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center;margin-top:12px;"><i class="fas fa-edit"></i>Edit Preferences</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-tools"></i>Skills</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <span class="badge badge-teal">Critical Care</span>
+            <span class="badge badge-teal">Ventilator Mgmt</span>
+            <span class="badge badge-teal">Hemodynamic Monitoring</span>
+            <span class="badge badge-navy">CRRT</span>
+            <span class="badge badge-navy">IABP</span>
+            <span class="badge badge-navy">Titration</span>
+            <span class="badge badge-green">Epic EMR</span>
+            <span class="badge badge-green">Cerner</span>
+            <span class="badge badge-gold">Charge Nurse</span>
+            <span class="badge badge-gold">Preceptor</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-graduation-cap"></i>Education</div>
+          <div style="font-size:13.5px;font-weight:500;">University of Texas Health Science Center</div>
+          <div style="font-size:13px;color:var(--gray-400);">BSN · Nursing · 2016</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: MESSAGES ═══ -->
+<div class="page" id="page-messages">
+  <div class="messages-layout">
+    <div class="msg-list">
+      <div class="msg-list-header">
+        <div style="font-size:15px;font-weight:600;">Messages</div>
+        <div class="msg-list-search"><i class="fas fa-search" style="color:var(--gray-400);font-size:13px;"></i><input placeholder="Search messages..."></div>
+      </div>
+      <div class="msg-thread active">
+        <div class="msg-thread-avatar">SR</div>
+        <div class="msg-thread-info">
+          <div class="msg-thread-name">Sarah Rodriguez, RN</div>
+          <div class="msg-thread-preview">That pay package sounds amazing! Did you...</div>
+        </div>
+        <div class="msg-thread-time">2h</div>
+        <div class="unread-dot"></div>
+      </div>
+      <div class="msg-thread">
+        <div class="msg-thread-avatar" style="background:var(--coral);">MH</div>
+        <div class="msg-thread-info">
+          <div class="msg-thread-name">Memorial Hermann Recruiting</div>
+          <div class="msg-thread-preview">Hi Jessica, we have an exciting ICU position...</div>
+        </div>
+        <div class="msg-thread-time">5h</div>
+        <div class="unread-dot"></div>
+      </div>
+      <div class="msg-thread">
+        <div class="msg-thread-avatar" style="background:var(--navy-mid);">KL</div>
+        <div class="msg-thread-info">
+          <div class="msg-thread-name">Dr. Kevin Liang</div>
+          <div class="msg-thread-preview">Thanks for connecting! Love your post about...</div>
+        </div>
+        <div class="msg-thread-time">1d</div>
+      </div>
+      <div class="msg-thread">
+        <div class="msg-thread-avatar" style="background:#2D6A4F;">TC</div>
+        <div class="msg-thread-info">
+          <div class="msg-thread-name">Tanya Collins, CRNA</div>
+          <div class="msg-thread-preview">Yes, the pay for CRNAs on travel is insane...</div>
+        </div>
+        <div class="msg-thread-time">2d</div>
+      </div>
+      <div class="msg-thread">
+        <div class="msg-thread-avatar" style="background:var(--gold);">RS</div>
+        <div class="msg-thread-info">
+          <div class="msg-thread-name">RetailStaffing Agency</div>
+          <div class="msg-thread-preview">We have 8 travel contracts in Houston...</div>
+        </div>
+        <div class="msg-thread-time">3d</div>
+      </div>
+    </div>
+
+    <div class="msg-body">
+      <div class="msg-body-header">
+        <div class="msg-thread-avatar" style="width:40px;height:40px;flex-shrink:0;">SR</div>
+        <div>
+          <div style="font-size:14px;font-weight:600;">Sarah Rodriguez, RN</div>
+          <div style="font-size:12px;color:var(--gray-400);">Travel ICU Nurse · Online now</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;">
+          <div class="icon-btn"><i class="fas fa-phone"></i></div>
+          <div class="icon-btn"><i class="fas fa-video"></i></div>
+          <div class="icon-btn"><i class="fas fa-ellipsis-h"></i></div>
+        </div>
+      </div>
+
+      <div class="chat-area">
+        <div class="chat-messages">
+          <div class="msg-bubble-wrap">
+            <div class="msg-thread-avatar" style="width:32px;height:32px;font-size:11px;flex-shrink:0;">SR</div>
+            <div>
+              <div class="bubble them">Hey! Saw your post about considering travel nursing. I just finished my first contract at Cedars and it was life-changing! What specialty are you in?</div>
+              <div class="bubble-time">10:32 AM</div>
+            </div>
+          </div>
+          <div class="msg-bubble-wrap me">
+            <div>
+              <div class="bubble me">Oh wow, that's so exciting! I'm in MICU — 8 years now. I've been thinking about travel for a while but nervous about the big leap. How was the pay package?</div>
+              <div class="bubble-time" style="text-align:right;">10:45 AM</div>
+            </div>
+          </div>
+          <div class="msg-bubble-wrap">
+            <div class="msg-thread-avatar" style="width:32px;height:32px;font-size:11px;flex-shrink:0;">SR</div>
+            <div>
+              <div class="bubble them">$58/hr + $2,200/week housing stipend + M&IE. After taxes I was taking home almost $3,800/week. Way more than my staff position. 13 weeks flew by!</div>
+              <div class="bubble-time">10:47 AM</div>
+            </div>
+          </div>
+          <div class="msg-bubble-wrap me">
+            <div>
+              <div class="bubble me">That pay package sounds amazing! Did you use an agency or go direct? And was it hard to adjust to a new facility?</div>
+              <div class="bubble-time" style="text-align:right;">11:02 AM</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg-input-bar">
+        <div class="icon-btn" style="flex-shrink:0;"><i class="fas fa-paperclip"></i></div>
+        <textarea class="msg-input" placeholder="Type a message..."></textarea>
+        <div class="icon-btn" style="flex-shrink:0;"><i class="fas fa-smile"></i></div>
+        <button class="msg-send-btn"><i class="fas fa-paper-plane"></i></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: NOTIFICATIONS ═══ -->
+<div class="page" id="page-notifications">
+  <div class="notif-page">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-family:var(--font-display);font-size:22px;">Notifications</div>
+      <button class="btn btn-outline btn-sm">Mark all read</button>
+    </div>
+    <div style="font-size:13px;color:var(--gray-400);margin-bottom:8px;">12 unread</div>
+
+    <div class="notif-group-title">Today</div>
+
+    <div class="notif-item unread">
+      <div class="notif-icon ni-coral"><i class="fas fa-heart"></i></div>
+      <div class="notif-content">
+        <div class="notif-text"><strong>Sarah Rodriguez</strong> and 47 others liked your post about ICU travel contracts</div>
+        <div class="notif-sub">2 hours ago · Community Feed</div>
+      </div>
+      <div class="notif-dot"></div>
+    </div>
+
+    <div class="notif-item unread">
+      <div class="notif-icon ni-teal"><i class="fas fa-briefcase"></i></div>
+      <div class="notif-content">
+        <div class="notif-text"><strong>Memorial Hermann</strong> viewed your profile and has a job match for you — Travel ICU RN, $62/hr</div>
+        <div class="notif-sub">5 hours ago · Jobs</div>
+      </div>
+      <div class="notif-dot"></div>
+    </div>
+
+    <div class="notif-item unread">
+      <div class="notif-icon ni-gold"><i class="fas fa-star"></i></div>
+      <div class="notif-content">
+        <div class="notif-text">Your application at <strong>Mayo Clinic</strong> moved to <strong>Interview Stage</strong> 🎉</div>
+        <div class="notif-sub">6 hours ago · Applications</div>
+      </div>
+      <div class="notif-dot"></div>
+    </div>
+
+    <div class="notif-item unread">
+      <div class="notif-icon ni-navy"><i class="fas fa-user-plus"></i></div>
+      <div class="notif-content">
+        <div class="notif-text"><strong>Dr. Kevin Liang, MD</strong> wants to connect with you</div>
+        <div class="notif-sub">8 hours ago · Network</div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-primary btn-sm">Accept</button>
+          <button class="btn btn-outline btn-sm">Decline</button>
+        </div>
+      </div>
+      <div class="notif-dot"></div>
+    </div>
+
+    <div class="notif-group-title">Yesterday</div>
+
+    <div class="notif-item">
+      <div class="notif-icon ni-teal"><i class="fas fa-comment"></i></div>
+      <div class="notif-content">
+        <div class="notif-text"><strong>Tanya Collins</strong> commented on your post: "This is so accurate! ICU travel is the best decision I made..."</div>
+        <div class="notif-sub">1 day ago · Community Feed</div>
+      </div>
+    </div>
+
+    <div class="notif-item">
+      <div class="notif-icon ni-coral"><i class="fas fa-certificate"></i></div>
+      <div class="notif-content">
+        <div class="notif-text">Your <strong>ACLS certification</strong> expires in 5 months — schedule your renewal today</div>
+        <div class="notif-sub">1 day ago · Credentials</div>
+      </div>
+    </div>
+
+    <div class="notif-item">
+      <div class="notif-icon ni-gold"><i class="fas fa-eye"></i></div>
+      <div class="notif-content">
+        <div class="notif-text">Your profile was viewed by <strong>3 recruiters</strong> from Houston Methodist, HCA Healthcare, and AMN Healthcare</div>
+        <div class="notif-sub">1 day ago · Profile</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: RESUME PARSER ═══ -->
+<div class="page" id="page-resume">
+  <div class="parser-page">
+    <div style="margin-bottom:24px;">
+      <div style="font-family:var(--font-display);font-size:22px;margin-bottom:4px;">Resume & Profile Parser</div>
+      <div style="font-size:13px;color:var(--gray-400);">Upload MS Word or PDF resumes — AI extracts structured profile data for your 2M+ database</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+      <div class="stat-card">
+        <div class="stat-card-icon icon-teal"><i class="fas fa-file-upload" style="font-size:18px;"></i></div>
+        <div class="stat-label">Total Profiles Ingested</div>
+        <div class="stat-val">2,000,000</div>
+        <div class="stat-change pos"><i class="fas fa-arrow-up"></i> 12,400 added this week</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-icon icon-coral"><i class="fas fa-clock" style="font-size:18px;"></i></div>
+        <div class="stat-label">Avg Parse Time</div>
+        <div class="stat-val">1.4s</div>
+        <div class="stat-change pos">Per resume · 98.7% accuracy</div>
+      </div>
+    </div>
+
+    <div class="upload-zone" id="dropzone" ondragover="event.preventDefault();this.classList.add('dragging')" ondragleave="this.classList.remove('dragging')" ondrop="event.preventDefault();this.classList.remove('dragging');handleDrop()">
+      <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+      <div class="upload-title">Drop resumes here to parse</div>
+      <div class="upload-sub">Supports .docx, .doc, .pdf, .json — or <span onclick="triggerUpload()">browse files</span></div>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+        <span class="badge badge-teal"><i class="fas fa-file-word"></i>MS Word (.docx)</span>
+        <span class="badge badge-navy"><i class="fas fa-file-pdf"></i>PDF</span>
+        <span class="badge badge-green"><i class="fas fa-code"></i>JSON</span>
+        <span class="badge badge-gold">Bulk Upload (ZIP)</span>
+      </div>
+    </div>
+
+    <div class="parser-results">
+      <div class="parsed-profile">
+        <div style="font-size:14px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px;"><i class="fas fa-check-circle" style="color:var(--teal);"></i>Parsed Profile Preview</div>
+        <div style="display:flex;gap:12px;margin-bottom:16px;">
+          <div class="profile-avatar" style="width:52px;height:52px;font-size:18px;border:3px solid #fff;">JM</div>
+          <div>
+            <div style="font-size:15px;font-weight:600;">Jessica Martinez, BSN, RN</div>
+            <div style="font-size:13px;color:var(--gray-400);">ICU RN · 8 years · Houston, TX</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+          <div style="font-size:12px;color:var(--gray-400);">Specialty</div><div style="font-size:12px;color:var(--gray-700);">ICU / Critical Care</div>
+          <div style="font-size:12px;color:var(--gray-400);">Experience</div><div style="font-size:12px;color:var(--gray-700);">8 years</div>
+          <div style="font-size:12px;color:var(--gray-400);">License</div><div style="font-size:12px;color:var(--teal);">TX RN #12345678 ✓</div>
+          <div style="font-size:12px;color:var(--gray-400);">Certifications</div><div style="font-size:12px;color:var(--gray-700);">CCRN, ACLS, BLS</div>
+          <div style="font-size:12px;color:var(--gray-400);">Education</div><div style="font-size:12px;color:var(--gray-700);">BSN, UT Health 2016</div>
+          <div style="font-size:12px;color:var(--gray-400);">Job Type</div><div style="font-size:12px;color:var(--gray-700);">Travel, Per Diem</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+          <span class="badge badge-teal">Ventilator Mgmt</span>
+          <span class="badge badge-teal">CRRT</span>
+          <span class="badge badge-navy">IABP</span>
+          <span class="badge badge-green">Epic EMR</span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm"><i class="fas fa-save"></i>Save to Database</button>
+          <button class="btn btn-outline btn-sm"><i class="fas fa-edit"></i>Edit</button>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;"><i class="fas fa-code" style="color:var(--teal);"></i>Structured JSON Output</div>
+        <div class="json-preview">
+<span class="json-key">"profile"</span>: {<br>
+&nbsp;&nbsp;<span class="json-key">"id"</span>: <span class="json-str">"hb_2000001"</span>,<br>
+&nbsp;&nbsp;<span class="json-key">"name"</span>: <span class="json-str">"Jessica Martinez"</span>,<br>
+&nbsp;&nbsp;<span class="json-key">"credentials"</span>: <span class="json-str">"BSN, RN"</span>,<br>
+&nbsp;&nbsp;<span class="json-key">"specialty"</span>: <span class="json-str">"ICU/Critical Care"</span>,<br>
+&nbsp;&nbsp;<span class="json-key">"years_exp"</span>: <span class="json-num">8</span>,<br>
+&nbsp;&nbsp;<span class="json-key">"location"</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"city"</span>: <span class="json-str">"Houston"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"state"</span>: <span class="json-str">"TX"</span><br>
+&nbsp;&nbsp;},<br>
+&nbsp;&nbsp;<span class="json-key">"licenses"</span>: [{<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"type"</span>: <span class="json-str">"RN"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"state"</span>: <span class="json-str">"TX"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"number"</span>: <span class="json-str">"12345678"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"exp"</span>: <span class="json-str">"2026-12"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"verified"</span>: <span class="json-num">true</span><br>
+&nbsp;&nbsp;}],<br>
+&nbsp;&nbsp;<span class="json-key">"certifications"</span>: [<span class="json-str">"CCRN"</span>, <span class="json-str">"ACLS"</span>, <span class="json-str">"BLS"</span>],<br>
+&nbsp;&nbsp;<span class="json-key">"job_prefs"</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"types"</span>: [<span class="json-str">"travel"</span>, <span class="json-str">"per_diem"</span>],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"pay_min"</span>: <span class="json-num">50</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="json-key">"available"</span>: <span class="json-str">"2025-02-01"</span><br>
+&nbsp;&nbsp;}<br>
+}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-outline btn-sm"><i class="fas fa-copy"></i>Copy JSON</button>
+          <button class="btn btn-outline btn-sm"><i class="fas fa-download"></i>Export CSV</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: EMPLOYER ═══ -->
+<div class="page" id="page-employer">
+  <div class="emp-header">
+    <div class="emp-company">
+      <div class="emp-logo">🏥</div>
+      <div>
+        <div class="emp-name">Memorial Hermann Health System</div>
+        <div class="emp-type">Verified Employer · Health System · Houston, TX</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button class="btn btn-outline btn-sm" style="color:#fff;border-color:rgba(255,255,255,.3);"><i class="fas fa-plus"></i>Post Job</button>
+        <button class="btn btn-outline btn-sm" style="color:#fff;border-color:rgba(255,255,255,.3);"><i class="fas fa-search"></i>Search Talent</button>
+      </div>
+    </div>
+    <div class="emp-stats">
+      <div class="emp-stat"><div class="emp-stat-val">45</div><div class="emp-stat-label">Active Listings</div></div>
+      <div class="emp-stat"><div class="emp-stat-val">1,284</div><div class="emp-stat-label">Applications</div></div>
+      <div class="emp-stat"><div class="emp-stat-val">38</div><div class="emp-stat-label">Interviews Scheduled</div></div>
+      <div class="emp-stat"><div class="emp-stat-val">12</div><div class="emp-stat-label">Offers Extended</div></div>
+      <div class="emp-stat"><div class="emp-stat-val">4.8 ⭐</div><div class="emp-stat-label">Employer Rating</div></div>
+    </div>
+  </div>
+
+  <div class="emp-body">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="font-family:var(--font-display);font-size:18px;">Active Job Listings</div>
+      <div style="display:flex;gap:8px;">
+        <select class="sort-select">
+          <option>All Statuses</option>
+          <option>Active</option>
+          <option>Paused</option>
+          <option>Urgent</option>
+        </select>
+        <button class="btn btn-primary"><i class="fas fa-plus"></i>Post New Job</button>
+      </div>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Position</th>
+          <th>Type</th>
+          <th>Applicants</th>
+          <th>Views</th>
+          <th>Pay</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div style="font-weight:500;">Travel ICU RN — MICU Nights</div><div style="font-size:11px;color:var(--gray-400);">Posted Jan 5, 2025</div></td>
+          <td>Travel · 13-wk</td>
+          <td><strong>84</strong> <span style="color:var(--gray-400);font-size:12px;">(12 new)</span></td>
+          <td>1,240</td>
+          <td>$62/hr</td>
+          <td><span class="status-pill sp-active">● Active</span></td>
+          <td><button class="btn btn-outline btn-sm">Review</button></td>
+        </tr>
+        <tr>
+          <td><div style="font-weight:500;">Staff RN — Emergency Dept</div><div style="font-size:11px;color:var(--gray-400);">Posted Jan 3, 2025</div></td>
+          <td>Permanent</td>
+          <td><strong>156</strong> <span style="color:var(--gray-400);font-size:12px;">(24 new)</span></td>
+          <td>3,800</td>
+          <td>$48/hr</td>
+          <td><span class="status-pill sp-urgent">🔴 Urgent</span></td>
+          <td><button class="btn btn-outline btn-sm">Review</button></td>
+        </tr>
+        <tr>
+          <td><div style="font-weight:500;">CRNA — Anesthesiology</div><div style="font-size:11px;color:var(--gray-400);">Posted Dec 20, 2024</div></td>
+          <td>Permanent</td>
+          <td><strong>28</strong></td>
+          <td>892</td>
+          <td>$210K/yr</td>
+          <td><span class="status-pill sp-active">● Active</span></td>
+          <td><button class="btn btn-outline btn-sm">Review</button></td>
+        </tr>
+        <tr>
+          <td><div style="font-weight:500;">Per Diem RN — Float Pool</div><div style="font-size:11px;color:var(--gray-400);">Posted Dec 15, 2024</div></td>
+          <td>Per Diem</td>
+          <td><strong>42</strong></td>
+          <td>640</td>
+          <td>$55/hr</td>
+          <td><span class="status-pill sp-paused">⏸ Paused</span></td>
+          <td><button class="btn btn-outline btn-sm">Resume</button></td>
+        </tr>
+        <tr>
+          <td><div style="font-weight:500;">Clinical Pharmacist — Oncology</div><div style="font-size:11px;color:var(--gray-400);">Posted Dec 10, 2024</div></td>
+          <td>Permanent</td>
+          <td><strong>18</strong></td>
+          <td>430</td>
+          <td>$65/hr</td>
+          <td><span class="status-pill sp-active">● Active</span></td>
+          <td><button class="btn btn-outline btn-sm">Review</button></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="margin-top:24px;">
+      <div style="font-family:var(--font-display);font-size:18px;margin-bottom:16px;">Recent Applicants</div>
+      <table class="data-table">
+        <thead>
+          <tr><th>Candidate</th><th>Specialty</th><th>Exp</th><th>Location</th><th>Applied To</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar-sm">JM</div><div><div style="font-weight:500;">Jessica M., RN</div><div style="font-size:11px;color:var(--gray-400);">Profile 98% complete</div></div></div></td>
+            <td>ICU · Critical Care</td>
+            <td>8 yrs</td>
+            <td>Houston, TX</td>
+            <td>Travel ICU RN</td>
+            <td><span class="status-pill sp-active">Reviewing</span></td>
+            <td><button class="btn btn-primary btn-sm">View</button></td>
+          </tr>
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar-sm" style="background:var(--coral);">AM</div><div><div style="font-weight:500;">Alex Moore, RN</div><div style="font-size:11px;color:var(--gray-400);">Profile 91% complete</div></div></div></td>
+            <td>ER · Trauma</td>
+            <td>5 yrs</td>
+            <td>Austin, TX</td>
+            <td>Staff RN — ER</td>
+            <td><span class="status-pill sp-urgent">Interview</span></td>
+            <td><button class="btn btn-primary btn-sm">View</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: ANALYTICS ═══ -->
+<div class="page" id="page-analytics">
+  <div style="padding:24px 32px 0;">
+    <div style="font-family:var(--font-display);font-size:22px;margin-bottom:4px;">Platform Analytics</div>
+    <div style="font-size:13px;color:var(--gray-400);">Insights for your profile & job activity</div>
+  </div>
+  <div class="analytics-grid">
+    <div class="stat-card fade-up">
+      <div class="stat-card-icon icon-teal"><i class="fas fa-eye" style="font-size:18px;color:var(--teal);"></i></div>
+      <div class="stat-label">Profile Views</div>
+      <div class="stat-val">1,284</div>
+      <div class="stat-change pos"><i class="fas fa-arrow-up"></i> +23% this week</div>
+    </div>
+    <div class="stat-card fade-up">
+      <div class="stat-card-icon icon-coral"><i class="fas fa-paper-plane" style="font-size:18px;color:var(--coral);"></i></div>
+      <div class="stat-label">Applications Sent</div>
+      <div class="stat-val">8</div>
+      <div class="stat-change pos"><i class="fas fa-arrow-up"></i> 2 in review stage</div>
+    </div>
+    <div class="stat-card fade-up">
+      <div class="stat-card-icon icon-gold"><i class="fas fa-handshake" style="font-size:18px;color:var(--gold);"></i></div>
+      <div class="stat-label">Response Rate</div>
+      <div class="stat-val">62%</div>
+      <div class="stat-change pos"><i class="fas fa-arrow-up"></i> Above avg (42%)</div>
+    </div>
+    <div class="stat-card fade-up">
+      <div class="stat-card-icon icon-navy"><i class="fas fa-users" style="font-size:18px;color:var(--navy-mid);"></i></div>
+      <div class="stat-label">Network Growth</div>
+      <div class="stat-val">+47</div>
+      <div class="stat-change pos">New connections this month</div>
+    </div>
+  </div>
+  <div class="analytics-body">
+    <div class="chart-card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Profile Views — Last 12 Weeks</div>
+      <div class="chart-placeholder">
+        <div class="chart-bars">
+          <div class="chart-bar" style="height:30%;"></div>
+          <div class="chart-bar" style="height:45%;"></div>
+          <div class="chart-bar" style="height:35%;"></div>
+          <div class="chart-bar" style="height:60%;"></div>
+          <div class="chart-bar" style="height:50%;"></div>
+          <div class="chart-bar" style="height:70%;"></div>
+          <div class="chart-bar" style="height:65%;"></div>
+          <div class="chart-bar" style="height:80%;"></div>
+          <div class="chart-bar" style="height:72%;"></div>
+          <div class="chart-bar" style="height:90%;"></div>
+          <div class="chart-bar" style="height:85%;"></div>
+          <div class="chart-bar" style="height:95%;opacity:1;"></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--gray-400);padding:0 12px;">
+        <span>Oct</span><span>Nov</span><span>Dec</span><span>Jan</span>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+      <div class="chart-card">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Who's Viewing Your Profile</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span>Recruiters</span><span style="font-weight:600;">48%</span></div><div class="progress-track"><div class="progress-fill" style="width:48%"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span>Employers</span><span style="font-weight:600;">32%</span></div><div class="progress-track"><div class="progress-fill" style="width:32%;background:var(--navy-mid);"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span>Healthcare Pros</span><span style="font-weight:600;">20%</span></div><div class="progress-track"><div class="progress-fill" style="width:20%;background:var(--coral);"></div></div></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Application Funnel</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:10px;"><div style="width:80px;font-size:12px;color:var(--gray-400);">Applied</div><div style="flex:1;height:28px;background:var(--teal);border-radius:var(--radius-sm);display:flex;align-items:center;padding:0 10px;color:#fff;font-size:12px;font-weight:600;">8</div></div>
+          <div style="display:flex;align-items:center;gap:10px;"><div style="width:80px;font-size:12px;color:var(--gray-400);">Reviewed</div><div style="flex:.75;height:28px;background:var(--navy-mid);border-radius:var(--radius-sm);display:flex;align-items:center;padding:0 10px;color:#fff;font-size:12px;font-weight:600;">5</div></div>
+          <div style="display:flex;align-items:center;gap:10px;"><div style="width:80px;font-size:12px;color:var(--gray-400);">Interview</div><div style="flex:.375;height:28px;background:var(--gold);border-radius:var(--radius-sm);display:flex;align-items:center;padding:0 10px;color:#fff;font-size:12px;font-weight:600;">3</div></div>
+          <div style="display:flex;align-items:center;gap:10px;"><div style="width:80px;font-size:12px;color:var(--gray-400);">Offer</div><div style="flex:.125;height:28px;background:var(--coral);border-radius:var(--radius-sm);display:flex;align-items:center;padding:0 10px;color:#fff;font-size:12px;font-weight:600;">1</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: SETTINGS ═══ -->
+<div class="page" id="page-settings">
+  <div class="settings-layout">
+    <div class="settings-nav">
+      <div class="settings-nav-item active"><i class="fas fa-user"></i>Account</div>
+      <div class="settings-nav-item"><i class="fas fa-bell"></i>Notifications</div>
+      <div class="settings-nav-item"><i class="fas fa-briefcase"></i>Job Preferences</div>
+      <div class="settings-nav-item"><i class="fas fa-eye"></i>Privacy</div>
+      <div class="settings-nav-item"><i class="fas fa-shield-alt"></i>Security</div>
+      <div class="settings-nav-item"><i class="fas fa-credit-card"></i>Billing</div>
+      <div class="settings-nav-item"><i class="fas fa-link"></i>Integrations</div>
+    </div>
+
+    <div class="settings-main">
+      <div class="settings-section">
+        <div class="settings-section-title">Account Information</div>
+        <div class="settings-section-sub">Update your personal and professional details</div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">First Name</label><input class="form-input" value="Jessica"></div>
+          <div class="form-group"><label class="form-label">Last Name</label><input class="form-input" value="Martinez"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Professional Headline</label><input class="form-input" value="ICU Travel Nurse · Critical Care Specialist · Houston, TX"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Email</label><input class="form-input" value="jessica.m@email.com"></div>
+          <div class="form-group"><label class="form-label">Phone</label><input class="form-input" value="+1 (832) 555-0192"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">City</label><input class="form-input" value="Houston"></div>
+          <div class="form-group"><label class="form-label">State</label><input class="form-input" value="TX"></div>
+        </div>
+        <button class="btn btn-primary">Save Changes</button>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Notification Preferences</div>
+        <div class="settings-section-sub">Choose what you want to be notified about</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Job Match Alerts</div>
+            <div class="toggle-sub">Get notified when new jobs match your profile</div>
+          </div>
+          <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Application Updates</div>
+            <div class="toggle-sub">Status changes on your applications</div>
+          </div>
+          <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Recruiter Messages</div>
+            <div class="toggle-sub">When recruiters send you messages</div>
+          </div>
+          <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Community Feed Notifications</div>
+            <div class="toggle-sub">Likes, comments, and follows</div>
+          </div>
+          <label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Weekly Digest Email</div>
+            <div class="toggle-sub">Summary of top job matches and platform updates</div>
+          </div>
+          <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Privacy Settings</div>
+        <div class="settings-section-sub">Control who can see your profile</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Open to Work — Visible to Recruiters</div>
+            <div class="toggle-sub">Recruiters and employers can find your profile</div>
+          </div>
+          <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Public Profile</div>
+            <div class="toggle-sub">Anyone on HealthBoard Pro can view your profile</div>
+          </div>
+          <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Show Salary Expectations</div>
+            <div class="toggle-sub">Display your pay preferences on your profile</div>
+          </div>
+          <label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main-content -->
+</div><!-- /app -->
+
+<!-- ═══ JOB DETAIL PANEL ═══ -->
+<div class="modal-overlay" id="jobModal" onclick="handleModalClick(event)">
+  <div class="job-detail-panel">
+    <div class="jd-header">
+      <div class="jd-logo">🏥</div>
+      <div>
+        <div class="jd-title">Travel ICU RN — Critical Care</div>
+        <div class="jd-employer">Memorial Hermann Health System · Houston, TX</div>
+      </div>
+      <div class="jd-close" onclick="closeJobDetail()"><i class="fas fa-times"></i></div>
+    </div>
+
+    <div class="jd-body">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
+        <span class="badge badge-teal"><i class="fas fa-plane"></i>Travel</span>
+        <span class="badge badge-gold">⭐ Featured</span>
+        <span class="badge badge-green">ICU · Critical Care</span>
+        <span class="badge badge-coral">Top Rated Employer</span>
+      </div>
+
+      <div class="jd-key-facts">
+        <div class="jd-fact"><div class="jd-fact-label">Hourly Pay</div><div class="jd-fact-val" style="color:var(--teal-dark);font-size:18px;font-weight:700;">$62/hr</div></div>
+        <div class="jd-fact"><div class="jd-fact-label">Housing Stipend</div><div class="jd-fact-val">$2,400/week</div></div>
+        <div class="jd-fact"><div class="jd-fact-label">Contract Length</div><div class="jd-fact-val">13 weeks</div></div>
+        <div class="jd-fact"><div class="jd-fact-label">Shift</div><div class="jd-fact-val">Nights · 3×12</div></div>
+        <div class="jd-fact"><div class="jd-fact-label">Start Date</div><div class="jd-fact-val">Feb 1, 2025</div></div>
+        <div class="jd-fact"><div class="jd-fact-label">Beds / Ratio</div><div class="jd-fact-val">24-bed MICU · 2:1</div></div>
+      </div>
+
+      <div class="jd-section-title">About This Role</div>
+      <p>Memorial Hermann is seeking an experienced Travel ICU Registered Nurse for our 24-bed Medical Intensive Care Unit. You'll be caring for critically ill patients including post-surgical, sepsis, and multi-organ failure cases in a Level I Trauma Center environment.</p>
+
+      <div class="jd-section-title">Requirements</div>
+      <ul>
+        <li>Active Texas RN license (or Compact license)</li>
+        <li>Minimum 2 years recent ICU/Critical Care experience</li>
+        <li>ACLS and BLS certifications (current)</li>
+        <li>CCRN preferred but not required</li>
+        <li>Experience with ventilator management, hemodynamic monitoring, and drip titration</li>
+        <li>Epic EMR experience preferred</li>
+      </ul>
+
+      <div class="jd-section-title">Benefits Package</div>
+      <ul>
+        <li>$62/hr base rate (tax-free stipend eligible)</li>
+        <li>$2,400/week housing stipend + M&IE</li>
+        <li>Medical, dental, vision insurance (Day 1)</li>
+        <li>401(k) with company match</li>
+        <li>$500 completion bonus at 13 weeks</li>
+        <li>Free CEU access through platform</li>
+        <li>24/7 support from dedicated recruiter</li>
+      </ul>
+
+      <div class="jd-section-title">About Memorial Hermann</div>
+      <p>Memorial Hermann Health System is one of Texas's largest not-for-profit health systems with 17 hospitals. Rated 4.8/5 by travel nurses for communication, facilities, and support. Magnet® recognized for nursing excellence.</p>
+
+      <div style="display:flex;gap:8px;margin-top:16px;padding:14px;background:var(--teal-light);border-radius:var(--radius-md);">
+        <i class="fas fa-chart-line" style="color:var(--teal);margin-top:2px;"></i>
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--teal-dark);">Strong Match — 94%</div>
+          <div style="font-size:12px;color:var(--teal);">Your profile matches 19 of 20 requirements for this role</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="jd-footer">
+      <button class="btn btn-primary btn-lg" style="flex:1;justify-content:center;"><i class="fas fa-paper-plane"></i>Apply Now</button>
+      <button class="btn btn-outline"><i class="fas fa-bookmark"></i>Save</button>
+      <button class="btn btn-outline"><i class="fas fa-share-alt"></i>Share</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Navigation ──────────────────────────────────────
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const page = document.getElementById('page-' + id);
+  if (page) page.classList.add('active');
+  const navItem = document.querySelector(`.nav-item[onclick="showPage('${id}')"]`);
+  if (navItem) navItem.classList.add('active');
+}
+
+// ── Job Detail Panel ────────────────────────────────
+function openJobDetail() {
+  document.getElementById('jobModal').classList.add('open');
+}
+function closeJobDetail() {
+  document.getElementById('jobModal').classList.remove('open');
+}
+function handleModalClick(e) {
+  if (e.target === document.getElementById('jobModal')) closeJobDetail();
+}
+
+// ── Save / Bookmark ─────────────────────────────────
+function toggleSave(e, btn) {
+  e.stopPropagation();
+  btn.classList.toggle('saved');
+}
+
+// ── Resume Upload ───────────────────────────────────
+function triggerUpload() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.docx,.doc,.pdf,.json,.zip';
+  input.multiple = true;
+  input.click();
+}
+function handleDrop() {
+  const zone = document.getElementById('dropzone');
+  zone.style.background = 'var(--teal-light)';
+  zone.innerHTML = `
+    <div class="upload-icon"><i class="fas fa-check-circle" style="color:var(--teal);"></i></div>
+    <div class="upload-title" style="color:var(--teal);">3 files uploaded successfully</div>
+    <div class="upload-sub">Processing with AI parser...</div>
+  `;
+}
+
+// ── Follow buttons ───────────────────────────────────
+document.querySelectorAll('.btn-follow').forEach(btn => {
+  btn.addEventListener('click', function() {
+    this.classList.toggle('following');
+    this.textContent = this.classList.contains('following') ? 'Following' : 'Follow';
+  });
+});
+
+// ── Tab navigation (Professionals page) ─────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    this.closest('.tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+// ── Settings nav ────────────────────────────────────
+document.querySelectorAll('.settings-nav-item').forEach(item => {
+  item.addEventListener('click', function() {
+    document.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+// ── Post action (like) ───────────────────────────────
+document.querySelectorAll('.post-action').forEach(action => {
+  action.addEventListener('click', function() {
+    if (this.innerHTML.includes('Likes') || this.innerHTML.includes('Interested')) {
+      this.classList.toggle('liked');
+    }
+  });
+});
+
+// ── Filter chips ─────────────────────────────────────
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', function() {
+    this.classList.toggle('active');
+  });
+});
+</script>
+
+<!-- ════════════════════════════════════════════════════════════
+     LIVE DATA WIRING — replaces mock HTML with real API data
+     ════════════════════════════════════════════════════════════ -->
+<script src="/static/hb-api.js"></script>
+<script>
+const HB_PALETTE = [['#2F7AF6','#0B46A3'],['#E14B27','#A0280A'],['#2D6A4F','#1B4332'],
+                    ['#6B3FA0','#3D1A6E'],['#C99700','#8A5A00'],['#1A5276','#082452']];
+const HB_PROV_CACHE = {};
+const HB_PROV_RELEASED = {};
+const HB_PROV_RESULT_CACHE = new Map();
+const HB_PROV_INFLIGHT = new Map();
+let HB_PROV_REQ = 0;
+let HB_CURRENT_USER = null;
+
+function hbLoading(text){
+  return `<div style="padding:40px;color:var(--gray-400);grid-column:1/-1;text-align:center;">${HB.esc(text)}</div>`;
+}
+
+function hbClearMockData(){
+  const providers = document.querySelector('.professionals-grid');
+  if (providers) providers.innerHTML = hbLoading('Loading providers...');
+  const dashJobs = document.querySelector('#page-dashboard .jobs-grid');
+  if (dashJobs) dashJobs.innerHTML = hbLoading('Loading recommended jobs...');
+  const jobList = document.querySelector('#page-search .jobs-list');
+  if (jobList) jobList.innerHTML = hbLoading('Loading jobs...');
+}
+hbClearMockData();
+
+function hbCanUseProviders(){
+  const role = (HB_CURRENT_USER && HB_CURRENT_USER.role) || '';
+  return role === 'recruiter' || role === 'admin';
+}
+
+function hbApplyRoleAccess(me){
+  HB_CURRENT_USER = me || null;
+  const canProviders = hbCanUseProviders();
+  document.querySelectorAll('.hb-recruiter-only').forEach(el => {
+    el.style.display = canProviders ? '' : 'none';
+  });
+  const providersPage = document.getElementById('page-professionals');
+  if (!canProviders && providersPage && providersPage.classList.contains('active')) {
+    showPage('dashboard');
+  }
+}
+
+function hbContactAudit(p){
+  if (!p.contact_updated_by_email) return '';
+  let when = '';
+  if (p.contact_updated_at) {
+    try { when = new Date(p.contact_updated_at).toLocaleString([], { month:'short', day:'numeric', year:'numeric' }); } catch(e) {}
+  }
+  const recruiterId = p.contact_updated_by_user_id ? ` (${String(p.contact_updated_by_user_id).slice(0, 8)})` : '';
+  const text = `Updated by ${p.contact_updated_by_email}${recruiterId}${when ? ' on '+when : ''}`;
+  return `<div style="font-size:11.5px;color:var(--gray-400);margin:0 0 10px;text-align:left;"><i class="fas fa-user-edit" style="margin-right:5px;"></i>${HB.esc(text)}</div>`;
+}
+
+function hbProviderContactStatus(p){
+  if (p.email && p.phone) return 'Email + phone on file';
+  if (p.email) return 'Email on file';
+  if (p.phone) return 'Phone on file';
+  return 'No contact on file';
+}
+
+function hbProviderContactRow(p){
+  const released = HB_PROV_RELEASED[p.profile_id];
+  if (released) {
+    const links = [];
+    if (released.email) links.push(`<a href="mailto:${HB.esc(released.email)}"><i class="fas fa-envelope"></i>${HB.esc(released.email)}</a>`);
+    if (released.phone) links.push(`<a href="tel:${HB.esc(released.phone)}"><i class="fas fa-phone"></i>${HB.esc(released.phone)}</a>`);
+    return `<div class="provider-contact-lock released">
+      ${links.length ? links.join('') : '<span class="state"><i class="fas fa-circle-info"></i>No contact on file</span>'}
+      <span class="release-note"><i class="fas fa-shield-halved"></i>Released this session</span>
+    </div>`;
+  }
+  const hasContact = !!(p.email || p.phone);
+  return `<div class="provider-contact-lock">
+    <span class="state"><i class="fas fa-lock"></i>${HB.esc(hbProviderContactStatus(p))}</span>
+    ${hasContact ? `<button class="btn btn-outline btn-sm btn-release" onclick="hbReleaseProviderContact('${p.profile_id}')" style="width:100%;justify-content:center;"><i class="fas fa-lock-open"></i>Release contact</button>` : ''}
+  </div>`;
+}
+
+async function hbReleaseProviderContact(profileId){
+  await HB.ensureAuth();
+  if (!hbCanUseProviders()) {
+    alert('Only recruiters can release provider contact details.');
+    return;
+  }
+  try {
+    const released = await HB.post('/api/profiles/'+profileId+'/contact-release', {});
+    HB_PROV_RELEASED[profileId] = released;
+    if (HB_PROV_CACHE[profileId]) HB_PROV_CACHE[profileId] = { ...HB_PROV_CACHE[profileId], ...released };
+    if (HB_PROV_ALL){ const i = HB_PROV_ALL.findIndex(p => p.profile_id === profileId); if (i >= 0) HB_PROV_ALL[i] = { ...HB_PROV_ALL[i], ...released }; }
+    hbApplyProviderFilters();
+    return released;
+  } catch(e) {
+    alert(e.message || 'Could not release contact.');
+    return null;
+  }
+}
+
+function hbProCard(p, i){
+  HB_PROV_CACHE[p.profile_id] = p;
+  const c = HB_PALETTE[i % HB_PALETTE.length];
+  const prof = p.profession_type || 'Pro';
+  const role = HB.esc(p.headline || [p.specialty, prof].filter(Boolean).join(' · ') || 'Healthcare professional');
+  const loc  = [p.city, p.state_code].filter(Boolean).join(', ');
+  const badges = [];
+  if (p.provider_category) badges.push(`<span class="badge badge-teal">${HB.esc(p.provider_category)}</span>`);
+  if (p.specialty) badges.push(`<span class="badge badge-green">${HB.esc(p.specialty)}</span>`);
+  if (p.american_board) badges.push(`<span class="badge badge-navy" title="${HB.esc(p.american_board)}">${HB.esc(p.american_board.replace(/^American Board of /,'ABo '))}</span>`);
+  if (loc)         badges.push(`<span class="badge">${HB.esc(loc)}</span>`);
+  const contactRow = hbProviderContactRow(p);
+  const auditRow = hbContactAudit(p);
+  const action = p.resume_url
+    ? `<button class="btn btn-outline" onclick="hbViewResume('${p.profile_id}')" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-file-alt"></i>View résumé</button>`
+    : `<button class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-user-plus"></i>Connect</button>`;
+  const contactLabel = (p.email || p.phone) ? 'Edit contact' : 'Add contact';
+  const contactAction = hbCanUseProviders()
+    ? `<button class="btn btn-outline" onclick="hbEditProviderContact('${p.profile_id}')" style="width:100%;justify-content:center;font-size:13px;margin-top:8px;"><i class="fas fa-address-card"></i>${contactLabel}</button>`
+    : '';
+  return `<div class="pro-card">
+    <div class="pro-cover" style="background:linear-gradient(135deg,${c[0]} 0%,${c[1]} 100%);"></div>
+    <div class="pro-body">
+      <div class="pro-avatar" style="background:${c[0]};">${HB.initials(p.first_name,p.last_name)}</div>
+      <div class="verified-badge"><i class="fas fa-check-circle"></i>Verified ${HB.esc(prof)}</div>
+      <div class="pro-name">${HB.esc(p.first_name)} ${HB.esc(p.last_name)}${prof ? ', '+HB.esc(prof) : ''}</div>
+      <div class="pro-role">${role}</div>
+      <div class="pro-specialties">${badges.join('')}</div>
+      ${contactRow}
+      ${auditRow}
+      <div class="pro-stats">
+        <div><div class="pro-stat-val">${p.years_experience || '—'}</div><div class="pro-stat-lab">Years Exp</div></div>
+        <div><div class="pro-stat-val">${p.completion_score}%</div><div class="pro-stat-lab">Profile</div></div>
+      </div>
+      ${action}${contactAction}
+    </div></div>`;
+}
+
+function hbJobCard(j){
+  const loc = [j.city, j.state_code].filter(Boolean).join(', ') || 'Remote / flexible';
+  const unit = (j.pay_unit === 'hourly') ? '/hr' : (j.pay_unit === 'annual' ? '' : '/'+(j.pay_unit||''));
+  const pay = j.pay_rate_max ? `$${Math.round(j.pay_rate_max)}${unit}` : (j.pay_rate_min ? `$${Math.round(j.pay_rate_min)}${unit}` : '—');
+  const badges = [];
+  if (j.job_type)  badges.push(`<span class="badge badge-teal">${HB.esc(j.job_type)}</span>`);
+  if (j.specialty) badges.push(`<span class="badge badge-green">${HB.esc(j.specialty)}</span>`);
+  if (j.is_urgent) badges.push(`<span class="badge badge-coral">Urgent Hire</span>`);
+  return `<div class="job-list-card" onclick="hbOpenJob('${j.job_id}')">
+    <div class="employer-logo">🏥</div>
+    <div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:3px;">${HB.esc(j.title)}</div>
+      <div style="font-size:13px;color:var(--gray-400);margin-bottom:8px;">${HB.esc(loc)}</div>
+      <div class="job-badges">${badges.join('')}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:700;color:var(--teal-dark);">${pay}</div>
+      <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">${j.application_count||0} applicants</div>
+      <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();hbApplyJob('${j.job_id}',this)">Quick Apply</button>
+    </div></div>`;
+}
+
+// --- Job detail modal (real data + apply/save) ---
+async function hbOpenJob(jobId){
+  const modal=document.getElementById('jobModal'); if(!modal) return;
+  let job; try{ job=await HB.get('/api/jobs/'+jobId); }catch(e){ return; }
+  let empName=''; try{ empName=(await HB.get('/api/employers/'+job.employer_id)).org_name; }catch(e){}
+  const q=s=>modal.querySelector(s), loc=[job.city,job.state_code].filter(Boolean).join(', ');
+  if(q('.jd-title')) q('.jd-title').textContent=job.title;
+  if(q('.jd-employer')) q('.jd-employer').textContent=[empName,loc].filter(Boolean).join(' · ');
+  const badgeRow=q('.jd-body > div'); if(badgeRow) badgeRow.innerHTML=[
+    job.job_type?`<span class="badge badge-teal">${HB.esc(job.job_type)}</span>`:'',
+    job.is_featured?'<span class="badge badge-gold">⭐ Featured</span>':'',
+    job.specialty?`<span class="badge badge-green">${HB.esc(job.specialty)}</span>`:'',
+    job.is_urgent?'<span class="badge badge-coral">Urgent</span>':''].filter(Boolean).join('');
+  const facts=q('.jd-key-facts'); if(facts){ const f=(l,v)=>`<div class="jd-fact"><div class="jd-fact-label">${l}</div><div class="jd-fact-val">${v}</div></div>`;
+    facts.innerHTML=[
+      f('Pay', job.pay_rate_max?('$'+Math.round(job.pay_rate_max)+(job.pay_unit==='hourly'?'/hr':'')):'—'),
+      job.housing_stipend?f('Housing','$'+Math.round(job.housing_stipend)+'/wk'):'',
+      f('Type', job.job_type||'—'),
+      job.shift_type?f('Shift', job.shift_type):'',
+      job.specialty?f('Specialty', job.specialty):'',
+      job.profession_type?f('Profession', job.profession_type):''].filter(Boolean).join(''); }
+  const paras=modal.querySelectorAll('.jd-body p'); if(paras[0]) paras[0].textContent=job.description||'No description provided.';
+  const lists=modal.querySelectorAll('.jd-body ul');
+  if(lists[0]) lists[0].innerHTML=[...(job.required_skills||[]),...(job.required_certifications||[])].map(s=>`<li>${HB.esc(s)}</li>`).join('')||'<li>See description</li>';
+  if(lists[1]) lists[1].innerHTML=(job.benefits||[]).map(b=>`<li>${HB.esc(b)}</li>`).join('')||'<li>Competitive benefits package</li>';
+  const apply=modal.querySelector('.jd-footer .btn-primary'); if(apply){ apply.innerHTML='<i class="fas fa-paper-plane"></i>Apply Now'; apply.disabled=false; apply.onclick=()=>hbApplyJob(jobId,apply); }
+  const save=modal.querySelector('.jd-footer .btn-outline'); if(save) save.onclick=()=>hbSaveJob(jobId,save);
+  modal.classList.add('open');
+}
+async function hbApplyJob(jobId, btn){
+  try{ await HB.ensureAuth(); await HB.post('/api/jobs/'+jobId+'/apply',{}); if(btn){btn.innerHTML='<i class="fas fa-check"></i>Applied'; btn.disabled=true;} }
+  catch(e){ alert(e.status===409?'You already applied to this job.':(e.message||'Build a profile first to apply.')); }
+}
+async function hbSaveJob(jobId, btn){
+  try{ await HB.ensureAuth(); await HB.post('/api/jobs/'+jobId+'/save',{}); if(btn) btn.innerHTML='<i class="fas fa-bookmark"></i>Saved'; }
+  catch(e){ alert(e.message||'Could not save job.'); }
+}
+
+// --- Dashboard ---
+async function hbLoadDashboard(){
+  const dash=document.getElementById('page-dashboard'); if(!dash) return;
+  // Recommended jobs grid
+  const grid=dash.querySelector('.jobs-grid');
+  if(grid){
+    try{
+      const data=await HB.get('/api/jobs?limit=4');
+      grid.innerHTML=data.items.map(j=>{
+        const loc=[j.city,j.state_code].filter(Boolean).join(', ');
+        const pay=j.pay_rate_max?('$'+Math.round(j.pay_rate_max)+(j.pay_unit==='hourly'?'/hr':'')):'';
+        return `<div class="job-card ${j.is_featured?'featured':''}" onclick="hbOpenJob('${j.job_id}')">
+          <div class="job-card-header"><div class="employer-logo">🏥</div>
+            <div><div class="job-title">${HB.esc(j.title)}</div><div class="job-employer">${HB.esc(loc||'')}</div></div></div>
+          <div class="job-badges">${j.job_type?`<span class="badge badge-teal">${HB.esc(j.job_type)}</span>`:''}${j.specialty?`<span class="badge badge-green">${HB.esc(j.specialty)}</span>`:''}</div>
+          <div class="job-footer"><div class="job-pay">${pay}</div><button class="btn btn-primary btn-sm" onclick="event.stopPropagation();hbApplyJob('${j.job_id}',this)">Quick Apply</button></div></div>`;
+      }).join('')||'<div style="color:var(--gray-400)">No open roles yet.</div>';
+    }catch(e){ console.warn('dash jobs',e); }
+  }
+  // Greeting + metrics (only when signed in) — all real, no placeholders.
+  if(!HB.isAuthed()) return;
+  try{
+    const me=await HB.get('/api/profiles/me').catch(()=>null);
+    const apps=await HB.get('/api/applications/mine').catch(()=>[]);
+    const saved=await HB.get('/api/applications/saved').catch(()=>[]);
+    const em=dash.querySelector('.dash-title em'); if(em&&me) em.textContent=me.first_name;
+    const sub=document.getElementById('hb-dash-sub');
+    if(sub&&me){ const bits=[me.specialty,me.provider_category,[me.city,me.state_code].filter(Boolean).join(', ')].filter(Boolean); sub.textContent = bits.length? bits.join(' · ') : 'Find your next role and connect with recruiters.'; }
+    const comp = me ? (me.completion_score||0) : 0;
+    const vals=dash.querySelectorAll('.metric-val');
+    if(vals[0]) vals[0].textContent=comp+'%';           // Profile Complete
+    if(vals[1]) vals[1].textContent=apps.length;        // Applications Sent
+    if(vals[2]) vals[2].textContent=saved.length;       // Saved Jobs
+    if(vals[3]) vals[3].textContent='0';                // Network Connections (none yet)
+    const cEl=document.getElementById('hb-dash-complete'); if(cEl) cEl.textContent=comp+'%';
+  }catch(e){}
+}
+
+// --- Providers directory: filter state + loaders -------------------------
+const HB_PROV = { q:'', category:'', profession_type:'', state_code:'', city:'', specialty:'', american_board:'' };
+
+// The full provider set is fetched ONCE, then every tab / filter / search runs
+// in-memory — so switching tabs is instant instead of a 1–5s Neon round-trip.
+let HB_PROV_ALL = null;
+
+function hbProviderMatches(p){
+  const s = HB_PROV;
+  if (s.category && (p.provider_category||'') !== s.category) return false;
+  if (s.profession_type && (p.profession_type||'') !== s.profession_type) return false;
+  if (s.state_code && (p.state_code||'') !== s.state_code) return false;
+  if (s.city && !((p.city||'').toLowerCase().includes(s.city.toLowerCase()))) return false;
+  if (s.specialty && (p.specialty||'') !== s.specialty) return false;
+  if (s.american_board && (p.american_board||'') !== s.american_board) return false;
+  if (s.q){
+    const hay = [p.first_name,p.last_name,p.specialty,p.headline,p.city,p.state_code,p.profession_type,p.american_board].filter(Boolean).join(' ').toLowerCase();
+    if (!hay.includes(s.q.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function hbRenderProviders(items){
+  const grid = document.querySelector('.professionals-grid');
+  const countEl = document.getElementById('hb-pros-count');
+  if (!grid) return;
+  grid.innerHTML = items.length
+    ? items.map(hbProCard).join('')
+    : '<div style="padding:40px;color:var(--gray-400);grid-column:1/-1;">No providers match these filters.</div>';
+  if (countEl) countEl.textContent = `${items.length} provider${items.length===1?'':'s'}`;
+  const clr = document.getElementById('hb-f-clear');
+  if (clr) clr.style.display = Object.values(HB_PROV).some(Boolean) ? '' : 'none';
+}
+
+function hbApplyProviderFilters(){
+  if (!HB_PROV_ALL) return;
+  hbRenderProviders(HB_PROV_ALL.filter(hbProviderMatches));
+}
+
+function hbBuildProviderFacets(){
+  const all = HB_PROV_ALL || [];
+  const uniq = (key) => [...new Set(all.map(p=>p[key]).filter(Boolean))].sort();
+  const fill = (id, values) => {
+    const sel = document.getElementById(id); if (!sel) return;
+    const cur = sel.value;
+    const keep = sel.querySelector('option').outerHTML;   // the "All …" option
+    sel.innerHTML = keep + values.map(v => `<option value="${HB.esc(v)}">${HB.esc(v)}</option>`).join('');
+    sel.value = cur;   // preserve any active selection
+  };
+  fill('hb-f-profession', uniq('profession_type'));
+  fill('hb-f-state', uniq('state_code'));
+  fill('hb-f-city', uniq('city'));
+  fill('hb-f-specialty', uniq('specialty'));
+  fill('hb-f-board', uniq('american_board').filter(b => b !== 'American Board of Physician Specialties'));
+  // Tab counts.
+  const cats = {};
+  all.forEach(p => { const c = p.provider_category || 'Other'; cats[c] = (cats[c]||0)+1; });
+  document.querySelectorAll('#hb-prov-tabs .tab').forEach(t => {
+    const cat = t.dataset.cat;
+    const n = cat ? (cats[cat]||0) : ['Physicians','Nursing','Allied','APP'].reduce((s,k)=>s+(cats[k]||0),0);
+    t.dataset.base = t.dataset.base || t.textContent;
+    t.textContent = `${t.dataset.base} ${n}`;
+  });
+}
+
+async function hbLoadProfessionals(force){
+  const grid = document.querySelector('.professionals-grid');
+  const countEl = document.getElementById('hb-pros-count');
+  if (!grid) return;
+  if (!hbCanUseProviders()) {
+    grid.innerHTML = '<div style="padding:40px;color:var(--gray-400);grid-column:1/-1;">Providers are available to recruiters only.</div>';
+    if (countEl) countEl.textContent = 'Recruiter access required';
+    return;
+  }
+  if (HB_PROV_ALL && !force){ hbApplyProviderFilters(); return; }
+  const seq = ++HB_PROV_REQ;
+  grid.innerHTML = hbLoading('Loading providers...');
+  if (countEl) countEl.textContent = 'Loading providers...';
+  try {
+    let all = [], offset = 0, total = Infinity;
+    while (all.length < total){
+      const d = await HB.get(`/api/profiles?providers_only=true&limit=100&offset=${offset}`);
+      if (seq !== HB_PROV_REQ) return;   // a newer load superseded this one
+      all = all.concat(d.items || []);
+      total = d.total || all.length;
+      offset += 100;
+      if (!d.items || !d.items.length) break;
+    }
+    HB_PROV_ALL = all;
+    all.forEach(p => { HB_PROV_CACHE[p.profile_id] = p; });
+    hbBuildProviderFacets();
+    hbApplyProviderFilters();
+  } catch (e) {
+    console.error('providers load failed', e);
+    grid.innerHTML = hbLoading('Could not load providers.');
+    if (countEl) countEl.textContent = 'Could not load providers (is the server running?)';
+  }
+}
+
+async function hbProvidersInit(){
+  if (!hbCanUseProviders()) return;
+  await hbLoadProfessionals(true);   // fetch the full set once + build facets
+}
+
+function hbProvidersWire(){
+  // Tabs -> category (instant, in-memory)
+  document.querySelectorAll('#hb-prov-tabs .tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('#hb-prov-tabs .tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    HB_PROV.category = t.dataset.cat || '';
+    hbApplyProviderFilters();
+  }));
+  // Filter selects (instant, in-memory)
+  const bind = (id, key) => { const el=document.getElementById(id); if(el) el.addEventListener('change', () => { HB_PROV[key]=el.value; hbApplyProviderFilters(); }); };
+  bind('hb-f-profession','profession_type'); bind('hb-f-state','state_code');
+  bind('hb-f-city','city'); bind('hb-f-specialty','specialty'); bind('hb-f-board','american_board');
+  // Search box (instant, in-memory)
+  const search = document.getElementById('hb-prov-search');
+  if (search){ let t; search.addEventListener('input', () => { clearTimeout(t); t=setTimeout(()=>{ HB_PROV.q=search.value.trim(); hbApplyProviderFilters(); }, 120); }); }
+  // Clear
+  const clr = document.getElementById('hb-f-clear');
+  if (clr) clr.addEventListener('click', () => {
+    Object.keys(HB_PROV).forEach(k => HB_PROV[k]='');
+    ['hb-f-profession','hb-f-state','hb-f-city','hb-f-specialty','hb-f-board'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+    const s=document.getElementById('hb-prov-search'); if(s) s.value='';
+    document.querySelectorAll('#hb-prov-tabs .tab').forEach(x=>x.classList.remove('active'));
+    const all=document.querySelector('#hb-prov-tabs .tab[data-cat=""]'); if(all) all.classList.add('active');
+    hbApplyProviderFilters();
+  });
+}
+
+// --- Providers contact editor --------------------------------------------
+async function hbEditProviderContact(profileId){
+  await HB.ensureAuth();
+  if (!hbCanUseProviders()) {
+    alert('Only recruiters can update provider contact details.');
+    return;
+  }
+  let p = HB_PROV_CACHE[profileId] || {};
+  if ((p.email || p.phone) && !HB_PROV_RELEASED[profileId]) {
+    const released = await hbReleaseProviderContact(profileId);
+    if (!released) return;
+  }
+  p = { ...p, ...(HB_PROV_RELEASED[profileId] || {}) };
+  let ov = document.getElementById('hb-contact-ov');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'hb-contact-ov';
+  ov.style.cssText = "position:fixed;inset:0;background:rgba(8,15,30,.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;";
+  ov.innerHTML = `<div style="background:#fff;color:#1A202C;width:430px;max-width:100%;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #E7EBF1;">
+        <div style="font-weight:700;font-size:16px;">Provider Contact</div>
+        <div id="hb-contact-close" style="cursor:pointer;color:#8A97AB;font-size:20px;line-height:1;">&times;</div>
+      </div>
+      <div style="padding:20px;">
+        <div style="font-weight:700;margin-bottom:12px;">${HB.esc([p.first_name,p.last_name].filter(Boolean).join(' ') || 'Provider')}</div>
+        <label class="form-label">Email</label>
+        <input id="hb-contact-email" class="form-input" type="email" value="${HB.esc(p.email||'')}" placeholder="you@example.com" style="margin-bottom:12px;">
+        <label class="form-label">Phone</label>
+        <input id="hb-contact-phone" class="form-input" value="${HB.esc(p.phone||'')}" placeholder="+1 555 555 5555">
+        <div id="hb-contact-err" style="color:#dc2626;font-size:12.5px;min-height:16px;margin-top:10px;"></div>
+        <button id="hb-contact-save" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px;">Save Contact</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.querySelector('#hb-contact-close').onclick = close;
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  ov.querySelector('#hb-contact-save').onclick = async () => {
+    const err = ov.querySelector('#hb-contact-err');
+    err.textContent = '';
+    try {
+      const updated = await HB.patch('/api/profiles/'+profileId+'/contact', {
+        email: ov.querySelector('#hb-contact-email').value,
+        phone: ov.querySelector('#hb-contact-phone').value,
+      });
+      HB_PROV_CACHE[profileId] = updated;
+      if (HB_PROV_RELEASED[profileId]) HB_PROV_RELEASED[profileId] = updated;
+      if (HB_PROV_ALL){ const i = HB_PROV_ALL.findIndex(p => p.profile_id === profileId); if (i >= 0) HB_PROV_ALL[i] = { ...HB_PROV_ALL[i], ...updated }; }
+      close();
+      hbApplyProviderFilters();
+    } catch(e) {
+      err.textContent = e.message || 'Could not save contact.';
+    }
+  };
+}
+
+// --- View-only résumé modal (no download) --------------------------------
+async function hbViewResume(profileId){
+  let ov = document.getElementById('hb-resume-ov');
+  if (!ov){
+    ov = document.createElement('div');
+    ov.id = 'hb-resume-ov';
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(8,15,30,.72);z-index:99998;display:flex;align-items:center;justify-content:center;padding:24px;";
+    ov.innerHTML = `<div style="background:#fff;color:#1A202C;width:720px;max-width:100%;max-height:88vh;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.45);display:flex;flex-direction:column;overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid #E7EBF1;">
+          <div style="font-weight:700;font-size:16px;" id="hb-resume-title">Résumé</div>
+          <div style="display:flex;align-items:center;gap:14px;">
+            <span style="font-size:11.5px;color:#94a3b8;"><i class="fas fa-lock" style="margin-right:5px;"></i>View only</span>
+            <div id="hb-resume-close" style="cursor:pointer;color:#8A97AB;font-size:20px;line-height:1;">&times;</div>
+          </div>
+        </div>
+        <div id="hb-resume-body" style="padding:26px 30px;overflow:auto;user-select:none;font-size:14px;line-height:1.55;"></div>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.querySelector('#hb-resume-close').onclick = close;
+    ov.addEventListener('click', (e)=>{ if(e.target===ov) close(); });
+    document.addEventListener('keydown', function esc(e){ if(e.key==='Escape'){ const o=document.getElementById('hb-resume-ov'); if(o) o.remove(); document.removeEventListener('keydown', esc);} });
+  }
+  const body = ov.querySelector('#hb-resume-body');
+  body.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center;">Loading résumé…</div>';
+  try {
+    await HB.ensureAuth();
+    const r = await HB.get('/api/profiles/'+profileId+'/resume');
+    ov.querySelector('#hb-resume-title').textContent = r.name ? `${r.name} — Résumé` : 'Résumé';
+    body.innerHTML = `<div class="hb-resume-doc">${r.html}</div>`;
+  } catch(e){
+    const msg = e && e.status === 401
+      ? 'Please sign in to view this résumé.'
+      : (e && e.message ? e.message : 'Could not load this résumé.');
+    body.innerHTML = `<div style="color:#dc2626;padding:20px;">${HB.esc(msg)}</div>`;
+  }
+}
+
+async function hbLoadJobs(){
+  const list = document.querySelector('.jobs-list');
+  const countEl = document.getElementById('hb-jobs-count');
+  if (!list) return;
+  try {
+    const data = await HB.get('/api/jobs?limit=40');
+    list.innerHTML = data.items.length
+      ? data.items.map(hbJobCard).join('')
+      : '<div style="padding:32px;text-align:center;color:var(--gray-400);">No open roles posted yet. Recruiters can post jobs via the API.</div>';
+    if (countEl) countEl.innerHTML = `<strong>${data.total} job${data.total===1?'':'s'}</strong> match your search`;
+  } catch (e) {
+    console.error('jobs load failed', e);
+    if (countEl) countEl.innerHTML = '<strong>—</strong>';
+  }
+}
+
+// --- Lazy-load each section when navigated to (hooks the mockup's showPage) ---
+const _hbOrigShowPage = window.showPage;
+window.showPage = function(id){
+  if(id === 'professionals' && !hbCanUseProviders()){
+    alert('Providers are available to recruiters only.');
+    id = 'dashboard';
+  }
+  if(_hbOrigShowPage) _hbOrigShowPage(id);
+  hbOnPage(id);
+};
+function hbOnPage(id){
+  if(id==='social') hbLoadFeed();
+  else if(id==='notifications') hbLoadNotifications();
+  else if(id==='profile') hbLoadProfile();
+  else if(id==='messages') hbLoadMessages();
+  else if(id==='dashboard') hbLoadDashboard();
+  else if(id==='professionals') hbLoadProfessionals();
+  else if(id==='employer') hbLoadEmployer();
+  else if(id==='settings') hbLoadSettings();
+  else if(id==='analytics') hbLoadAnalytics();
+}
+let HB_MY_PROFILE_ID=null;
+
+// --- Analytics (candidate: applications + funnel) ---
+async function hbLoadAnalytics(){
+  const page=document.getElementById('page-analytics'); if(!page) return;
+  if(!HB.isAuthed()){ await HB.ensureAuth().catch(()=>{}); hbLoadCurrentUser(); }
+  let apps; try{ apps=await HB.get('/api/applications/mine'); }catch(e){ return; }
+  const by=s=>apps.filter(a=>a.status===s).length;
+  const vals=page.querySelectorAll('.analytics-grid .stat-val');
+  if(vals[1]) vals[1].textContent=apps.length;
+  page.querySelectorAll('.chart-card').forEach(card=>{
+    if(card.textContent.includes('Application Funnel')){
+      const rows=card.querySelectorAll('div[style*="height:28px"]');
+      const counts=[apps.length,
+                    by('screening')+by('interview')+by('offer')+by('hired'),
+                    by('interview')+by('offer')+by('hired'),
+                    by('offer')+by('hired')];
+      rows.forEach((r,i)=>{ if(counts[i]!==undefined) r.textContent=counts[i]; });
+    }
+  });
+}
+
+// --- Résumé Parser upload (-> /api/uploads/resume) ---
+function triggerUpload(){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.pdf,.doc,.docx';
+  inp.onchange=()=>{ if(inp.files[0]) hbUploadResume(inp.files[0]); };
+  inp.click();
+}
+function handleDrop(){ /* real drop handled by listener in init */ }
+async function hbUploadResume(file){
+  try{
+    await HB.ensureAuth();
+    const fd=new FormData(); fd.append('file', file);
+    const res=await fetch('/api/uploads/resume',{method:'POST',
+      headers:{'Authorization':'Bearer '+HB.token()}, body:fd});
+    if(!res.ok){ const t=await res.text(); throw new Error('Upload failed: '+(t||res.status)); }
+    const d=await res.json();
+    const dz=document.getElementById('dropzone');
+    if(dz) dz.innerHTML='<div class="upload-icon"><i class="fas fa-check-circle" style="color:var(--teal)"></i></div>'+
+      '<div class="upload-title">Uploaded '+HB.esc(file.name)+'</div>'+
+      '<div class="upload-sub"><a href="'+d.resume_url+'" target="_blank">View résumé</a> · saved to your profile</div>';
+  }catch(e){ alert(e.message||'Upload failed (sign in first).'); }
+}
+
+// --- Employer Portal ---
+async function hbLoadEmployer(){
+  const page=document.getElementById('page-employer'); if(!page) return;
+  if(!HB.isAuthed()){ await HB.ensureAuth().catch(()=>{}); hbLoadCurrentUser(); }
+  let d; try{ d=await HB.get('/api/employers/me/dashboard'); }catch(e){ return; }
+  const set=(sel,v)=>{const el=page.querySelector(sel); if(el) el.textContent=v;};
+  if(!d.employer){ set('.emp-name','No organization yet'); set('.emp-type','Sign in as a recruiter to manage jobs'); return; }
+  set('.emp-name', d.employer.org_name);
+  set('.emp-type', [d.employer.is_verified?'Verified Employer':'Employer', d.employer.org_type, [d.employer.city,d.employer.state_code].filter(Boolean).join(', ')].filter(Boolean).join(' · '));
+  const st=page.querySelectorAll('.emp-stat-val');
+  if(st[0]) st[0].textContent=d.kpis.jobs; if(st[1]) st[1].textContent=d.kpis.applications;
+  if(st[2]) st[2].textContent=d.kpis.interviews; if(st[3]) st[3].textContent=d.kpis.offers;
+  if(st[4]) st[4].textContent=(d.employer.rating_avg?d.employer.rating_avg.toFixed(1):'—')+' ⭐';
+  const tbodies=page.querySelectorAll('.data-table tbody');
+  if(tbodies[0]) tbodies[0].innerHTML=d.jobs.map(j=>`<tr>
+    <td><div style="font-weight:500;">${HB.esc(j.title)}</div></td>
+    <td>${HB.esc(j.job_type)}</td>
+    <td><strong>${j.application_count||0}</strong></td>
+    <td>${j.view_count||0}</td>
+    <td>${j.pay_rate_max?('$'+Math.round(j.pay_rate_max)+(j.pay_unit==='hourly'?'/hr':'')):'—'}</td>
+    <td><span class="status-pill ${j.is_urgent?'sp-urgent':(j.status==='active'?'sp-active':'sp-paused')}">${j.is_urgent?'🔴 Urgent':(j.status==='active'?'● Active':HB.esc(j.status))}</span></td>
+    <td><button class="btn btn-outline btn-sm" onclick="hbOpenJob('${j.job_id}')">Review</button></td></tr>`).join('')||'<tr><td colspan="7" style="color:var(--gray-400);">No jobs yet.</td></tr>';
+  if(tbodies[1]) tbodies[1].innerHTML=d.applicants.map(a=>`<tr>
+    <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar-sm">${hbInitials(a.name)}</div><div><div style="font-weight:500;">${HB.esc(a.name)}</div><div style="font-size:11px;color:var(--gray-400);">Profile ${a.completion||0}% complete</div></div></div></td>
+    <td>${HB.esc(a.specialty||'—')}</td><td>${a.years||0} yrs</td><td>${HB.esc(a.location||'—')}</td>
+    <td>${HB.esc(a.job_title)}</td><td><span class="status-pill sp-active">${HB.esc(a.status)}</span></td>
+    <td><button class="btn btn-primary btn-sm">View</button></td></tr>`).join('')||'<tr><td colspan="7" style="color:var(--gray-400);">No applicants yet.</td></tr>';
+}
+
+// --- Settings (Account form -> profile) ---
+async function hbLoadSettings(){
+  const sec=document.querySelector('#page-settings .settings-section'); if(!sec) return;
+  if(!HB.isAuthed()){ await HB.ensureAuth().catch(()=>{}); hbLoadCurrentUser(); }
+  let p,me; try{ p=await HB.get('/api/profiles/me'); me=await HB.get('/api/auth/me'); }catch(e){ return; }
+  HB_MY_PROFILE_ID=p.profile_id;
+  const inp=sec.querySelectorAll('.form-input');
+  if(inp[0]) inp[0].value=p.first_name||''; if(inp[1]) inp[1].value=p.last_name||'';
+  if(inp[2]) inp[2].value=p.headline||'';
+  if(inp[3]) inp[3].value=p.email||me.email||''; if(inp[4]) inp[4].value=p.phone||'';
+  if(inp[5]) inp[5].value=p.city||''; if(inp[6]) inp[6].value=p.state_code||'';
+  const btn=sec.querySelector('.btn-primary'); if(btn) btn.onclick=hbSaveSettings;
+}
+async function hbSaveSettings(){
+  const sec=document.querySelector('#page-settings .settings-section'); const inp=sec.querySelectorAll('.form-input');
+  if(!HB_MY_PROFILE_ID){ try{ HB_MY_PROFILE_ID=(await HB.get('/api/profiles/me')).profile_id; }catch(e){ return; } }
+  try{
+    await HB.patch('/api/profiles/'+HB_MY_PROFILE_ID, {
+      first_name:inp[0].value, last_name:inp[1].value, headline:inp[2].value,
+      email:(inp[3].value||'').trim()||null, phone:(inp[4].value||'').trim()||null,
+      city:inp[5].value, state_code:(inp[6].value||'').slice(0,2).toUpperCase()});
+    hbLoadCurrentUser();
+    const b=sec.querySelector('.btn-primary'); if(b){ const o=b.textContent; b.textContent='✓ Saved'; setTimeout(()=>b.textContent=o,1500); }
+  }catch(e){ alert(e.message||'Could not save changes.'); }
+}
+function hbInitials(name){ return (name||'?').split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase(); }
+
+// --- My Profile ---
+function hbFindCard(root, titleText, fn){
+  root.querySelectorAll('.card-title').forEach(t=>{
+    if(t.textContent.toLowerCase().includes(titleText.toLowerCase())){ const c=t.closest('.card'); if(c) fn(c); }
+  });
+}
+async function hbLoadProfile(){
+  const page=document.getElementById('page-profile'); if(!page) return;
+  if(!HB.isAuthed()){ await HB.ensureAuth().catch(()=>{}); hbLoadCurrentUser(); }
+  let p; try{ p=await HB.get('/api/profiles/me'); }catch(e){ return; }
+  const set=(sel,v)=>{const el=page.querySelector(sel); if(el) el.textContent=v;};
+  set('.profile-avatar', (p.first_name[0]+p.last_name[0]).toUpperCase());
+  set('.profile-name', p.first_name+' '+p.last_name+(p.profession_type?', '+p.profession_type:''));
+  set('.profile-headline', p.headline || [p.specialty,p.profession_type].filter(Boolean).join(' · '));
+  const meta=page.querySelector('.profile-meta');
+  if(meta) meta.innerHTML=[
+    (p.city||p.state_code)?`<div class="profile-meta-item"><i class="fas fa-map-marker-alt"></i>${HB.esc([p.city,p.state_code].filter(Boolean).join(', '))}</div>`:'',
+    p.years_experience?`<div class="profile-meta-item"><i class="fas fa-briefcase"></i>${p.years_experience} years experience</div>`:'',
+    p.open_to_work?`<div class="profile-meta-item text-teal"><i class="fas fa-check-circle"></i>Open to work</div>`:''
+  ].filter(Boolean).join('');
+  const fill=page.querySelector('.progress-fill'); if(fill) fill.style.width=p.completion_score+'%';
+  hbFindCard(page,'About', c=>{ const para=c.querySelector('p'); if(para) para.textContent=p.bio||'Add a professional summary to your profile.'; });
+  hbFindCard(page,'Skills', c=>{ const box=c.querySelector('div[style*="flex-wrap"]'); if(box) box.innerHTML=(p.skills||[]).map(s=>`<span class="badge badge-teal">${HB.esc(s.name)}</span>`).join('')||'<span style="color:var(--gray-400);font-size:13px">No skills yet</span>'; });
+  hbFindCard(page,'Licenses', c=>{ const box=c.querySelector('div[style*="flex-direction:column"]'); if(box) box.innerHTML=(p.licenses||[]).map(l=>`<div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--gray-50);border-radius:var(--radius-md);"><i class="fas fa-award" style="color:var(--gold);font-size:20px;"></i><div style="flex:1;"><div style="font-size:13.5px;font-weight:500;">${HB.esc(l.license_type)} License — ${HB.esc(l.state_code)}</div><div style="font-size:12px;color:var(--gray-400);">${l.expiry_date?'Exp: '+l.expiry_date:'Self-reported'}</div></div><span class="badge badge-green">${HB.esc(l.status)}</span></div>`).join('')||'<div style="color:var(--gray-400);font-size:13px">No licenses yet</div>'; });
+}
+
+// --- Messages ---
+let HB_MSG_THREADS=[], HB_MSG_CUR=null, HB_ME_ID=null;
+async function hbLoadMessages(){
+  const list=document.querySelector('#page-messages .msg-list'); if(!list) return;
+  if(!HB.isAuthed()){ await HB.ensureAuth().catch(()=>{}); hbLoadCurrentUser(); }
+  try{ if(!HB_ME_ID){ HB_ME_ID=(await HB.get('/api/auth/me')).user_id; } }catch(e){ return; }
+  let convos; try{ convos=(await HB.get('/api/analytics/conversations')).conversations||[]; }catch(e){ convos=[]; }
+  HB_MSG_THREADS=convos;
+  list.querySelectorAll('.msg-thread').forEach(n=>n.remove());
+  const empty=list.querySelector('.hb-msg-empty'); if(empty) empty.remove();
+  if(!convos.length){
+    list.insertAdjacentHTML('beforeend','<div class="hb-msg-empty" style="padding:20px;color:var(--gray-400);font-size:13px;">No conversations yet.</div>');
+    document.querySelector('#page-messages .chat-messages').innerHTML='';
+    return;
+  }
+  convos.forEach((c,i)=>list.insertAdjacentHTML('beforeend',
+    `<div class="msg-thread ${i===0?'active':''}" data-id="${c.thread_id}" onclick="hbOpenThread('${c.thread_id}')">
+      <div class="msg-thread-avatar">${hbInitials(c.candidate)}</div>
+      <div class="msg-thread-info"><div class="msg-thread-name">${HB.esc(c.candidate)}</div>
+        <div class="msg-thread-preview">${HB.esc((c.ats_stage||'conversation').replace(/_/g,' '))}</div></div>
+      <div class="msg-thread-time">${hbTimeAgo(c.last_message_at)}</div></div>`));
+  hbOpenThread(convos[0].thread_id);
+}
+async function hbOpenThread(tid){
+  HB_MSG_CUR=tid;
+  document.querySelectorAll('#page-messages .msg-thread').forEach(t=>t.classList.toggle('active', t.getAttribute('data-id')===tid));
+  let detail; try{ detail=await HB.get('/api/messages/threads/'+tid); }catch(e){ return; }
+  const conv=HB_MSG_THREADS.find(c=>c.thread_id===tid);
+  const nameEl=document.querySelector('#page-messages .msg-body-header > div:nth-child(2) > div:first-child');
+  if(nameEl && conv) nameEl.textContent=conv.candidate;
+  const hAv=document.querySelector('#page-messages .msg-body-header .msg-thread-avatar'); if(hAv && conv) hAv.textContent=hbInitials(conv.candidate);
+  const box=document.querySelector('#page-messages .chat-messages');
+  box.innerHTML=detail.messages.map(m=>{
+    const me=m.sender_id===HB_ME_ID;
+    const t=new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    if(me) return `<div class="msg-bubble-wrap me"><div><div class="bubble me">${HB.esc(m.body||'')}</div><div class="bubble-time" style="text-align:right;">${t}</div></div></div>`;
+    return `<div class="msg-bubble-wrap"><div class="msg-thread-avatar" style="width:32px;height:32px;font-size:11px;flex-shrink:0;">${hbInitials(conv&&conv.candidate)}</div><div><div class="bubble them">${HB.esc(m.body||'')}</div><div class="bubble-time">${t}</div></div></div>`;
+  }).join('')||'<div style="color:var(--gray-400);padding:20px;">No messages yet — say hello 👋</div>';
+  const area=document.querySelector('#page-messages .chat-area'); if(area) area.scrollTop=area.scrollHeight;
+}
+async function hbSendMessage(){
+  const ta=document.querySelector('#page-messages .msg-input'); const body=(ta.value||'').trim();
+  if(!body||!HB_MSG_CUR) return; ta.value='';
+  try{ await HB.post('/api/messages/threads/'+HB_MSG_CUR+'/messages',{body}); await hbOpenThread(HB_MSG_CUR); }catch(e){ console.warn('send',e); }
+}
+function hbTimeAgo(iso){
+  if(!iso) return ''; const s=(Date.now()-new Date(iso).getTime())/1000;
+  if(s<3600) return Math.max(1,Math.floor(s/60))+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago';
+}
+
+// --- Community Feed ---
+async function hbLoadFeed(){
+  const col = document.querySelector('#page-social .feed-col'); if(!col) return;
+  let data; try{ data = await HB.get('/api/social/posts?limit=20'); }catch(e){ console.warn('feed',e); return; }
+  col.querySelectorAll('.post-card').forEach(n=>n.remove());
+  data.items.forEach(p=>{
+    const tags=(p.tags||[]).map(t=>`<span class="tag">#${HB.esc(t)}</span>`).join('');
+    const div=document.createElement('div'); div.className='post-card';
+    div.innerHTML=`<div class="post-header">
+        <div class="post-avatar" style="background:var(--navy-mid)">${HB.esc(p.author_initials||'··')}</div>
+        <div class="post-meta"><div class="post-name">${HB.esc(p.author_name||'Member')}</div>
+          <div class="post-role">${HB.esc(p.author_headline||'')}</div></div>
+        <div class="post-time">${hbTimeAgo(p.created_at)}</div></div>
+      <div class="post-body">${HB.esc(p.body||'')}</div>
+      ${tags?`<div class="post-tags">${tags}</div>`:''}
+      <div class="post-actions">
+        <div class="post-action" onclick="hbLikePost('${p.post_id}',this)"><i class="fas fa-heart"></i><span>${p.like_count} Likes</span></div>
+        <div class="post-action"><i class="fas fa-comment"></i>${p.comment_count} Comments</div>
+        <div class="post-action"><i class="fas fa-share"></i>Share</div>
+        <div class="post-action"><i class="fas fa-bookmark"></i>Save</div></div>`;
+    col.appendChild(div);
+  });
+}
+async function hbLikePost(id, el){
+  try{ const r=await HB.post('/api/social/posts/'+id+'/like'); el.classList.add('liked'); el.querySelector('span').textContent=r.like_count+' Likes'; }
+  catch(e){ if(e.status===401||e.status===400) HB.ensureAuth(); }
+}
+async function hbCreatePost(){
+  const ta=document.querySelector('#page-social .compose-input'); const body=(ta.value||'').trim(); if(!body) return;
+  try{ await HB.ensureAuth(); await HB.post('/api/social/posts',{body,tags:[]}); ta.value=''; hbLoadFeed(); }
+  catch(e){ alert(e.message||'Could not post (build a profile first).'); }
+}
+
+// --- Notifications ---
+const HB_NI={job_match:['ni-teal','fa-briefcase'],connection:['ni-navy','fa-user-plus'],
+  message:['ni-coral','fa-comment'],application:['ni-gold','fa-star'],system:['ni-teal','fa-bell']};
+async function hbLoadNotifications(){
+  const page=document.querySelector('#page-notifications .notif-page'); if(!page) return;
+  if(!HB.isAuthed()){ await HB.ensureAuth().catch(()=>{}); hbLoadCurrentUser(); }
+  let data; try{ data=await HB.get('/api/notifications?limit=50'); }catch(e){ return; }
+  const unread=data.filter(n=>!n.is_read).length;
+  let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-family:var(--font-display);font-size:22px;">Notifications</div>
+      <button class="btn btn-outline btn-sm" onclick="hbMarkAllRead()">Mark all read</button></div>
+    <div style="font-size:13px;color:var(--gray-400);margin-bottom:8px;">${unread} unread</div>`;
+  if(!data.length){ page.innerHTML=html+'<div style="padding:20px;color:var(--gray-400)">No notifications yet.</div>'; return; }
+  data.forEach(n=>{
+    const [cls,icon]=HB_NI[n.type]||HB_NI.system;
+    const acts = (n.type==='connection' && !n.is_read)
+      ? `<div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="hbReadNotif('${n.notification_id}')">Accept</button><button class="btn btn-outline btn-sm" onclick="hbReadNotif('${n.notification_id}')">Decline</button></div>`:'';
+    html+=`<div class="notif-item ${n.is_read?'':'unread'}">
+      <div class="notif-icon ${cls}"><i class="fas ${icon}"></i></div>
+      <div class="notif-content"><div class="notif-text"><strong>${HB.esc(n.title)}</strong> ${HB.esc(n.body||'')}</div>
+        <div class="notif-sub">${hbTimeAgo(n.created_at)}</div>${acts}</div>
+      ${n.is_read?'':'<div class="notif-dot"></div>'}</div>`;
+  });
+  page.innerHTML=html;
+}
+async function hbMarkAllRead(){ try{ await HB.post('/api/notifications/read-all'); hbLoadNotifications(); }catch(e){} }
+async function hbReadNotif(id){ try{ await HB.post('/api/notifications/'+id+'/read'); hbLoadNotifications(); }catch(e){} }
+
+// --- Auth: reflect the signed-in user in the sidebar/topbar ---
+async function hbLoadCurrentUser(){
+  if(!HB.isAuthed()){ hbApplyRoleAccess(null); return null; }
+  try{
+    const me = await HB.get('/api/auth/me');
+    hbApplyRoleAccess(me);
+    let name = me.email.split('@')[0], role = (me.role||'').replace('_',' '), av = me.email[0].toUpperCase();
+    try{ const p = await HB.get('/api/profiles/me'); if(p){ name = p.first_name+' '+p.last_name; role = (p.specialty||p.profession_type||role); av = (p.first_name[0]+p.last_name[0]).toUpperCase(); } }catch(e){}
+    const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;};
+    set('hb-user-name', name); set('hb-user-role', role); set('hb-user-av', av);
+    document.querySelectorAll('.topbar-user .avatar, .topbar-user .topbar-user-name').forEach(el=>{
+      if(el.classList.contains('avatar')) el.textContent=av; else el.textContent=name.split(' ')[0];
+    });
+    return me;
+  }catch(e){ console.warn('user load', e); hbApplyRoleAccess(null); return null; }
+}
+function hbAuthClick(){
+  if(HB.isAuthed()){ HB.logout(); location.reload(); }
+  else { HB.ensureAuth().then(()=>location.reload()); }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  // Sign up / login first; block the board until authed. The finally guarantees
+  // we never leave a blank (locked) screen even if the gate errors.
+  try { await HB.gate(); }
+  finally { document.documentElement.classList.remove('hb-locked'); }
+  await hbLoadCurrentUser();
+  hbLoadDashboard();
+  hbLoadJobs();
+  hbLoadFeed();
+  // Wire the "Post" compose button.
+  const postBtn = document.querySelector('#page-social .compose-actions .btn-primary');
+  if (postBtn) postBtn.addEventListener('click', hbCreatePost);
+  // Wire message send (button + Enter).
+  const sendBtn = document.querySelector('#page-messages .msg-send-btn');
+  if (sendBtn) sendBtn.addEventListener('click', hbSendMessage);
+  const msgInput = document.querySelector('#page-messages .msg-input');
+  if (msgInput) msgInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); hbSendMessage(); }
+  });
+  // Profile hero buttons: Edit Profile -> Settings, Download Résumé -> resume_url.
+  const heroBtns = document.querySelectorAll('#page-profile .profile-hero .btn');
+  if (heroBtns[0]) heroBtns[0].addEventListener('click', () => showPage('settings'));
+  if (heroBtns[2]) heroBtns[2].addEventListener('click', async () => {
+    try { const p = await HB.get('/api/profiles/me'); p.resume_url ? window.open(p.resume_url,'_blank') : showPage('resume'); }
+    catch(e){ showPage('resume'); }
+  });
+  // Résumé drop-zone real upload.
+  const dz = document.getElementById('dropzone');
+  if (dz) dz.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files[0]) hbUploadResume(e.dataTransfer.files[0]);
+  });
+  // Providers directory: recruiter/admin only.
+  if (hbCanUseProviders()) {
+    hbLoadProfessionals();
+    hbProvidersInit();
+    hbProvidersWire();
+  }
+});
+</script>
+</body>
+</html>

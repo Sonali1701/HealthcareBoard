@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Messages{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <h2>Messages</h2>
+  <div class="app-grid" style="grid-template-columns:300px 1fr">
+    <aside>
+      <div class="panel" style="padding:8px">
+        {% if rows %}
+          {% for r in rows %}
+            <a class="thread {{ 'active' if active_thread and active_thread.thread_id==r.thread.thread_id else '' }}"
+               href="/messages/{{ r.thread.thread_id }}" style="text-decoration:none;color:inherit">
+              <span class="avatar">{{ (r.name.split(' ')|map('first')|join)[:2]|upper }}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:14px">{{ r.name }}</div>
+                <div class="small muted">{{ r.thread.ats_stage.replace('_',' ') }}</div>
+              </div>
+            </a>
+          {% endfor %}
+        {% else %}
+          <div class="muted small center" style="padding:20px">No conversations yet.<br>Message a candidate from <a href="/talent">Talent</a>.</div>
+        {% endif %}
+      </div>
+    </aside>
+    <div>
+      {% if active_thread %}
+        <div class="panel" style="display:flex;flex-direction:column;height:62vh">
+          <div class="row between items-center" style="border-bottom:1px solid var(--gray-200);padding-bottom:10px">
+            <strong>{{ counterpart }}</strong>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:14px 4px" id="msgs">
+            {% for m in messages %}
+              <div class="bubble {{ 'me' if m.sender_id==user.user_id else 'them' }}">{{ m.body }}</div>
+            {% endfor %}
+            {% if not messages %}<div class="muted small center">No messages yet — say hello 👋</div>{% endif %}
+          </div>
+          <form method="post" action="/messages/{{ active_thread.thread_id }}/send" class="row" style="gap:8px;margin-top:8px">
+            <input class="input" name="body" placeholder="Type a message…" autocomplete="off" autofocus required>
+            <button class="btn btn-primary" type="submit">Send</button>
+          </form>
+        </div>
+        <script>var m=document.getElementById('msgs');if(m)m.scrollTop=m.scrollHeight;</script>
+      {% else %}
+        <div class="panel muted center" style="padding:60px">Select a conversation to start chatting.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

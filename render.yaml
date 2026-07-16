@@ -1,0 +1,63 @@
+# Render Blueprint — deploy the API + a managed Postgres in one click.
+# After first deploy, set the Cloudflare R2 secrets (marked sync:false) in the
+# Render dashboard → Environment. DATABASE_URL + JWT_SECRET are wired here.
+services:
+  - type: web
+    name: healthboard-api
+    runtime: docker
+    plan: starter            # NOT "free": free disk is ephemeral and the service sleeps
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      # Database — wired automatically from the managed Postgres below.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: healthboard-db
+          property: connectionString
+      # Auth — Render generates a strong secret.
+      - key: JWT_SECRET
+        generateValue: true
+      # CORS / frontend origin — set to your real domain.
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: FRONTEND_BASE_URL
+        sync: false
+      # Object storage (Cloudflare R2) — set these in the dashboard.
+      - key: STORAGE_ENABLED
+        value: "true"
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_PUBLIC_BASE_URL
+        sync: false
+      - key: S3_ACL
+        value: ""
+      # Email (SendGrid) — optional; set in dashboard to enable.
+      - key: EMAIL_ENABLED
+        value: "false"
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      # First admin (created on startup).
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+
+databases:
+  - name: healthboard-db
+    plan: basic-256mb        # smallest paid Postgres; "free" expires after ~90 days
+    databaseName: healthboard
+    user: healthboard

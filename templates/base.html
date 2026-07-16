@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}HealthBoard{% endblock %} · HealthBoard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231A9E9E'/><text x='16' y='23' font-size='18' text-anchor='middle' fill='white' font-family='serif'>H</text></svg>">
+</head>
+<body>
+{% set role = user.role.value if user else 'guest' %}
+{% set is_recruiter = role in ['recruiter','employer','admin'] %}
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a class="logo-mark" href="/">
+        <div class="logo-icon"><i class="fas fa-heart-pulse"></i></div>
+        <div><div class="logo-text">Health<span>Board</span></div>
+          <div class="logo-sub">Staffing platform</div></div>
+      </a>
+    </div>
+
+    <nav style="flex:1;overflow-y:auto">
+      <div class="nav-section">Discover</div>
+      {% if is_recruiter %}
+        <a class="nav-item {% if active=='recruiter' %}active{% endif %}" href="/recruiter"><i class="fas fa-gauge-high"></i>Dashboard</a>
+      {% elif user %}
+        <a class="nav-item {% if active=='dashboard' %}active{% endif %}" href="/dashboard"><i class="fas fa-gauge-high"></i>Dashboard</a>
+      {% endif %}
+      <a class="nav-item {% if active=='jobs' %}active{% endif %}" href="/jobs"><i class="fas fa-briefcase"></i>Find Jobs</a>
+      <a class="nav-item {% if active=='talent' %}active{% endif %}" href="/talent"><i class="fas fa-user-group"></i>Talent</a>
+      {% if is_recruiter %}
+        <a class="nav-item {% if active=='matching' %}active{% endif %}" href="/matching"><i class="fas fa-wand-magic-sparkles"></i>AI Matching</a>
+      {% endif %}
+      {% if user %}
+        <a class="nav-item {% if active=='messages' %}active{% endif %}" href="/messages"><i class="fas fa-comment-dots"></i>Messages</a>
+      {% endif %}
+
+      <div class="nav-section">Tools</div>
+      <a class="nav-item {% if active=='tools' %}active{% endif %}" href="/tools/pay-calculator"><i class="fas fa-calculator"></i>Pay Calculator</a>
+      {% if user and not is_recruiter %}
+        <a class="nav-item {% if active=='profile' %}active{% endif %}" href="/profile"><i class="fas fa-id-badge"></i>My Profile</a>
+      {% endif %}
+      {% if is_recruiter %}
+        <a class="nav-item {% if active=='org' %}active{% endif %}" href="/recruiter/jobs/new"><i class="fas fa-plus"></i>Post a Job</a>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-footer">
+      {% if user %}
+        <div class="user-mini">
+          <div class="avatar-sm">{{ user.email[0]|upper }}</div>
+          <div class="user-mini-info">
+            <div class="user-mini-name">{{ user.email.split('@')[0] }}</div>
+            <div class="user-mini-role">{{ 'Recruiter' if is_recruiter else 'Job seeker' }}</div>
+          </div>
+          <a href="/logout" style="color:rgba(255,255,255,.5)" title="Log out"><i class="fas fa-right-from-bracket"></i></a>
+        </div>
+      {% else %}
+        <a class="btn btn-primary btn-block" href="/signup">Sign up</a>
+        <a class="btn btn-ghost btn-block" style="color:rgba(255,255,255,.7);margin-top:6px" href="/login">Log in</a>
+      {% endif %}
+    </div>
+  </aside>
+
+  <div class="main-content">
+    <div class="topbar">
+      <form class="topbar-search" action="/jobs" method="get">
+        <i class="fas fa-magnifying-glass"></i>
+        <input name="q" placeholder="Search jobs, specialties, talent…">
+      </form>
+      <div class="topbar-actions">
+        {% if user %}
+          <a class="topbar-user" href="{{ '/recruiter' if is_recruiter else '/dashboard' }}">
+            <span class="avatar">{{ user.email[0]|upper }}</span>
+          </a>
+        {% else %}
+          <a class="btn btn-ghost btn-sm" href="/login">Log in</a>
+          <a class="btn btn-primary btn-sm" href="/signup">Sign up</a>
+        {% endif %}
+      </div>
+    </div>
+
+    {% block hero %}{% endblock %}
+
+    <div class="container">
+      {% if flash %}<div class="flash flash-{{ flash.k }}">{{ flash.m }}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

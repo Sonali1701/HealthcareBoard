@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Edit profile{% endblock %}
+{% block content %}
+<div class="container mt2" style="max-width:760px">
+  <a href="/profile" class="small">← Back to profile</a>
+  <h2 class="mt">Edit profile</h2>
+
+  <form method="post" action="/profile/edit" class="panel">
+    <div class="row" style="gap:12px">
+      <div class="field" style="flex:1"><label class="label">First name</label>
+        <input class="input" name="first_name" value="{{ profile.first_name }}"></div>
+      <div class="field" style="flex:1"><label class="label">Last name</label>
+        <input class="input" name="last_name" value="{{ profile.last_name }}"></div>
+    </div>
+    <div class="field"><label class="label">Headline</label>
+      <input class="input" name="headline" value="{{ profile.headline or '' }}" placeholder="ICU RN · CCRN · 8 yrs"></div>
+    <div class="row" style="gap:12px">
+      <div class="field" style="flex:1"><label class="label">Email</label>
+        <input class="input" type="email" name="email" value="{{ profile.email or '' }}" placeholder="you@example.com"></div>
+      <div class="field" style="flex:1"><label class="label">Phone</label>
+        <input class="input" name="phone" value="{{ profile.phone or '' }}" placeholder="+1 555 555 5555"></div>
+    </div>
+    <div class="field"><label class="label">About</label>
+      <textarea class="textarea" name="bio">{{ profile.bio or '' }}</textarea></div>
+    <div class="row" style="gap:12px">
+      <div class="field" style="flex:1"><label class="label">Specialty</label>
+        <input class="input" name="specialty" value="{{ profile.specialty or '' }}"></div>
+      <div class="field" style="flex:1"><label class="label">Profession</label>
+        <input class="input" name="profession_type" value="{{ profile.profession_type or '' }}" placeholder="RN, MD, NP"></div>
+    </div>
+    <div class="row" style="gap:12px">
+      <div class="field" style="flex:1"><label class="label">Years experience</label>
+        <input class="input" type="number" name="years_experience" value="{{ profile.years_experience or 0 }}"></div>
+      <div class="field" style="flex:1"><label class="label">City</label>
+        <input class="input" name="city" value="{{ profile.city or '' }}"></div>
+      <div class="field" style="width:90px"><label class="label">State</label>
+        <input class="input" name="state_code" value="{{ profile.state_code or '' }}" maxlength="2"></div>
+    </div>
+    <div class="row" style="gap:12px;align-items:center">
+      <div class="field" style="flex:1"><label class="label">Min pay ($/hr)</label>
+        <input class="input" type="number" name="pay_min_hourly" value="{{ profile.pay_min_hourly or '' }}"></div>
+      <label class="row items-center" style="gap:8px;margin-top:14px">
+        <input type="checkbox" name="open_to_work" {% if profile.open_to_work %}checked{% endif %}> Open to work</label>
+    </div>
+    <button class="btn btn-primary" type="submit">Save changes</button>
+  </form>
+
+  <div class="grid cols-2 mt">
+    <div class="panel">
+      <h3>Résumé</h3>
+      {% if profile.resume_url %}<div class="small muted mb">Current: <a href="{{ profile.resume_url }}" target="_blank">view</a></div>{% endif %}
+      <form method="post" action="/profile/resume" enctype="multipart/form-data">
+        <input class="input" type="file" name="file" accept=".pdf,.doc,.docx" required>
+        <button class="btn btn-outline btn-sm mt" type="submit">Upload résumé</button>
+      </form>
+    </div>
+    <div class="panel">
+      <h3>Add skill</h3>
+      <form method="post" action="/profile/skill" class="row" style="gap:8px">
+        <input class="input" name="name" placeholder="e.g. ICU" required>
+        <button class="btn btn-outline btn-sm" type="submit">Add</button>
+      </form>
+      <h3 class="mt2">Add license</h3>
+      <form method="post" action="/profile/license" class="row wrap" style="gap:8px">
+        <input class="input" name="license_type" placeholder="RN" style="flex:1" required>
+        <input class="input" name="state_code" placeholder="TX" maxlength="2" style="width:70px" required>
+        <button class="btn btn-outline btn-sm" type="submit">Add</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+# Local / Vultr deploy: API + PostgreSQL together.
+#   docker compose up --build
+# Reads secrets from .env (copy from .env.production.example and fill).
+# For a local Postgres test, the DATABASE_URL below points at the db service.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: healthboard
+      POSTGRES_PASSWORD: healthboard
+      POSTGRES_DB: healthboard
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U healthboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Overrides .env so the app talks to the db service.
+      DATABASE_URL: postgresql+psycopg://healthboard:healthboard@db:5432/healthboard
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

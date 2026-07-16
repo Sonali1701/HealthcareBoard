@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Pay Calculator{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <h2>Travel pay package calculator</h2>
+  <p class="muted">Compare a pure-W2 package vs. W2 + tax-free GSA per-diem stipends. Rates via the GSA per-diem API (FY{{ result.gsa.fiscal_year if result else '2025' }}).</p>
+  <div class="app-grid">
+    <aside>
+      <form method="post" action="/tools/pay-calculator" class="panel">
+        <div class="field"><label class="label">Bill rate ($/hr)</label>
+          <input class="input" type="number" step="0.01" name="bill_rate" value="{{ f.bill_rate }}"></div>
+        <div class="row" style="gap:8px">
+          <div class="field" style="flex:1"><label class="label">Weeks</label>
+            <input class="input" type="number" name="contract_weeks" value="{{ f.contract_weeks }}"></div>
+          <div class="field" style="flex:1"><label class="label">Hrs/wk</label>
+            <input class="input" type="number" name="hours_per_week" value="{{ f.hours_per_week }}"></div>
+        </div>
+        <div class="field"><label class="label">Agency margin (%)</label>
+          <input class="input" type="number" name="margin_pct" value="{{ f.margin_pct }}"></div>
+        <div class="row" style="gap:8px">
+          <div class="field" style="flex:1"><label class="label">City</label>
+            <input class="input" name="city" value="{{ f.city }}"></div>
+          <div class="field" style="width:80px"><label class="label">State</label>
+            <input class="input" name="state_code" value="{{ f.state_code }}" maxlength="2"></div>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">Calculate</button>
+      </form>
+    </aside>
+    <div>
+      {% if not result %}
+        <div class="panel muted center">Enter contract terms and calculate.</div>
+      {% else %}
+        <div class="panel mb row between items-center wrap">
+          <div><strong>{{ result.gsa.city }}, {{ result.gsa.state_code }}</strong>
+            <span class="badge {{ 'badge-green' if result.gsa.source=='api.gsa.gov' else 'badge-gold' }}">{{ 'GSA live' if result.gsa.source=='api.gsa.gov' else 'GSA offline rates' }}</span></div>
+          <div class="small muted">Lodging ${{ result.gsa.lodging|int }}/night · M&IE ${{ result.gsa.mie|int }}/day · tax-free ${{ result.gsa.weekly_max_tax_free|int }}/wk</div>
+        </div>
+        <div class="grid cols-2">
+          <div class="panel">
+            <h3>Option A · Pure W2</h3>
+            <div class="row between"><span class="muted">Taxable rate</span><strong>${{ result.option_w2.taxable_rate }}/hr</strong></div>
+            <div class="row between"><span class="muted">Weekly gross</span><strong>${{ result.option_w2.weekly_total|int }}</strong></div>
+            <div class="row between"><span class="muted">Est. weekly net</span><strong>${{ result.option_w2.est_weekly_net|int }}</strong></div>
+            <div class="row between mt"><span class="muted">Contract total</span><span class="pay">${{ result.option_w2.contract_total|int }}</span></div>
+          </div>
+          <div class="panel" style="border-color:var(--teal)">
+            <h3>Option B · W2 + Per Diem</h3>
+            <div class="row between"><span class="muted">Taxable rate</span><strong>${{ result.option_perdiem.taxable_rate }}/hr</strong></div>
+            <div class="row between"><span class="muted">Tax-free stipend/wk</span><strong>${{ result.option_perdiem.weekly_tax_free|int }}</strong></div>
+            <div class="row between"><span class="muted">Est. weekly net</span><strong>${{ result.option_perdiem.est_weekly_net|int }}</strong></div>
+            <div class="row between mt"><span class="muted">Contract total</span><span class="pay">${{ result.option_perdiem.contract_total|int }}</span></div>
+          </div>
+        </div>
+        <div class="panel mt center" style="background:#d8f5f1">
+          Per-diem advantage over the contract: <strong style="color:var(--teal-dark);font-size:18px">+${{ result.perdiem_advantage|int }}</strong>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

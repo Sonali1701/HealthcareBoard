@@ -1,0 +1,8 @@
+{% from "components/macros.html" import job_card %}
+<div class="row between items-center mb">
+  <div class="muted small"><strong>{{ total }}</strong> job{{ '' if total==1 else 's' }} found</div>
+</div>
+<div class="grid" style="gap:12px">
+  {% for job in jobs %}{{ job_card(job, employers.get(job.employer_id)) }}{% endfor %}
+  {% if not jobs %}<div class="panel center muted">No jobs match these filters.</div>{% endif %}
+</div>

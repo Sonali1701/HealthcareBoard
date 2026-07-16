@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Recruiter{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <div class="row between items-center wrap">
+    <div>
+      <h2 style="margin:0">{{ employer.org_name }}</h2>
+      <div class="small muted">{{ [employer.city, employer.state_code]|select|join(', ') }}
+        {% if employer.org_type %}· {{ employer.org_type }}{% endif %}</div>
+    </div>
+    <div class="row" style="gap:8px">
+      <a class="btn btn-outline" href="/recruiter/employer">Edit org</a>
+      <a class="btn btn-primary" href="/recruiter/jobs/new">+ Post a job</a>
+    </div>
+  </div>
+
+  <div class="grid cols-2 mt2" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat"><div class="num">{{ kpis.jobs }}</div><div class="lab">Active jobs</div></div>
+    <div class="stat"><div class="num">{{ kpis.applicants }}</div><div class="lab">Applicants</div></div>
+    <div class="stat"><div class="num">{{ kpis.interviews }}</div><div class="lab">In interview</div></div>
+    <div class="stat"><div class="num">{{ kpis.hired }}</div><div class="lab">Hired</div></div>
+  </div>
+
+  <div class="app-grid mt2" style="grid-template-columns:1fr 360px">
+    <div>
+      <h3>Your jobs</h3>
+      {% if jobs %}
+      <div class="card"><table class="tbl">
+        <thead><tr><th>Title</th><th>Specialty</th><th>Applicants</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for j in jobs %}
+        <tr>
+          <td><a href="/recruiter/jobs/{{ j.job_id }}">{{ j.title }}</a></td>
+          <td class="small">{{ j.specialty or '—' }}</td>
+          <td>{{ j.application_count or 0 }}</td>
+          <td><span class="badge {{ 'badge-green' if j.status.value=='active' else '' }}">{{ j.status.value }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+        <div class="panel muted">No jobs yet. <a href="/recruiter/jobs/new">Post your first job →</a></div>
+      {% endif %}
+      <a class="btn btn-navy mt" href="/matching">Run AI matching →</a>
+      <a class="btn btn-outline mt" href="/talent">Browse talent →</a>
+    </div>
+    <div>
+      <h3>Recent applicants</h3>
+      {% if apps %}
+        <div class="grid" style="gap:8px">
+        {% for a in apps %}{% set p = prof_map.get(a.profile_id) %}
+          <div class="card card-p">
+            <div class="row between items-center">
+              <a href="/talent/{{ a.profile_id }}" style="font-weight:600">{{ p.first_name if p else '—' }} {{ p.last_name if p else '' }}</a>
+              <span class="badge badge-navy">{{ a.status.value }}</span>
+            </div>
+            <div class="small muted">{{ job_map.get(a.job_id).title if job_map.get(a.job_id) else '' }}</div>
+          </div>
+        {% endfor %}
+        </div>
+      {% else %}<div class="panel muted small">No applicants yet.</div>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

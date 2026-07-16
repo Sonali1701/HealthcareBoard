@@ -1,0 +1,6 @@
+{% from "components/macros.html" import candidate_card %}
+<div class="muted small mb"><strong>{{ total }}</strong> professional{{ '' if total==1 else 's' }}</div>
+<div class="grid cols-3" style="gap:14px">
+  {% for p in profiles %}{{ candidate_card(p) }}{% endfor %}
+  {% if not profiles %}<div class="panel center muted" style="grid-column:1/-1">No professionals match these filters.</div>{% endif %}
+</div>

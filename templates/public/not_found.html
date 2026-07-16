@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Not found{% endblock %}
+{% block content %}
+<div class="container center" style="margin-top:80px">
+  <h1>404</h1>
+  <p class="muted">That {{ what or 'page' }} could not be found.</p>
+  <a class="btn btn-primary mt" href="/">Back home</a>
+</div>
+{% endblock %}

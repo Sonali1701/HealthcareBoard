@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<div class="container" style="max-width:440px;margin-top:48px">
+  <div class="panel">
+    <h2 class="center">Welcome back</h2>
+    <p class="muted center small" style="margin-top:-6px">Sign in to your HealthBoard account</p>
+    {% if error %}<div class="form-err">{{ error }}</div>{% endif %}
+    <form method="post" action="/login" class="mt">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="field">
+        <label class="label">Email</label>
+        <input class="input" type="email" name="email" value="{{ email or '' }}" required autofocus>
+      </div>
+      <div class="field">
+        <label class="label">Password</label>
+        <input class="input" type="password" name="password" required>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+    </form>
+    <p class="center small mt">New here? <a href="/signup">Create an account</a></p>
+    <p class="center small muted">Demo recruiter: recruiter@example.com / Password123!</p>
+  </div>
+</div>
+{% endblock %}

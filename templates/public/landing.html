@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "components/macros.html" import job_card %}
+{% block title %}Healthcare jobs & talent{% endblock %}
+{% block hero %}
+<section class="search-hero">
+  <div class="container" style="padding-top:40px;padding-bottom:40px">
+    <h1>The job board built for healthcare professionals.</h1>
+    <p>Find travel, staff, and per-diem roles — or source verified, licensed clinicians in minutes.</p>
+    <form class="searchbar" action="/jobs" method="get">
+      <input class="input" name="q" placeholder="Search specialty, title, or skill…">
+      <select class="select" name="specialty" style="max-width:210px">
+        <option value="">All specialties</option>
+        {% for s in specialties %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-primary" type="submit"><i class="fas fa-magnifying-glass"></i> Search</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+{% block content %}
+<div class="grid cols-3">
+  <div class="stat"><div class="num">{{ stats.jobs }}</div><div class="lab">Open roles</div></div>
+  <div class="stat"><div class="num">{{ stats.candidates }}</div><div class="lab">Verified professionals</div></div>
+  <div class="stat"><div class="num">{{ stats.employers }}</div><div class="lab">Hiring organizations</div></div>
+</div>
+
+<div class="row between items-center mt2">
+  <h2 style="margin:0">Featured roles</h2>
+  <a href="/jobs">Browse all jobs →</a>
+</div>
+<div class="grid mt" style="gap:12px">
+  {% for job in jobs %}{{ job_card(job, employers.get(job.employer_id)) }}{% endfor %}
+  {% if not jobs %}<div class="panel center muted">No open roles yet.</div>{% endif %}
+</div>
+
+<div class="panel mt2 row between items-center wrap" style="background:linear-gradient(135deg,#E6F7F7,#EDF1F7)">
+  <div>
+    <h3 style="margin:0">Hiring clinicians?</h3>
+    <div class="muted small">Post a job, browse {{ stats.candidates }} verified professionals, and let AI build your shortlist.</div>
+  </div>
+  <a class="btn btn-navy" href="/signup">Get started as a recruiter</a>
+</div>
+{% endblock %}

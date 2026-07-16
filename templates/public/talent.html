@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Talent{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <h2>Healthcare professionals</h2>
+  <div class="app-grid">
+    <aside>
+      <div class="panel">
+        <form hx-get="/talent" hx-target="#talent-results" hx-trigger="change, keyup delay:400ms from:[name=q]" hx-push-url="true">
+          <div class="field">
+            <label class="label">Search</label>
+            <input class="input" name="q" value="{{ f.q }}" placeholder="name, specialty">
+          </div>
+          <div class="field">
+            <label class="label">Specialty</label>
+            <select class="select" name="specialty">
+              <option value="">All</option>
+              {% for s in specialties %}<option value="{{ s }}" {% if f.specialty==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="row" style="gap:8px">
+            <div class="field" style="flex:1">
+              <label class="label">Profession</label>
+              <input class="input" name="profession" value="{{ f.profession }}" placeholder="MD, RN">
+            </div>
+            <div class="field" style="flex:1">
+              <label class="label">State</label>
+              <input class="input" name="state" value="{{ f.state }}" maxlength="2" placeholder="NC">
+            </div>
+          </div>
+          <a class="btn btn-ghost btn-sm btn-block" href="/talent">Reset</a>
+        </form>
+      </div>
+    </aside>
+    <div>
+      <div id="talent-results">{% include "public/_talent_results.html" %}</div>
+    </div>
+  </div>
+</div>
+{% endblock %}

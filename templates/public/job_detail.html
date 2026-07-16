@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }}{% endblock %}
+{% block content %}
+<div class="container mt2">
+  <a href="/jobs" class="small">← Back to jobs</a>
+  <div class="app-grid mt">
+    <div style="grid-column:1 / 2;order:2">
+      <div class="panel side">
+        {% if job.pay_rate_max %}
+          <div class="pay" style="font-size:24px">${{ job.pay_rate_max|int }}{{ '/hr' if job.pay_unit=='hourly' else '' }}</div>
+          {% if job.pay_rate_min %}<div class="small muted">from ${{ job.pay_rate_min|int }}</div>{% endif %}
+        {% endif %}
+        {% if job.housing_stipend %}<div class="small mt">🏠 Housing: ${{ job.housing_stipend|int }}/wk</div>{% endif %}
+        {% if job.signing_bonus %}<div class="small">🎁 Signing bonus: ${{ job.signing_bonus|int }}</div>{% endif %}
+        <div class="mt">
+          {% if applied %}
+            <button class="btn btn-outline btn-block" disabled>✓ Applied</button>
+          {% else %}
+            <form method="post" action="/jobs/{{ job.job_id }}/apply">
+              <button class="btn btn-primary btn-block" type="submit">Quick Apply</button>
+            </form>
+          {% endif %}
+          <form method="post" action="/jobs/{{ job.job_id }}/save" class="mt">
+            <button class="btn btn-outline btn-block" type="submit">{{ '★ Saved' if saved else '☆ Save job' }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div style="order:1">
+      <div class="panel">
+        <div class="row items-center"><div class="logo">🏥</div>
+          <div><h2 style="margin:0">{{ job.title }}</h2>
+            <div class="muted">{{ employer.org_name if employer else 'HealthBoard' }}
+              {% if job.city or job.state_code %}· {{ [job.city, job.state_code]|select|join(', ') }}{% endif %}</div></div>
+        </div>
+        <div class="row wrap mt" style="gap:6px">
+          {% if job.job_type %}<span class="badge badge-teal">{{ job.job_type.value }}</span>{% endif %}
+          {% if job.specialty %}<span class="badge badge-green">{{ job.specialty }}</span>{% endif %}
+          {% if job.shift_type %}<span class="badge badge-navy">{{ job.shift_type }}</span>{% endif %}
+          {% if job.is_urgent %}<span class="badge badge-coral">Urgent</span>{% endif %}
+        </div>
+        {% if job.description %}<p class="mt2" style="white-space:pre-line">{{ job.description }}</p>{% endif %}
+        {% if job.required_skills %}
+          <div class="section-title">Required skills</div>
+          <div class="row wrap" style="gap:6px">{% for s in job.required_skills %}<span class="badge">{{ s }}</span>{% endfor %}</div>
+        {% endif %}
+        {% if job.required_certifications %}
+          <div class="section-title">Certifications</div>
+          <div class="row wrap" style="gap:6px">{% for s in job.required_certifications %}<span class="badge badge-gold">{{ s }}</span>{% endfor %}</div>
+        {% endif %}
+        {% if job.benefits %}
+          <div class="section-title">Benefits</div>
+          <div class="row wrap" style="gap:6px">{% for b in job.benefits %}<span class="badge badge-green">{{ b }}</span>{% endfor %}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

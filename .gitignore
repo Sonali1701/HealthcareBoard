@@ -1,0 +1,24 @@
+# Environment (never commit real secrets; keep only the placeholder template)
+.env
+.env.*
+!.env.production.example
+.venv/
+venv/
+uploads/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/

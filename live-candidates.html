@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HealthBoard — Live Candidates</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0;
+          --muted:#94a3b8; --teal:#2dd4bf; --blue:#60a5fa; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { padding:24px 32px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  h1 { font-size:20px; margin:0; }
+  .badge { background:var(--teal); color:#042f2e; font-weight:700; font-size:12px;
+           padding:3px 10px; border-radius:999px; }
+  .controls { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
+  input, select { background:var(--card); border:1px solid var(--line);
+                  color:var(--text); padding:9px 12px; border-radius:8px; font-size:14px; }
+  .meta { padding:14px 32px; color:var(--muted); font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+          gap:16px; padding:0 32px 40px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+          padding:18px; display:flex; flex-direction:column; gap:10px; }
+  .top { display:flex; align-items:center; gap:12px; }
+  .avatar { width:46px; height:46px; border-radius:50%; background:linear-gradient(135deg,var(--teal),var(--blue));
+            color:#042f2e; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .name { font-weight:700; font-size:16px; }
+  .head { color:var(--muted); font-size:13px; }
+  .tags { display:flex; flex-wrap:wrap; gap:6px; }
+  .tag { background:#0b1220; border:1px solid var(--line); color:var(--muted);
+         font-size:11px; padding:3px 8px; border-radius:6px; }
+  .tag.spec { color:var(--teal); border-color:#115e59; }
+  .row { display:flex; justify-content:space-between; font-size:13px; color:var(--muted); }
+  .bar { height:6px; background:#0b1220; border-radius:4px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:linear-gradient(90deg,var(--teal),var(--blue)); }
+  a.resume { margin-top:4px; text-align:center; text-decoration:none; color:#042f2e;
+             background:var(--teal); font-weight:700; font-size:13px; padding:8px; border-radius:8px; }
+  a.resume.disabled { background:#475569; color:#cbd5e1; pointer-events:none; }
+  .empty { padding:60px 32px; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>HealthBoard <span class="badge">LIVE DATA</span></h1>
+    <div class="controls">
+      <input id="q" placeholder="Search name, specialty…" />
+      <select id="profession">
+        <option value="">All professions</option>
+        <option>RN</option><option>LPN</option><option>CNA</option>
+        <option>NP</option><option>CRNA</option><option>RT</option>
+        <option>PT</option><option>OT</option><option>MD</option>
+      </select>
+      <input id="state" placeholder="State (e.g. TX)" maxlength="2" style="width:120px" />
+      <button id="go" style="background:var(--blue);border:none;color:#042f2e;font-weight:700;border-radius:8px;padding:9px 16px;cursor:pointer">Search</button>
+    </div>
+  </header>
+  <div class="meta" id="meta">Loading candidates…</div>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">No candidates yet. Import resumes:
+    <code>python -m app.importers.resumes "C:\\path\\to\\resumes"</code></div>
+
+<script>
+const API = ""; // same origin
+const $ = (id) => document.getElementById(id);
+
+function initials(f, l){ return ((f[0]||"") + (l[0]||"")).toUpperCase(); }
+
+async function load(){
+  const params = new URLSearchParams();
+  if ($("q").value.trim()) params.set("q", $("q").value.trim());
+  if ($("profession").value) params.set("profession_type", $("profession").value);
+  if ($("state").value.trim()) params.set("state_code", $("state").value.trim().toUpperCase());
+  params.set("limit", "60");
+
+  $("meta").textContent = "Loading…";
+  let data;
+  try {
+    const res = await fetch(`${API}/api/profiles?` + params.toString());
+    data = await res.json();
+  } catch (e) {
+    $("meta").textContent = "Could not reach the API. Is the server running on this origin?";
+    return;
+  }
+  const items = data.items || [];
+  $("meta").textContent = `${data.total} candidate(s) in the database` +
+    (params.toString().includes("q=") || params.get("profession_type") || params.get("state_code")
+      ? ` · showing ${items.length} match(es)` : "");
+  $("empty").style.display = items.length ? "none" : "block";
+
+  $("grid").innerHTML = items.map(p => {
+    const loc = [p.city, p.state_code].filter(Boolean).join(", ") || "Location N/A";
+    const resume = p.resume_url
+      ? `<a class="resume" href="${p.resume_url}" target="_blank">View résumé</a>`
+      : `<a class="resume disabled">No résumé on file</a>`;
+    return `<div class="card">
+      <div class="top">
+        <div class="avatar">${initials(p.first_name, p.last_name)}</div>
+        <div>
+          <div class="name">${p.first_name} ${p.last_name}</div>
+          <div class="head">${p.headline || (p.specialty||"") + " " + (p.profession_type||"")}</div>
+        </div>
+      </div>
+      <div class="tags">
+        ${p.specialty ? `<span class="tag spec">${p.specialty}</span>` : ""}
+        ${p.profession_type ? `<span class="tag">${p.profession_type}</span>` : ""}
+        <span class="tag">${loc}</span>
+        ${p.years_experience ? `<span class="tag">${p.years_experience} yrs</span>` : ""}
+        <span class="tag">${p.source}</span>
+      </div>
+      <div class="row"><span>Profile completeness</span><span>${p.completion_score}%</span></div>
+      <div class="bar"><i style="width:${p.completion_score}%"></i></div>
+      ${resume}
+    </div>`;
+  }).join("");
+}
+
+$("go").onclick = load;
+["q","state"].forEach(id => $(id).addEventListener("keydown", e => { if(e.key==="Enter") load(); }));
+$("profession").onchange = load;
+load();
+</script>
+</body>
+</html>

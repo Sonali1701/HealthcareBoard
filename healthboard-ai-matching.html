@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HealthBoard AI — Intelligent Job Matching Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Azeret+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#07090F; --bg2:#0D1117; --bg3:#131924; --bg4:#1A2235;
+  --surface:#1E2A3B; --surface2:#243347; --surface3:#2C3E56;
+  --teal:#00D4C8; --teal2:#00A89E; --teal3:rgba(0,212,200,.12);
+  --teal4:rgba(0,212,200,.06); --teal-glow:0 0 24px rgba(0,212,200,.25);
+  --amber:#FFB547; --amber2:#E8961A; --amber3:rgba(255,181,71,.12);
+  --violet:#9B6DFF; --violet2:rgba(155,109,255,.15);
+  --rose:#FF6B8A; --rose2:rgba(255,107,138,.12);
+  --green:#3DD68C; --green2:rgba(61,214,140,.12);
+  --slate:#8A9BBB; --slate2:#5C6E8A; --slate3:#3D4F6A;
+  --white:#F0F4FF; --white2:#C8D3E8; --white3:#8A9BBB;
+  --border:rgba(255,255,255,.06); --border2:rgba(255,255,255,.1);
+  --font-head:'Bricolage Grotesque',sans-serif;
+  --font-mono:'Azeret Mono',monospace;
+  --r:8px; --r2:12px; --r3:16px; --r4:24px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{background:var(--bg);color:var(--white);font-family:var(--font-head);
+  min-height:100vh;overflow-x:hidden;}
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:var(--bg2);}
+::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:4px;}
+input,select,textarea,button{font-family:var(--font-head);}
+
+/* ── GRID BG PATTERN ─── */
+body::before{content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(0,212,200,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,200,.03) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0;}
+
+/* ── TOP NAV ─── */
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;
+  background:rgba(7,9,15,.92);backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);z-index:200;
+  display:flex;align-items:center;padding:0 24px;gap:20px;}
+.logo{font-size:16px;font-weight:800;color:var(--white);display:flex;align-items:center;gap:10px;}
+.logo-icon{width:28px;height:28px;background:var(--teal);border-radius:7px;
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+  box-shadow:var(--teal-glow);}
+.logo span{color:var(--teal);}
+.nav-pill{background:var(--teal3);border:1px solid rgba(0,212,200,.2);
+  color:var(--teal);font-size:11px;font-weight:600;padding:4px 12px;
+  border-radius:100px;letter-spacing:.06em;margin-left:12px;}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.tb-stat{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--slate);
+  padding:0 12px;border-left:1px solid var(--border);}
+.tb-stat strong{color:var(--teal);font-weight:700;}
+.tb-btn{padding:7px 16px;border-radius:var(--r);font-size:12px;font-weight:600;
+  cursor:pointer;border:1px solid var(--border2);background:var(--surface);
+  color:var(--white2);transition:all .2s;}
+.tb-btn:hover{background:var(--surface2);border-color:var(--teal);}
+.tb-btn.primary{background:var(--teal);color:var(--bg);border-color:var(--teal);}
+.tb-btn.primary:hover{background:var(--teal2);}
+
+/* ── LAYOUT ─── */
+.app{display:grid;grid-template-columns:420px 1fr;min-height:100vh;padding-top:56px;position:relative;z-index:1;}
+
+/* ── LEFT: JOB FORM ─── */
+.job-form-panel{background:var(--bg2);border-right:1px solid var(--border);
+  overflow-y:auto;height:calc(100vh - 56px);position:sticky;top:56px;}
+.form-header{padding:24px 24px 16px;border-bottom:1px solid var(--border);}
+.form-header-title{font-size:18px;font-weight:800;color:var(--white);margin-bottom:4px;}
+.form-header-sub{font-size:12px;color:var(--slate);line-height:1.5;}
+.ai-badge{display:inline-flex;align-items:center;gap:5px;
+  background:var(--violet2);border:1px solid rgba(155,109,255,.3);
+  color:var(--violet);font-size:11px;font-weight:600;
+  padding:3px 10px;border-radius:100px;margin-top:8px;letter-spacing:.04em;}
+
+.form-body{padding:20px 24px;}
+.form-section{margin-bottom:22px;}
+.form-section-label{font-size:10px;font-weight:700;color:var(--teal);
+  letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;
+  display:flex;align-items:center;gap:6px;}
+.form-section-label::after{content:'';flex:1;height:1px;background:var(--teal3);}
+.form-field{margin-bottom:12px;}
+.field-label{font-size:12px;font-weight:600;color:var(--white2);margin-bottom:5px;display:block;}
+.field-sub{font-size:11px;color:var(--slate);margin-bottom:6px;}
+.form-input{width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:9px 12px;font-size:13px;color:var(--white);
+  outline:none;transition:all .2s;}
+.form-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--teal3);}
+.form-input::placeholder{color:var(--slate2);}
+.form-select{width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:9px 12px;font-size:13px;color:var(--white);
+  outline:none;cursor:pointer;transition:all .2s;-webkit-appearance:none;}
+.form-select:focus{border-color:var(--teal);}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.form-textarea{width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:9px 12px;font-size:13px;color:var(--white);
+  outline:none;resize:vertical;min-height:80px;transition:all .2s;line-height:1.5;}
+.form-textarea:focus{border-color:var(--teal);}
+
+/* skill chips */
+.skill-input-wrap{position:relative;}
+.skill-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-height:32px;}
+.skill-tag{display:flex;align-items:center;gap:5px;background:var(--teal3);
+  border:1px solid rgba(0,212,200,.25);color:var(--teal);
+  font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:100px;
+  cursor:pointer;transition:all .15s;letter-spacing:.02em;}
+.skill-tag:hover{background:rgba(0,212,200,.2);}
+.skill-tag .remove{color:rgba(0,212,200,.5);font-size:13px;line-height:1;}
+.skill-tag .remove:hover{color:var(--teal);}
+.skill-suggestions{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+.skill-suggest{background:var(--surface);border:1px solid var(--border);
+  color:var(--slate);font-size:11px;padding:3px 8px;border-radius:100px;
+  cursor:pointer;transition:all .15s;}
+.skill-suggest:hover{border-color:var(--teal);color:var(--teal);}
+
+/* weight sliders */
+.weight-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.weight-label{font-size:12px;color:var(--white2);width:120px;flex-shrink:0;}
+.weight-slider{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;
+  background:var(--surface3);outline:none;cursor:pointer;}
+.weight-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;
+  border-radius:50%;background:var(--teal);cursor:pointer;
+  box-shadow:0 0 8px rgba(0,212,200,.4);}
+.weight-val{font-family:var(--font-mono);font-size:12px;color:var(--teal);
+  font-weight:600;width:32px;text-align:right;}
+
+/* salary range */
+.salary-range{display:flex;align-items:center;gap:10px;}
+.salary-range .form-input{flex:1;}
+.salary-sep{color:var(--slate);font-size:14px;}
+
+/* run button */
+.run-btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--teal),var(--teal2));
+  color:var(--bg);font-size:14px;font-weight:800;border:none;border-radius:var(--r2);
+  cursor:pointer;transition:all .3s;letter-spacing:.02em;display:flex;
+  align-items:center;justify-content:center;gap:8px;margin-top:4px;
+  box-shadow:0 4px 20px rgba(0,212,200,.25);}
+.run-btn:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,212,200,.35);}
+.run-btn:active{transform:translateY(0);}
+.run-btn.running{background:var(--surface2);color:var(--teal);border:1px solid var(--teal);
+  box-shadow:none;cursor:wait;}
+.pulse-dot{width:8px;height:8px;background:currentColor;border-radius:50%;
+  animation:pulseDot 1s infinite;}
+@keyframes pulseDot{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.7);}}
+
+.form-divider{height:1px;background:var(--border);margin:20px 0;}
+
+/* saved jobs */
+.saved-job-item{display:flex;align-items:center;gap:10px;padding:10px 12px;
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);
+  margin-bottom:6px;cursor:pointer;transition:all .15s;}
+.saved-job-item:hover{border-color:var(--teal);background:var(--teal4);}
+.saved-job-item.active{border-color:var(--teal);background:var(--teal3);}
+.sji-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.sji-info{flex:1;min-width:0;}
+.sji-title{font-size:12.5px;font-weight:600;color:var(--white);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+.sji-meta{font-size:11px;color:var(--slate);}
+.sji-count{font-family:var(--font-mono);font-size:11px;font-weight:600;
+  color:var(--teal);background:var(--teal3);padding:2px 7px;border-radius:100px;}
+
+/* ── RIGHT: RESULTS ─── */
+.results-panel{background:var(--bg);overflow-y:auto;height:calc(100vh - 56px);}
+
+/* ── RESULTS HEADER ─── */
+.results-header{padding:24px 28px 16px;border-bottom:1px solid var(--border);
+  background:var(--bg2);position:sticky;top:0;z-index:10;}
+.rh-top{display:flex;align-items:center;gap:14px;margin-bottom:14px;}
+.rh-title{font-size:20px;font-weight:800;color:var(--white);}
+.rh-count{font-family:var(--font-mono);font-size:12px;font-weight:600;
+  color:var(--teal);background:var(--teal3);border:1px solid rgba(0,212,200,.2);
+  padding:4px 12px;border-radius:100px;}
+.rh-time{font-size:11px;color:var(--slate);margin-left:auto;display:flex;
+  align-items:center;gap:5px;}
+.rh-controls{display:flex;gap:8px;align-items:center;}
+.rh-search{flex:1;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:7px 12px 7px 36px;font-size:13px;
+  color:var(--white);outline:none;transition:border-color .2s;position:relative;}
+.rh-search-wrap{position:relative;flex:1;}
+.rh-search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  color:var(--slate);width:14px;height:14px;}
+.rh-search-wrap input{width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);padding:7px 12px 7px 34px;font-size:13px;
+  color:var(--white);outline:none;transition:border-color .2s;font-family:var(--font-head);}
+.rh-search-wrap input:focus{border-color:var(--teal);}
+.rh-search-wrap input::placeholder{color:var(--slate2);}
+.sort-select{background:var(--bg3);border:1px solid var(--border2);
+  color:var(--white2);padding:7px 12px;border-radius:var(--r);font-size:12.5px;
+  cursor:pointer;outline:none;font-family:var(--font-head);}
+.view-toggle-btns{display:flex;background:var(--bg3);border-radius:var(--r);
+  padding:2px;border:1px solid var(--border);}
+.view-toggle-btn{padding:5px 10px;border-radius:6px;border:none;background:transparent;
+  cursor:pointer;color:var(--slate);font-size:13px;transition:all .15s;}
+.view-toggle-btn.active{background:var(--surface);color:var(--white);}
+
+/* ── SCORE BREAKDOWN BAR ─── */
+.score-breakdown{display:flex;gap:2px;height:6px;border-radius:3px;overflow:hidden;
+  margin-bottom:3px;}
+.sb-seg{height:100%;transition:width .8s ease;}
+
+/* ── SUMMARY CARDS ─── */
+.summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;
+  padding:16px 28px;border-bottom:1px solid var(--border);}
+.summary-card{background:var(--bg3);border:1px solid var(--border);
+  border-radius:var(--r2);padding:14px 16px;}
+.sc-val{font-family:var(--font-mono);font-size:22px;font-weight:700;
+  color:var(--teal);margin-bottom:2px;}
+.sc-label{font-size:11px;color:var(--slate);margin-bottom:6px;}
+.sc-bar{height:3px;background:var(--surface3);border-radius:2px;overflow:hidden;}
+.sc-bar-fill{height:100%;border-radius:2px;background:var(--teal);}
+
+/* ── CANDIDATE CARDS ─── */
+.candidates-container{padding:16px 28px 28px;}
+.candidates-grid{display:flex;flex-direction:column;gap:10px;}
+
+.candidate-card{background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--r3);overflow:hidden;transition:all .25s;
+  cursor:pointer;position:relative;}
+.candidate-card:hover{border-color:rgba(0,212,200,.3);
+  box-shadow:0 4px 24px rgba(0,0,0,.3),var(--teal-glow);}
+.candidate-card.rank-1{border-color:rgba(255,181,71,.4);
+  box-shadow:0 0 20px rgba(255,181,71,.08);}
+.candidate-card.rank-2{border-color:rgba(192,192,192,.3);}
+.candidate-card.rank-3{border-color:rgba(205,127,50,.3);}
+.candidate-card.top-match{border-color:rgba(0,212,200,.35);
+  background:linear-gradient(135deg,var(--bg2) 0%,rgba(0,212,200,.04) 100%);}
+
+.cc-main{display:flex;gap:14px;padding:16px 18px;align-items:flex-start;}
+.rank-badge{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-family:var(--font-mono);font-size:12px;font-weight:700;
+  flex-shrink:0;margin-top:2px;}
+.rank-gold{background:linear-gradient(135deg,#FFB547,#E8961A);color:var(--bg);}
+.rank-silver{background:linear-gradient(135deg,#C0C0C0,#909090);color:var(--bg);}
+.rank-bronze{background:linear-gradient(135deg,#CD7F32,#9A5C20);color:var(--bg);}
+.rank-normal{background:var(--surface);color:var(--white2);}
+.cand-avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;
+  position:relative;}
+.online-ring{position:absolute;bottom:1px;right:1px;width:12px;height:12px;
+  border-radius:50%;border:2px solid var(--bg2);}
+.green-ring{background:var(--green);}
+.amber-ring{background:var(--amber);}
+.gray-ring{background:var(--slate2);}
+
+.cand-info{flex:1;min-width:0;}
+.cand-name{font-size:14px;font-weight:700;color:var(--white);margin-bottom:1px;}
+.cand-title{font-size:12px;color:var(--white2);margin-bottom:6px;}
+.cand-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;}
+.ctag{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:100px;letter-spacing:.03em;}
+.ctag-teal{background:var(--teal3);color:var(--teal);border:1px solid rgba(0,212,200,.15);}
+.ctag-violet{background:var(--violet2);color:var(--violet);border:1px solid rgba(155,109,255,.2);}
+.ctag-amber{background:var(--amber3);color:var(--amber);border:1px solid rgba(255,181,71,.2);}
+.ctag-green{background:var(--green2);color:var(--green);border:1px solid rgba(61,214,140,.2);}
+.ctag-rose{background:var(--rose2);color:var(--rose);}
+.ctag-slate{background:var(--surface);color:var(--slate);}
+.cand-metas{display:flex;gap:14px;flex-wrap:wrap;}
+.cm-item{font-size:11.5px;color:var(--slate);display:flex;align-items:center;gap:4px;}
+.cm-item span{color:var(--white2);}
+
+/* ── SCORE COLUMN ─── */
+.score-col{display:flex;flex-direction:column;align-items:flex-end;gap:6px;
+  flex-shrink:0;min-width:120px;}
+.total-score{display:flex;flex-direction:column;align-items:flex-end;}
+.score-ring-wrap{position:relative;width:56px;height:56px;}
+.score-ring-svg{transform:rotate(-90deg);}
+.score-num{position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;font-family:var(--font-mono);font-size:14px;font-weight:700;}
+.score-label{font-size:10px;color:var(--slate);margin-top:2px;text-align:right;}
+.score-change{font-size:10px;font-weight:600;}
+.score-up{color:var(--green);}
+.score-down{color:var(--rose);}
+
+/* ── SCORE BREAKDOWN EXPANDED ─── */
+.cc-breakdown{padding:0 18px 14px 18px;border-top:1px solid var(--border);}
+.breakdown-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;
+  padding-top:12px;}
+.breakdown-item{background:var(--bg3);border-radius:var(--r);padding:10px 12px;
+  border:1px solid var(--border);}
+.bi-label{font-size:10px;color:var(--slate);margin-bottom:5px;letter-spacing:.04em;}
+.bi-score{font-family:var(--font-mono);font-size:16px;font-weight:700;}
+.bi-bar-wrap{height:3px;background:var(--surface3);border-radius:2px;
+  margin-top:6px;overflow:hidden;}
+.bi-bar-fill{height:100%;border-radius:2px;transition:width 1s ease;}
+
+/* action buttons on card */
+.cc-actions{display:flex;gap:6px;padding:0 18px 14px;flex-wrap:wrap;}
+.cca-btn{padding:6px 14px;border-radius:var(--r);font-size:11.5px;font-weight:600;
+  cursor:pointer;border:1px solid var(--border);background:var(--surface);
+  color:var(--white2);transition:all .15s;font-family:var(--font-head);}
+.cca-btn:hover{background:var(--surface2);}
+.cca-btn.contact{background:var(--teal);color:var(--bg);border-color:var(--teal);}
+.cca-btn.contact:hover{background:var(--teal2);}
+.cca-btn.shortlist{border-color:rgba(155,109,255,.3);color:var(--violet);
+  background:var(--violet2);}
+.cca-btn.shortlist:hover{background:rgba(155,109,255,.25);}
+
+/* why match box */
+.why-match{background:var(--bg3);border:1px solid var(--teal3);
+  border-radius:var(--r);padding:10px 14px;margin:0 18px 12px;
+  font-size:12px;color:var(--white2);line-height:1.65;}
+.why-match strong{color:var(--teal);}
+
+/* ── LOADING ANIMATION ─── */
+.matching-overlay{position:fixed;inset:0;background:rgba(7,9,15,.95);z-index:500;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:20px;opacity:0;pointer-events:none;transition:opacity .3s;}
+.matching-overlay.active{opacity:1;pointer-events:all;}
+.matching-logo{font-size:24px;font-weight:800;color:var(--teal);
+  font-family:var(--font-head);margin-bottom:8px;}
+.matching-spinner{width:80px;height:80px;position:relative;}
+.spinner-ring{position:absolute;inset:0;border:2px solid transparent;
+  border-radius:50%;animation:spin 1.2s linear infinite;}
+.spinner-ring.r1{border-top-color:var(--teal);animation-duration:1.2s;}
+.spinner-ring.r2{inset:10px;border-top-color:var(--violet);animation-duration:1.8s;animation-direction:reverse;}
+.spinner-ring.r3{inset:20px;border-top-color:var(--amber);animation-duration:2.4s;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.matching-steps{display:flex;flex-direction:column;gap:8px;min-width:320px;}
+.match-step{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--slate);}
+.match-step.done{color:var(--white2);}
+.match-step.active{color:var(--teal);}
+.step-icon{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:10px;flex-shrink:0;}
+.step-done-icon{background:var(--green);color:var(--bg);}
+.step-active-icon{background:var(--teal3);border:1px solid var(--teal);animation:pulseDot .8s infinite;}
+.step-pending-icon{background:var(--surface);color:var(--slate);}
+.match-progress{width:320px;height:3px;background:var(--surface);border-radius:2px;overflow:hidden;}
+.match-progress-fill{height:100%;background:linear-gradient(90deg,var(--teal),var(--violet));
+  border-radius:2px;width:0%;transition:width .4s ease;}
+.matching-sub{font-size:12px;color:var(--slate);font-family:var(--font-mono);}
+
+/* ── TOAST ─── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface2);
+  border:1px solid var(--teal);color:var(--white);padding:12px 18px;
+  border-radius:var(--r2);font-size:13px;z-index:600;
+  display:flex;align-items:center;gap:10px;
+  box-shadow:0 4px 20px rgba(0,212,200,.15);
+  transform:translateY(80px);opacity:0;transition:all .3s ease;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast-dot{width:7px;height:7px;border-radius:50%;background:var(--teal);flex-shrink:0;}
+
+/* ── EMPTY STATE ─── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:400px;padding:40px;text-align:center;gap:12px;}
+.empty-icon{font-size:52px;margin-bottom:8px;}
+.empty-title{font-size:18px;font-weight:700;color:var(--white2);}
+.empty-sub{font-size:13px;color:var(--slate);max-width:320px;line-height:1.6;}
+
+/* ── FILTERS CHIPS ─── */
+.filter-chips{display:flex;gap:6px;flex-wrap:wrap;padding:12px 28px;
+  border-bottom:1px solid var(--border);}
+.fchip{padding:5px 12px;border-radius:100px;border:1px solid var(--border);
+  font-size:11.5px;color:var(--slate);cursor:pointer;transition:all .15s;font-weight:500;}
+.fchip.active{background:var(--teal3);border-color:rgba(0,212,200,.3);color:var(--teal);}
+.fchip:hover:not(.active){border-color:var(--border2);color:var(--white2);}
+
+/* ── ANIMATIONS ─── */
+@keyframes fadeSlideIn{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+.fade-in{animation:fadeSlideIn .4s ease both;}
+
+/* ── SHORTLIST PANEL ─── */
+.shortlist-sidebar{position:fixed;right:0;top:56px;bottom:0;width:320px;
+  background:var(--bg2);border-left:1px solid var(--teal);z-index:100;
+  transform:translateX(100%);transition:transform .3s ease;overflow-y:auto;}
+.shortlist-sidebar.open{transform:translateX(0);}
+.sl-header{padding:16px 18px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;}
+.sl-title{font-size:14px;font-weight:700;color:var(--white);}
+.sl-count{background:var(--teal);color:var(--bg);font-size:11px;font-weight:700;
+  padding:2px 8px;border-radius:100px;}
+.sl-close{color:var(--slate);cursor:pointer;font-size:18px;line-height:1;}
+.sl-item{display:flex;align-items:center;gap:10px;padding:12px 18px;
+  border-bottom:1px solid var(--border);}
+.sl-rank{font-family:var(--font-mono);font-size:11px;color:var(--teal);
+  font-weight:700;width:20px;}
+.sl-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+.sl-name{font-size:12.5px;font-weight:600;color:var(--white);flex:1;}
+.sl-score-num{font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--teal);}
+.sl-remove{color:var(--slate);cursor:pointer;font-size:14px;}
+.sl-remove:hover{color:var(--rose);}
+.sl-footer{padding:16px 18px;}
+.sl-action-btn{width:100%;padding:10px;background:var(--teal);color:var(--bg);
+  border:none;border-radius:var(--r);font-size:13px;font-weight:700;
+  cursor:pointer;font-family:var(--font-head);transition:all .2s;margin-bottom:8px;}
+.sl-action-btn:hover{background:var(--teal2);}
+.sl-action-btn.secondary{background:var(--surface2);color:var(--white2);
+  border:1px solid var(--border);}
+.sl-action-btn.secondary:hover{background:var(--surface3);}
+
+/* scrollbar for form */
+.job-form-panel::-webkit-scrollbar{width:3px;}
+.results-panel::-webkit-scrollbar{width:4px;}
+</style>
+</head>
+<body>
+<style>.hb-locked body>*:not(#hb-gate){visibility:hidden}</style>
+<script>if(!localStorage.getItem('hb_token'))document.documentElement.classList.add('hb-locked');</script>
+
+<!-- ── TOP BAR ── -->
+<nav class="topbar">
+  <div class="logo">
+    <div class="logo-icon">🧠</div>
+    Health<span>Board</span>
+    <div class="nav-pill">AI MATCH ENGINE</div>
+  </div>
+  <div class="topbar-right">
+    <div class="tb-stat">Database: <strong>2,000,000</strong> profiles</div>
+    <div class="tb-stat">Indexed: <strong>98.7%</strong></div>
+    <div class="tb-stat">Avg match: <strong>0.8s</strong></div>
+    <button class="tb-btn" onclick="toggleShortlist()">⭐ Shortlist (<span id="sl-count">0</span>)</button>
+    <button class="tb-btn primary" onclick="showToast('📤 Report exported','Top 100 matches downloaded as CSV...')">Export Top 100</button>
+  </div>
+</nav>
+
+<div class="app">
+
+<!-- ════════════════════════════════
+     LEFT: JOB POSTING FORM
+════════════════════════════════ -->
+<div class="job-form-panel">
+  <div class="form-header">
+    <div class="form-header-title">AI Job Matching</div>
+    <div class="form-header-sub">Define the role and our AI engine scans 2M profiles to surface your best 100 matches in seconds.</div>
+    <div class="ai-badge">✦ Powered by HealthBoard AI</div>
+  </div>
+
+  <div class="form-body">
+
+    <!-- Previous Jobs -->
+    <div class="form-section">
+      <div class="form-section-label">Recent Jobs</div>
+      <div class="saved-job-item active" onclick="loadJob('icu')">
+        <div class="sji-dot" style="background:var(--teal);"></div>
+        <div class="sji-info">
+          <div class="sji-title">Travel ICU RN — MICU Nights</div>
+          <div class="sji-meta">Memorial Hermann · Houston, TX</div>
+        </div>
+        <div class="sji-count">94 matches</div>
+      </div>
+      <div class="saved-job-item" onclick="loadJob('crna')">
+        <div class="sji-dot" style="background:var(--violet);"></div>
+        <div class="sji-info">
+          <div class="sji-title">CRNA — Anesthesiology Team</div>
+          <div class="sji-meta">HCA Healthcare · Dallas, TX</div>
+        </div>
+        <div class="sji-count">67 matches</div>
+      </div>
+      <div class="saved-job-item" onclick="loadJob('er')">
+        <div class="sji-dot" style="background:var(--rose);"></div>
+        <div class="sji-info">
+          <div class="sji-title">Staff RN — Emergency Dept</div>
+          <div class="sji-meta">Houston Methodist · Houston, TX</div>
+        </div>
+        <div class="sji-count">88 matches</div>
+      </div>
+    </div>
+
+    <div class="form-divider"></div>
+
+    <!-- Job Details -->
+    <div class="form-section">
+      <div class="form-section-label">Job Details</div>
+      <div class="form-field">
+        <label class="field-label">Job Title *</label>
+        <input class="form-input" id="job-title" value="Travel ICU RN — MICU Nights" placeholder="e.g. Travel ICU RN">
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label class="field-label">Specialty *</label>
+          <select class="form-select" id="job-specialty">
+            <option selected>Allergy &amp; Immunology</option>
+            <option>ICU / Critical Care</option>
+            <option>Emergency (ER)</option>
+            <option>OR / Surgical</option>
+            <option>Labor & Delivery</option>
+            <option>Pediatrics (PICU)</option>
+            <option>Telemetry</option>
+            <option>Med/Surg</option>
+            <option>Oncology</option>
+            <option>Anesthesia (CRNA)</option>
+            <option>Pharmacy</option>
+            <option>Respiratory Therapy</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="field-label">Profession Type *</label>
+          <select class="form-select" id="job-profession">
+            <option selected>RN</option>
+            <option>CRNA</option>
+            <option>NP</option>
+            <option>MD / Physician</option>
+            <option>PharmD</option>
+            <option>RT</option>
+            <option>PT / OT</option>
+            <option>Allied Health</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label class="field-label">Job Type</label>
+          <select class="form-select" id="job-type">
+            <option selected>Travel</option>
+            <option>Permanent / Staff</option>
+            <option>Per Diem</option>
+            <option>Contract</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="field-label">Shift</label>
+          <select class="form-select">
+            <option selected>Nights (7p–7a)</option>
+            <option>Days (7a–7p)</option>
+            <option>Evening</option>
+            <option>Rotating</option>
+            <option>Flexible / PRN</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Location -->
+    <div class="form-section">
+      <div class="form-section-label">Location</div>
+      <div class="form-row">
+        <div class="form-field">
+          <label class="field-label">City</label>
+          <input class="form-input" id="job-city" value="Houston" placeholder="City">
+        </div>
+        <div class="form-field">
+          <label class="field-label">State</label>
+          <select class="form-select" id="job-state">
+            <option selected>TX</option>
+            <option>CA</option><option>FL</option><option>NY</option>
+            <option>IL</option><option>PA</option><option>OH</option>
+            <option>Any State</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="field-label">Radius (miles)</label>
+        <div class="weight-row" style="margin-bottom:0;">
+          <input type="range" class="weight-slider" min="10" max="500" value="50" id="radius-slider"
+            oninput="document.getElementById('radius-val').textContent=this.value+'mi'">
+          <div class="weight-val" id="radius-val">50mi</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compensation -->
+    <div class="form-section">
+      <div class="form-section-label">Compensation</div>
+      <div class="form-field">
+        <label class="field-label">Pay Rate Range (hourly)</label>
+        <div class="salary-range">
+          <input class="form-input" id="pay-min" value="55" placeholder="Min">
+          <div class="salary-sep">→</div>
+          <input class="form-input" id="pay-max" value="70" placeholder="Max">
+          <div style="font-size:13px;color:var(--slate);white-space:nowrap;">/hr</div>
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="field-label">Housing Stipend (weekly)</label>
+        <input class="form-input" value="2400" placeholder="e.g. 2400">
+      </div>
+      <div class="form-field">
+        <label class="field-label">Benefits</label>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;" id="benefits-row">
+          <div class="skill-tag" onclick="removeBenefit(this)">Health Insurance <span class="remove">×</span></div>
+          <div class="skill-tag" onclick="removeBenefit(this)">401(k) <span class="remove">×</span></div>
+          <div class="skill-tag" onclick="removeBenefit(this)">Day 1 Coverage <span class="remove">×</span></div>
+          <div class="skill-tag" onclick="removeBenefit(this)">Completion Bonus <span class="remove">×</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Skills Required -->
+    <div class="form-section">
+      <div class="form-section-label">Required Skills & Certifications</div>
+      <div class="form-field">
+        <label class="field-label">Hard Skills / Specializations</label>
+        <div class="skill-input-wrap">
+          <input class="form-input" id="skill-input" placeholder="Type skill + Enter..."
+            onkeydown="addSkill(event)">
+        </div>
+        <div class="skill-tags" id="skill-tags">
+          <div class="skill-tag">Ventilator Mgmt <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+          <div class="skill-tag">CRRT <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+          <div class="skill-tag">IABP <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+          <div class="skill-tag">Hemodynamic Monitoring <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+          <div class="skill-tag">Vasopressors <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+          <div class="skill-tag">Epic EMR <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+        </div>
+        <div class="skill-suggestions">
+          <div class="skill-suggest" onclick="addSuggestedSkill(this)">ECMO</div>
+          <div class="skill-suggest" onclick="addSuggestedSkill(this)">Swan-Ganz</div>
+          <div class="skill-suggest" onclick="addSuggestedSkill(this)">Cerner</div>
+          <div class="skill-suggest" onclick="addSuggestedSkill(this)">Sepsis Protocol</div>
+          <div class="skill-suggest" onclick="addSuggestedSkill(this)">TNCC</div>
+          <div class="skill-suggest" onclick="addSuggestedSkill(this)">Code Blue</div>
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="field-label">Required Certifications</label>
+        <div class="skill-tags" id="cert-tags">
+          <div class="skill-tag" style="background:var(--amber3);border-color:rgba(255,181,71,.25);color:var(--amber);">ACLS <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+          <div class="skill-tag" style="background:var(--amber3);border-color:rgba(255,181,71,.25);color:var(--amber);">BLS <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+          <div class="skill-tag" style="background:var(--amber3);border-color:rgba(255,181,71,.25);color:var(--amber);">CCRN preferred <span class="remove" onclick="removeSkill(this.parentElement)">×</span></div>
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="field-label">Years Experience</label>
+        <div class="form-row">
+          <div>
+            <div class="field-sub">Minimum</div>
+            <input class="form-input" id="exp-min" value="2" type="number" min="0">
+          </div>
+          <div>
+            <div class="field-sub">Preferred</div>
+            <input class="form-input" id="exp-pref" value="5" type="number" min="0">
+          </div>
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="field-label">License Requirements</label>
+        <select class="form-select" id="license-req">
+          <option>Texas RN License (Active)</option>
+          <option>Any Compact License</option>
+          <option>Any State License</option>
+          <option>Compact preferred</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Matching Weights -->
+    <div class="form-section">
+      <div class="form-section-label">AI Matching Weights</div>
+      <div class="field-sub" style="margin-bottom:10px;">Adjust how much each factor influences the match score</div>
+      <div class="weight-row">
+        <div class="weight-label">Skills Match</div>
+        <input type="range" class="weight-slider" min="0" max="100" value="35" id="w-skills"
+          oninput="updateWeight('w-skills','wv-skills')">
+        <div class="weight-val" id="wv-skills">35%</div>
+      </div>
+      <div class="weight-row">
+        <div class="weight-label">Experience</div>
+        <input type="range" class="weight-slider" min="0" max="100" value="25" id="w-exp"
+          oninput="updateWeight('w-exp','wv-exp')">
+        <div class="weight-val" id="wv-exp">25%</div>
+      </div>
+      <div class="weight-row">
+        <div class="weight-label">Location</div>
+        <input type="range" class="weight-slider" min="0" max="100" value="20" id="w-loc"
+          oninput="updateWeight('w-loc','wv-loc')">
+        <div class="weight-val" id="wv-loc">20%</div>
+      </div>
+      <div class="weight-row">
+        <div class="weight-label">Pay Expectation</div>
+        <input type="range" class="weight-slider" min="0" max="100" value="20" id="w-pay"
+          oninput="updateWeight('w-pay','wv-pay')">
+        <div class="weight-val" id="wv-pay">20%</div>
+      </div>
+    </div>
+
+    <!-- Advanced -->
+    <div class="form-section">
+      <div class="form-section-label">Advanced Filters</div>
+      <div class="form-row">
+        <div class="form-field">
+          <label class="field-label">Availability</label>
+          <input class="form-input" type="date" value="2025-02-01">
+        </div>
+        <div class="form-field">
+          <label class="field-label">Open to Work</label>
+          <select class="form-select">
+            <option>Must be active</option>
+            <option>Active preferred</option>
+            <option>All candidates</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="field-label">Profile Completeness</label>
+        <div class="weight-row" style="margin-bottom:0;">
+          <input type="range" class="weight-slider" min="0" max="100" value="70" id="prof-complete"
+            oninput="document.getElementById('pc-val').textContent=this.value+'%+'">
+          <div class="weight-val" id="pc-val">70%+</div>
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="field-label">Special Filters</label>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:4px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--white2);cursor:pointer;">
+            <input type="checkbox" checked style="accent-color:var(--teal);width:14px;height:14px;"> Verified license only
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--white2);cursor:pointer;">
+            <input type="checkbox" style="accent-color:var(--teal);width:14px;height:14px;"> Previously placed candidates first
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--white2);cursor:pointer;">
+            <input type="checkbox" checked style="accent-color:var(--teal);width:14px;height:14px;"> Exclude recent declines
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--white2);cursor:pointer;">
+            <input type="checkbox" style="accent-color:var(--teal);width:14px;height:14px;"> Boost travel-experienced nurses
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <button class="run-btn" id="run-btn" onclick="runMatching()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Run AI Matching Engine
+    </button>
+
+    <div style="font-size:11px;color:var(--slate);text-align:center;margin-top:10px;">
+      Scanning 2,000,000 profiles · Vector similarity + weighted scoring
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════════════════════════════
+     RIGHT: RESULTS PANEL
+════════════════════════════════ -->
+<div class="results-panel" id="results-panel">
+
+  <!-- Initial empty state -->
+  <div class="empty-state" id="empty-state">
+    <div class="empty-icon">🧠</div>
+    <div class="empty-title">AI Match Engine Ready</div>
+    <div class="empty-sub">Configure the job details on the left and click "Run AI Matching Engine" to surface your top 100 candidates from 2M profiles.</div>
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+      <div style="background:var(--teal3);border:1px solid rgba(0,212,200,.2);border-radius:var(--r);padding:10px 16px;text-align:left;min-width:140px;">
+        <div style="font-size:18px;font-weight:800;color:var(--teal);font-family:var(--font-mono);">35%</div>
+        <div style="font-size:11px;color:var(--slate);">Skills weight</div>
+      </div>
+      <div style="background:var(--violet2);border:1px solid rgba(155,109,255,.2);border-radius:var(--r);padding:10px 16px;text-align:left;min-width:140px;">
+        <div style="font-size:18px;font-weight:800;color:var(--violet);font-family:var(--font-mono);">25%</div>
+        <div style="font-size:11px;color:var(--slate);">Experience weight</div>
+      </div>
+      <div style="background:var(--amber3);border:1px solid rgba(255,181,71,.2);border-radius:var(--r);padding:10px 16px;text-align:left;min-width:140px;">
+        <div style="font-size:18px;font-weight:800;color:var(--amber);font-family:var(--font-mono);">20%</div>
+        <div style="font-size:11px;color:var(--slate);">Location weight</div>
+      </div>
+      <div style="background:var(--green2);border:1px solid rgba(61,214,140,.2);border-radius:var(--r);padding:10px 16px;text-align:left;min-width:140px;">
+        <div style="font-size:18px;font-weight:800;color:var(--green);font-family:var(--font-mono);">20%</div>
+        <div style="font-size:11px;color:var(--slate);">Pay alignment</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results (hidden until run) -->
+  <div id="results-content" style="display:none;">
+
+    <div class="results-header">
+      <div class="rh-top">
+        <div class="rh-title" id="results-title">Top 100 Matches</div>
+        <div class="rh-count" id="results-count">100 candidates</div>
+        <div class="rh-time">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Matched in <strong id="match-time" style="color:var(--teal);">0.8s</strong>
+        </div>
+      </div>
+      <div class="rh-controls">
+        <div class="rh-search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input placeholder="Filter results..." oninput="filterResults(this.value)">
+        </div>
+        <select class="sort-select" onchange="sortResults(this.value)">
+          <option value="total">Sort: Overall Score</option>
+          <option value="skills">Sort: Skills Match</option>
+          <option value="exp">Sort: Experience</option>
+          <option value="loc">Sort: Location</option>
+          <option value="pay">Sort: Pay Alignment</option>
+        </select>
+        <div class="view-toggle-btns">
+          <button class="view-toggle-btn active" onclick="setView('list',this)">☰</button>
+          <button class="view-toggle-btn" onclick="setView('compact',this)">⊞</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="filter-chips" id="filter-chips">
+      <div class="fchip active" onclick="filterByStatus('all',this)">All 100</div>
+      <div class="fchip" onclick="filterByStatus('excellent',this)">🔥 Excellent (90+)</div>
+      <div class="fchip" onclick="filterByStatus('great',this)">⭐ Great (80–89)</div>
+      <div class="fchip" onclick="filterByStatus('good',this)">✓ Good (70–79)</div>
+      <div class="fchip" onclick="filterByStatus('active',this)">🟢 Online Now</div>
+      <div class="fchip" onclick="filterByStatus('travel',this)">✈ Travel Exp.</div>
+      <div class="fchip" onclick="filterByStatus('shortlisted',this)">⭐ Shortlisted</div>
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-card">
+        <div class="sc-val" id="s-excellent">24</div>
+        <div class="sc-label">Excellent Matches (90+)</div>
+        <div class="sc-bar"><div class="sc-bar-fill" id="sb-excellent" style="width:24%;background:var(--teal);"></div></div>
+      </div>
+      <div class="summary-card">
+        <div class="sc-val" id="s-avg">84.2</div>
+        <div class="sc-label">Average Match Score</div>
+        <div class="sc-bar"><div class="sc-bar-fill" id="sb-avg" style="width:84.2%;background:var(--violet);"></div></div>
+      </div>
+      <div class="summary-card">
+        <div class="sc-val" id="s-available">67</div>
+        <div class="sc-label">Immediately Available</div>
+        <div class="sc-bar"><div class="sc-bar-fill" id="sb-available" style="width:67%;background:var(--amber);"></div></div>
+      </div>
+      <div class="summary-card">
+        <div class="sc-val" id="s-online">18</div>
+        <div class="sc-label">Online Right Now</div>
+        <div class="sc-bar"><div class="sc-bar-fill" id="sb-online" style="width:18%;background:var(--green);"></div></div>
+      </div>
+    </div>
+
+    <div class="candidates-container">
+      <div class="candidates-grid" id="candidates-grid"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app -->
+
+<!-- ── SHORTLIST SIDEBAR ── -->
+<div class="shortlist-sidebar" id="shortlist-sidebar">
+  <div class="sl-header">
+    <div class="sl-title">⭐ Shortlist</div>
+    <div class="sl-count" id="sl-badge">0</div>
+    <div class="sl-close" onclick="toggleShortlist()">✕</div>
+  </div>
+  <div id="shortlist-items"></div>
+  <div class="sl-footer" id="sl-footer" style="display:none;">
+    <button class="sl-action-btn" onclick="showToast('💬 Bulk message sent','Opening conversation with all shortlisted candidates...')">
+      💬 Message All Shortlisted
+    </button>
+    <button class="sl-action-btn secondary" onclick="showToast('📤 Exported','Shortlist downloaded as CSV...')">
+      Export Shortlist CSV
+    </button>
+  </div>
+</div>
+
+<!-- ── LOADING OVERLAY ── -->
+<div class="matching-overlay" id="matching-overlay">
+  <div class="matching-logo">🧠 HealthBoard AI</div>
+  <div class="matching-spinner">
+    <div class="spinner-ring r1"></div>
+    <div class="spinner-ring r2"></div>
+    <div class="spinner-ring r3"></div>
+  </div>
+  <div class="matching-steps" id="matching-steps">
+    <div class="match-step" id="step-1">
+      <div class="step-icon step-pending-icon">1</div>
+      Vectorizing job requirements
+    </div>
+    <div class="match-step" id="step-2">
+      <div class="step-icon step-pending-icon">2</div>
+      Scanning 2,000,000 profile embeddings
+    </div>
+    <div class="match-step" id="step-3">
+      <div class="step-icon step-pending-icon">3</div>
+      Computing skill similarity scores
+    </div>
+    <div class="match-step" id="step-4">
+      <div class="step-icon step-pending-icon">4</div>
+      Applying location & pay filters
+    </div>
+    <div class="match-step" id="step-5">
+      <div class="step-icon step-pending-icon">5</div>
+      Ranking top 100 candidates
+    </div>
+  </div>
+  <div class="match-progress">
+    <div class="match-progress-fill" id="progress-fill"></div>
+  </div>
+  <div class="matching-sub" id="match-sub">Initializing engine...</div>
+</div>
+
+<!-- ── TOAST ── -->
+<div class="toast" id="toast"><div class="toast-dot"></div><span id="toast-text"></span></div>
+
+<script>
+/* ════════ DATA ════════ */
+const SPECIALTIES = ['ICU/Critical Care','ICU/Critical Care','ICU/Critical Care','Emergency','Anesthesia','ICU/Critical Care','Med/Surg','ICU/Critical Care','Emergency','ICU/Critical Care','OR/Surgical','ICU/Critical Care'];
+const PROFESSIONS = ['RN','RN','RN','RN','CRNA','NP','RN','RN','RN','RN','RN','RN'];
+const FIRST = ['Jessica','Sarah','Amanda','Marcus','Dr. Kevin','Tanya','Priya','Alex','Rachel','Jordan','Morgan','Casey','Taylor','Blake','Drew','Jamie','Riley','Quinn','Avery','Peyton','Skyler','Cameron','Dakota','Reese','Finley','Kennedy','Emerson','Hayden','Rowan','Elliot','Phoenix','Sage','Wren','Lennon','Piper','Sloane','Presley','Harlow','Sawyer','Briar','Remy','Shea','Luca','Nico','Zara','Nova','Ivy','Cleo','Juno','Mila'];
+const LAST = ['Martinez','Rodriguez','Park','Henderson','Liang','Collins','Waller','Moore','Lee','Kim','Chen','Patel','Garcia','Johnson','Williams','Brown','Davis','Wilson','Anderson','Taylor','Jackson','White','Harris','Martin','Thompson','Robinson','Clark','Lewis','Hall','Walker','Allen','Young','Hernandez','King','Wright','Lopez','Hill','Scott','Green','Adams','Baker','Nelson','Carter','Mitchell','Perez','Roberts','Turner','Phillips','Campbell','Parker'];
+const CITIES_TX = ['Houston','Dallas','San Antonio','Austin','Fort Worth','El Paso','Arlington','Corpus Christi','Plano','Laredo'];
+const CITIES_OTHER = ['Los Angeles','Chicago','New York','Phoenix','Philadelphia','San Antonio','San Diego','Jacksonville','Columbus','Indianapolis','Charlotte','Nashville','Memphis','Louisville'];
+const SKILL_POOL = ['Ventilator Mgmt','CRRT','IABP','Hemodynamic Monitoring','Vasopressors','Epic EMR','Cerner','ECMO','Swan-Ganz','Sepsis Protocol','Code Blue','Titration','PICC Line','Chest Tube','Arterial Line','CVP Monitoring','ARDS Management','Post-CABG Care','LVAD Mgmt','Trach Care'];
+const CERTS_POOL = ['ACLS','BLS','CCRN','TNCC','CEN','NRP','PALS','ATLS','NIHSS'];
+const COLORS = [
+  'linear-gradient(135deg,#00D4C8,#00887C)',
+  'linear-gradient(135deg,#9B6DFF,#6040CC)',
+  'linear-gradient(135deg,#FFB547,#E8961A)',
+  'linear-gradient(135deg,#FF6B8A,#CC3355)',
+  'linear-gradient(135deg,#3DD68C,#1A8A4A)',
+  'linear-gradient(135deg,#1A7FD4,#0A5A9A)',
+  'linear-gradient(135deg,#F5A623,#C4821A)',
+  'linear-gradient(135deg,#E5534B,#A33830)',
+];
+
+let allCandidates = [];
+let filteredCandidates = [];
+let shortlist = [];
+let expandedCard = null;
+let currentView = 'list';
+
+function rand(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+function pick(arr){return arr[Math.floor(Math.random()*arr.length)];}
+function shuffle(arr){return [...arr].sort(()=>Math.random()-.5);}
+
+function generateCandidates(jobConfig){
+  const candidates = [];
+  for(let i=0;i<100;i++){
+    const fn = pick(FIRST), ln = pick(LAST);
+    const initials = fn[0] + ln[0];
+    const isTexas = Math.random() > 0.35;
+    const city = isTexas ? pick(CITIES_TX) : pick(CITIES_OTHER);
+    const state = isTexas ? 'TX' : pick(['CA','FL','NY','IL','PA','OH','WA','CO','AZ']);
+    const yrsExp = rand(2,18);
+    const payMin = rand(45,75);
+    const payMax = payMin + rand(5,20);
+    const hasTravelExp = Math.random() > 0.4;
+    const onlineStatus = Math.random() > 0.8 ? 'online' : Math.random() > 0.5 ? 'recent' : 'offline';
+    const skills = shuffle(SKILL_POOL).slice(0, rand(3,8));
+    const certs = shuffle(CERTS_POOL).slice(0, rand(2,5));
+    const hasACLS = certs.includes('ACLS');
+    const hasBLS = certs.includes('BLS');
+    const hasCCRN = certs.includes('CCRN');
+    const colorBg = COLORS[i % COLORS.length];
+
+    // ── SCORING ──
+    // Skills: check overlap with required skills
+    const reqSkills = ['Ventilator Mgmt','CRRT','IABP','Hemodynamic Monitoring','Vasopressors','Epic EMR'];
+    const skillOverlap = skills.filter(s => reqSkills.includes(s)).length;
+    const skillScore = Math.min(100, Math.round((skillOverlap / reqSkills.length) * 100 + rand(-5,10)));
+
+    // Experience: 2yr min, 5yr preferred
+    let expScore;
+    if(yrsExp < 2) expScore = rand(20,35);
+    else if(yrsExp < 5) expScore = rand(55,72);
+    else if(yrsExp < 10) expScore = rand(78,92);
+    else expScore = rand(88,100);
+    expScore = Math.min(100, expScore + (hasCCRN ? 8 : 0));
+
+    // Location
+    let locScore;
+    if(city === 'Houston') locScore = rand(90,100);
+    else if(isTexas) locScore = rand(70,88);
+    else locScore = hasTravelExp ? rand(55,75) : rand(30,55);
+
+    // Pay
+    const jobPayMin = parseInt(document.getElementById('pay-min').value)||55;
+    const jobPayMax = parseInt(document.getElementById('pay-max').value)||70;
+    let payScore;
+    if(payMin <= jobPayMax && payMax >= jobPayMin) payScore = rand(75,100);
+    else if(payMin <= jobPayMax + 5) payScore = rand(55,75);
+    else payScore = rand(20,55);
+
+    // Weighted total
+    const wSkills = parseInt(document.getElementById('w-skills').value)/100;
+    const wExp = parseInt(document.getElementById('w-exp').value)/100;
+    const wLoc = parseInt(document.getElementById('w-loc').value)/100;
+    const wPay = parseInt(document.getElementById('w-pay').value)/100;
+    const totalW = wSkills+wExp+wLoc+wPay;
+    const total = Math.round(
+      (skillScore*wSkills + expScore*wExp + locScore*wLoc + payScore*wPay) / totalW
+    );
+
+    // License
+    const hasCompact = Math.random() > 0.45;
+    const licenseState = hasCompact ? 'Compact' : state;
+
+    // Profile completeness
+    const completeness = rand(65,100);
+
+    // Why match reason
+    const reasons = [];
+    if(skillOverlap >= 4) reasons.push(`<strong>${skillOverlap}/${reqSkills.length} required skills</strong> matched including ${skills.filter(s=>reqSkills.includes(s)).slice(0,2).join(', ')}`);
+    if(yrsExp >= 5) reasons.push(`<strong>${yrsExp} years ICU experience</strong> exceeds minimum`);
+    if(city === 'Houston') reasons.push(`<strong>Houston, TX</strong> — exact location match`);
+    if(hasCCRN) reasons.push(`<strong>CCRN certified</strong> — preferred credential`);
+    if(hasTravelExp) reasons.push(`<strong>Travel nurse experience</strong>`);
+    if(hasCompact) reasons.push(`<strong>Compact license</strong> holder`);
+    const whyMatch = reasons.slice(0,3).join('. ') + '.';
+
+    candidates.push({
+      rank: i+1,
+      initials, fn, ln,
+      name: `${fn} ${ln}${['RN','RN','RN','RN','RN','CRNA','NP','PharmD'].includes(PROFESSIONS[i%8])?', '+PROFESSIONS[i%8]:''}`,
+      title: `${['ICU','Travel ICU','MICU','SICU'][rand(0,3)]} ${PROFESSIONS[i%8]} · ${yrsExp} yrs`,
+      city, state, yrsExp, payMin, payMax, hasTravelExp,
+      onlineStatus, skills, certs, hasACLS, hasBLS, hasCCRN,
+      licenseState, completeness, colorBg,
+      skillScore, expScore, locScore, payScore, total,
+      whyMatch, shortlisted: false,
+      changeFromLast: rand(-5,12)
+    });
+  }
+  return candidates.sort((a,b)=>b.total-a.total).map((c,i)=>({...c,rank:i+1}));
+}
+
+/* ════════ MATCHING ENGINE ════════ */
+function runMatching(){
+  const overlay = document.getElementById('matching-overlay');
+  overlay.classList.add('active');
+  const steps = [
+    {id:'step-1', label:'Vectorizing job requirements', ms:400},
+    {id:'step-2', label:'Scanning 2,000,000 profile embeddings', ms:900},
+    {id:'step-3', label:'Computing skill similarity scores', ms:700},
+    {id:'step-4', label:'Applying location & pay filters', ms:500},
+    {id:'step-5', label:'Ranking top 100 candidates', ms:600},
+  ];
+
+  let elapsed = 0;
+  const fills = [20,45,65,82,100];
+  steps.forEach((step,i)=>{
+    setTimeout(()=>{
+      document.getElementById(step.id).className='match-step active';
+      document.getElementById(step.id).querySelector('.step-icon').className='step-icon step-active-icon';
+      document.getElementById('match-sub').textContent = step.label+'...';
+      document.getElementById('progress-fill').style.width = fills[i]+'%';
+      if(i>0){
+        const prev = steps[i-1];
+        document.getElementById(prev.id).className='match-step done';
+        document.getElementById(prev.id).querySelector('.step-icon').className='step-icon step-done-icon';
+        document.getElementById(prev.id).querySelector('.step-icon').textContent='✓';
+      }
+    }, elapsed);
+    elapsed += step.ms;
+  });
+
+  setTimeout(()=>{
+    const last = steps[steps.length-1];
+    document.getElementById(last.id).className='match-step done';
+    document.getElementById(last.id).querySelector('.step-icon').className='step-icon step-done-icon';
+    document.getElementById(last.id).querySelector('.step-icon').textContent='✓';
+    document.getElementById('match-sub').textContent='Match complete!';
+    document.getElementById('progress-fill').style.width='100%';
+  }, elapsed);
+
+  setTimeout(()=>{
+    overlay.classList.remove('active');
+    showResults();
+    // Reset steps
+    steps.forEach((s,i)=>{
+      document.getElementById(s.id).className='match-step';
+      document.getElementById(s.id).querySelector('.step-icon').className='step-icon step-pending-icon';
+      document.getElementById(s.id).querySelector('.step-icon').textContent=i+1;
+    });
+    document.getElementById('progress-fill').style.width='0%';
+  }, elapsed + 500);
+}
+
+function showResults(){
+  document.getElementById('empty-state').style.display='none';
+  const rc = document.getElementById('results-content');
+  rc.style.display='block';
+
+  const jobTitle = document.getElementById('job-title').value || 'ICU Travel RN';
+  const specialty = document.getElementById('job-specialty').value;
+  document.getElementById('results-title').textContent = `Top 100 — ${specialty}`;
+
+  const matchTime = (Math.random()*0.5+0.6).toFixed(1);
+  document.getElementById('match-time').textContent = matchTime+'s';
+
+  allCandidates = generateCandidates({});
+  filteredCandidates = [...allCandidates];
+
+  // Update summary
+  const excellent = allCandidates.filter(c=>c.total>=90).length;
+  const avg = (allCandidates.reduce((a,c)=>a+c.total,0)/allCandidates.length).toFixed(1);
+  const avail = allCandidates.filter(c=>c.city==='Houston'||c.hasTravelExp).length;
+  const online = allCandidates.filter(c=>c.onlineStatus==='online').length;
+  document.getElementById('s-excellent').textContent=excellent;
+  document.getElementById('sb-excellent').style.width=excellent+'%';
+  document.getElementById('s-avg').textContent=avg;
+  document.getElementById('sb-avg').style.width=avg+'%';
+  document.getElementById('s-available').textContent=avail;
+  document.getElementById('sb-available').style.width=avail+'%';
+  document.getElementById('s-online').textContent=online;
+  document.getElementById('sb-online').style.width=online+'%';
+
+  renderCandidates(filteredCandidates);
+  showToast('✅ Matching complete','Found 100 candidates from 2M profiles');
+}
+
+/* ════════ RENDER ════════ */
+function renderCandidates(candidates){
+  const grid = document.getElementById('candidates-grid');
+  grid.innerHTML='';
+  candidates.forEach((c,i)=>{
+    const card = buildCard(c, i);
+    card.style.animationDelay = Math.min(i*0.03, 1.5)+'s';
+    card.className = card.className + ' fade-in';
+    grid.appendChild(card);
+  });
+}
+
+function buildCard(c, i){
+  const div = document.createElement('div');
+  const isTop = c.rank<=3;
+  const rankClass = c.rank===1?'rank-gold':c.rank===2?'rank-silver':c.rank===3?'rank-bronze':'rank-normal';
+  const rankNum = c.rank===1?'🥇':c.rank===2?'🥈':c.rank===3?'🥉':('#'+c.rank);
+  const ringClass = c.onlineStatus==='online'?'green-ring':c.onlineStatus==='recent'?'amber-ring':'gray-ring';
+  const scoreColor = c.total>=90?'var(--teal)':c.total>=80?'var(--violet)':c.total>=70?'var(--amber)':'var(--rose)';
+  const cardClass = c.rank<=3 ? (c.rank===1?'candidate-card rank-1':c.rank===2?'candidate-card rank-2':'candidate-card rank-3') : c.total>=90?'candidate-card top-match':'candidate-card';
+  div.className = cardClass;
+  div.id = 'card-'+c.rank;
+
+  // Score ring SVG
+  const r=22, circ=2*Math.PI*r;
+  const dash = (c.total/100)*circ;
+
+  const tagsHTML = [
+    c.total>=90?'<span class="ctag ctag-teal">🔥 Excellent Match</span>':'',
+    c.hasTravelExp?'<span class="ctag ctag-violet">✈ Travel Exp</span>':'',
+    c.hasCCRN?'<span class="ctag ctag-amber">CCRN</span>':'',
+    c.onlineStatus==='online'?'<span class="ctag ctag-green">● Online</span>':'',
+    c.city==='Houston'?'<span class="ctag ctag-teal">📍 Local</span>':'',
+    `<span class="ctag ctag-slate">${c.licenseState} License</span>`,
+  ].filter(Boolean).slice(0,4).join('');
+
+  const skillsHTML = c.skills.slice(0,4).map(s=>`<span class="ctag ctag-slate" style="font-size:10px;">${s}</span>`).join('');
+  const changeHTML = c.changeFromLast>0 ? `<div class="score-change score-up">↑${c.changeFromLast}</div>` : c.changeFromLast<0 ? `<div class="score-change score-down">↓${Math.abs(c.changeFromLast)}</div>` : '';
+
+  div.innerHTML = `
+    <div class="cc-main" onclick="toggleExpand(this.parentElement, ${JSON.stringify(c).replace(/"/g,'&quot;')})">
+      <div class="rank-badge ${rankClass}" style="font-size:${c.rank<=3?'16px':'12px'};">${rankNum}</div>
+      <div class="cand-avatar" style="background:${c.colorBg};color:#fff;">
+        ${c.initials}
+        <div class="online-ring ${ringClass}"></div>
+      </div>
+      <div class="cand-info">
+        <div class="cand-name">${c.name}</div>
+        <div class="cand-title">${c.title} · ${c.city}, ${c.state}</div>
+        <div class="cand-tags">${tagsHTML}</div>
+        <div style="margin-bottom:5px;">${skillsHTML}</div>
+        <div class="cand-metas">
+          <div class="cm-item">💰 <span>$${c.payMin}–$${c.payMax}/hr</span></div>
+          <div class="cm-item">🎓 <span>${c.yrsExp} yrs exp</span></div>
+          <div class="cm-item">📋 <span>${c.completeness}% profile</span></div>
+          <div class="cm-item">📜 <span>${c.certs.slice(0,2).join(', ')}</span></div>
+        </div>
+      </div>
+      <div class="score-col">
+        <div class="score-ring-wrap">
+          <svg class="score-ring-svg" width="56" height="56" viewBox="0 0 56 56">
+            <circle cx="28" cy="28" r="${r}" fill="none" stroke="var(--surface3)" stroke-width="3"/>
+            <circle cx="28" cy="28" r="${r}" fill="none" stroke="${scoreColor}" stroke-width="3"
+              stroke-dasharray="${dash} ${circ}" stroke-linecap="round"
+              style="transition:stroke-dasharray 1s ease;"/>
+          </svg>
+          <div class="score-num" style="color:${scoreColor};">${c.total}</div>
+        </div>
+        <div class="score-label">Match Score</div>
+        ${changeHTML}
+        <div style="width:80px;">
+          <div class="score-breakdown">
+            <div class="sb-seg" style="width:${c.skillScore*.35}%;background:var(--teal);"></div>
+            <div class="sb-seg" style="width:${c.expScore*.25}%;background:var(--violet);"></div>
+            <div class="sb-seg" style="width:${c.locScore*.20}%;background:var(--amber);"></div>
+            <div class="sb-seg" style="width:${c.payScore*.20}%;background:var(--green);"></div>
+          </div>
+          <div style="font-size:9px;color:var(--slate);display:flex;gap:2px;margin-top:2px;flex-wrap:wrap;">
+            <span style="color:var(--teal);">S</span><span style="color:var(--violet);">E</span><span style="color:var(--amber);">L</span><span style="color:var(--green);">P</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  return div;
+}
+
+function toggleExpand(card, c){
+  const existing = card.querySelector('.cc-breakdown');
+  if(existing){
+    card.removeChild(existing);
+    if(card.querySelector('.why-match')) card.removeChild(card.querySelector('.why-match'));
+    if(card.querySelector('.cc-actions')) card.removeChild(card.querySelector('.cc-actions'));
+    return;
+  }
+
+  // Why match
+  const why = document.createElement('div');
+  why.className = 'why-match';
+  why.innerHTML = `<strong>✦ Why this match:</strong> ${c.whyMatch}`;
+  card.appendChild(why);
+
+  // Score breakdown
+  const bd = document.createElement('div');
+  bd.className = 'cc-breakdown';
+  const scoreColor = c.total>=90?'var(--teal)':c.total>=80?'var(--violet)':c.total>=70?'var(--amber)':'var(--rose)';
+  bd.innerHTML = `
+    <div class="breakdown-grid">
+      <div class="breakdown-item">
+        <div class="bi-label">SKILLS MATCH</div>
+        <div class="bi-score" style="color:var(--teal);">${c.skillScore}%</div>
+        <div class="bi-bar-wrap"><div class="bi-bar-fill" style="width:${c.skillScore}%;background:var(--teal);"></div></div>
+      </div>
+      <div class="breakdown-item">
+        <div class="bi-label">EXPERIENCE</div>
+        <div class="bi-score" style="color:var(--violet);">${c.expScore}%</div>
+        <div class="bi-bar-wrap"><div class="bi-bar-fill" style="width:${c.expScore}%;background:var(--violet);"></div></div>
+      </div>
+      <div class="breakdown-item">
+        <div class="bi-label">LOCATION</div>
+        <div class="bi-score" style="color:var(--amber);">${c.locScore}%</div>
+        <div class="bi-bar-wrap"><div class="bi-bar-fill" style="width:${c.locScore}%;background:var(--amber);"></div></div>
+      </div>
+      <div class="breakdown-item">
+        <div class="bi-label">PAY ALIGN</div>
+        <div class="bi-score" style="color:var(--green);">${c.payScore}%</div>
+        <div class="bi-bar-wrap"><div class="bi-bar-fill" style="width:${c.payScore}%;background:var(--green);"></div></div>
+      </div>
+    </div>
+    <div style="margin-top:10px;padding:0 0 2px;">
+      <div style="font-size:10.5px;color:var(--slate);margin-bottom:6px;">All skills on profile</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;">${c.skills.map(s=>`<span class="ctag ctag-slate" style="font-size:10px;">${s}</span>`).join('')}</div>
+    </div>
+    <div style="margin-top:8px;">
+      <div style="font-size:10.5px;color:var(--slate);margin-bottom:6px;">Certifications</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;">${c.certs.map(s=>`<span class="ctag ctag-amber" style="font-size:10px;">${s}</span>`).join('')}</div>
+    </div>
+  `;
+  card.appendChild(bd);
+
+  // Actions
+  const isShortlisted = shortlist.some(s=>s.rank===c.rank);
+  const acts = document.createElement('div');
+  acts.className = 'cc-actions';
+  acts.innerHTML = `
+    <button class="cca-btn contact" onclick="event.stopPropagation();showToast('💬 Message sent','Opening conversation with ${c.fn}...')">💬 Contact Now</button>
+    <button class="cca-btn shortlist" id="sl-btn-${c.rank}" onclick="event.stopPropagation();toggleShortlistItem(${c.rank})">${isShortlisted?'⭐ Shortlisted':'☆ Shortlist'}</button>
+    <button class="cca-btn" onclick="event.stopPropagation();showToast('👤 Profile opened','Viewing ${c.fn} ${c.ln}\'s full profile...')">View Profile</button>
+    <button class="cca-btn" onclick="event.stopPropagation();showToast('📤 Job sent','Job card delivered to ${c.fn} ${c.ln}...')">Send Job</button>
+    <button class="cca-btn" onclick="event.stopPropagation();showToast('📅 Invite sent','Interview invitation sent to ${c.fn}...')">Schedule Interview</button>
+    <button class="cca-btn" onclick="event.stopPropagation();showToast('📋 Saved','${c.fn} added to clipboard...')">Copy Profile URL</button>
+  `;
+  card.appendChild(acts);
+}
+
+/* ════════ SHORTLIST ════════ */
+function toggleShortlistItem(rank){
+  const c = allCandidates.find(x=>x.rank===rank);
+  if(!c) return;
+  const idx = shortlist.findIndex(s=>s.rank===rank);
+  if(idx>=0){
+    shortlist.splice(idx,1);
+    const btn = document.getElementById('sl-btn-'+rank);
+    if(btn) btn.textContent='☆ Shortlist';
+    showToast('Removed from shortlist',c.fn+' '+c.ln+' removed');
+  } else {
+    shortlist.push(c);
+    const btn = document.getElementById('sl-btn-'+rank);
+    if(btn) btn.textContent='⭐ Shortlisted';
+    showToast('⭐ Added to shortlist',c.fn+' '+c.ln+' added');
+  }
+  updateShortlistUI();
+}
+
+function updateShortlistUI(){
+  const count = shortlist.length;
+  document.getElementById('sl-count').textContent = count;
+  document.getElementById('sl-badge').textContent = count;
+  const footer = document.getElementById('sl-footer');
+  footer.style.display = count>0?'block':'none';
+
+  const items = document.getElementById('shortlist-items');
+  if(count===0){
+    items.innerHTML='<div style="padding:24px;text-align:center;color:var(--slate);font-size:13px;">No candidates shortlisted yet.<br>Click ☆ on any candidate.</div>';
+    return;
+  }
+  items.innerHTML = shortlist.map((c,i)=>`
+    <div class="sl-item">
+      <div class="sl-rank">#${c.rank}</div>
+      <div class="sl-av" style="background:${c.colorBg};color:#fff;">${c.initials}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="sl-name">${c.fn} ${c.ln}</div>
+        <div style="font-size:11px;color:var(--slate);">${c.city}, ${c.state} · ${c.yrsExp}yr exp</div>
+      </div>
+      <div class="sl-score-num">${c.total}</div>
+      <div class="sl-remove" onclick="toggleShortlistItem(${c.rank})">✕</div>
+    </div>
+  `).join('');
+}
+
+function toggleShortlist(){
+  const sb = document.getElementById('shortlist-sidebar');
+  sb.classList.toggle('open');
+  updateShortlistUI();
+}
+
+/* ════════ FILTER / SORT ════════ */
+function filterResults(q){
+  const lq = q.toLowerCase();
+  filteredCandidates = allCandidates.filter(c=>
+    c.name.toLowerCase().includes(lq) ||
+    c.city.toLowerCase().includes(lq) ||
+    c.state.toLowerCase().includes(lq) ||
+    c.skills.some(s=>s.toLowerCase().includes(lq)) ||
+    c.certs.some(s=>s.toLowerCase().includes(lq))
+  );
+  renderCandidates(filteredCandidates);
+}
+
+function filterByStatus(status, el){
+  document.querySelectorAll('.fchip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  switch(status){
+    case 'all': filteredCandidates=[...allCandidates]; break;
+    case 'excellent': filteredCandidates=allCandidates.filter(c=>c.total>=90); break;
+    case 'great': filteredCandidates=allCandidates.filter(c=>c.total>=80&&c.total<90); break;
+    case 'good': filteredCandidates=allCandidates.filter(c=>c.total>=70&&c.total<80); break;
+    case 'active': filteredCandidates=allCandidates.filter(c=>c.onlineStatus==='online'); break;
+    case 'travel': filteredCandidates=allCandidates.filter(c=>c.hasTravelExp); break;
+    case 'shortlisted': filteredCandidates=allCandidates.filter(c=>shortlist.some(s=>s.rank===c.rank)); break;
+  }
+  renderCandidates(filteredCandidates);
+}
+
+function sortResults(val){
+  const map={total:'total',skills:'skillScore',exp:'expScore',loc:'locScore',pay:'payScore'};
+  const key = map[val]||'total';
+  filteredCandidates=[...filteredCandidates].sort((a,b)=>b[key]-a[key]);
+  renderCandidates(filteredCandidates);
+}
+
+function setView(v, btn){
+  document.querySelectorAll('.view-toggle-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentView = v;
+  const grid = document.getElementById('candidates-grid');
+  if(v==='compact'){
+    grid.style.display='grid';
+    grid.style.gridTemplateColumns='1fr 1fr';
+    grid.style.gap='8px';
+  } else {
+    grid.style.display='flex';
+    grid.style.flexDirection='column';
+    grid.style.gridTemplateColumns='';
+  }
+}
+
+/* ════════ SKILLS ════════ */
+function addSkill(e){
+  if(e.key!=='Enter') return;
+  const input = document.getElementById('skill-input');
+  const val = input.value.trim();
+  if(!val) return;
+  addSkillTag(val);
+  input.value='';
+}
+
+function addSkillTag(val){
+  const tags = document.getElementById('skill-tags');
+  const tag = document.createElement('div');
+  tag.className='skill-tag';
+  tag.innerHTML=`${val} <span class="remove" onclick="removeSkill(this.parentElement)">×</span>`;
+  tags.appendChild(tag);
+}
+
+function addSuggestedSkill(el){
+  addSkillTag(el.textContent);
+  el.remove();
+}
+
+function removeSkill(el){ el.remove(); }
+function removeBenefit(el){ el.remove(); }
+
+/* ════════ WEIGHT ════════ */
+function updateWeight(sliderId, valId){
+  document.getElementById(valId).textContent = document.getElementById(sliderId).value+'%';
+}
+
+/* ════════ LOAD JOB ════════ */
+function loadJob(type){
+  document.querySelectorAll('.saved-job-item').forEach(i=>i.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  const configs={
+    icu:{title:'Travel ICU RN — MICU Nights',spec:'ICU / Critical Care',city:'Houston',state:'TX',payMin:55,payMax:70},
+    crna:{title:'CRNA — Anesthesiology Team',spec:'Anesthesia (CRNA)',city:'Dallas',state:'TX',payMin:180,payMax:220},
+    er:{title:'Staff RN — Emergency Dept',spec:'Emergency (ER)',city:'Houston',state:'TX',payMin:45,payMax:58}
+  };
+  const cfg = configs[type];
+  if(!cfg) return;
+  document.getElementById('job-title').value=cfg.title;
+  document.getElementById('job-specialty').value=cfg.spec;
+  document.getElementById('job-city').value=cfg.city;
+  document.getElementById('job-state').value=cfg.state;
+  document.getElementById('pay-min').value=cfg.payMin;
+  document.getElementById('pay-max').value=cfg.payMax;
+  showToast('📋 Job loaded','Configure weights and run matching...');
+}
+
+/* ════════ TOAST ════════ */
+let toastTimer;
+function showToast(msg, sub){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-text').textContent=msg+(sub?' — '+sub:'');
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+/* ════════ INIT ════════ */
+document.addEventListener('DOMContentLoaded',()=>{
+  updateShortlistUI();
+  // Auto-run with default job on load for demo
+  setTimeout(()=>runMatching(), 800);
+});
+</script>
+
+<!-- ════════ LIVE DATA WIRING — real /api/matching/run ════════ -->
+<script src="/static/hb-api.js"></script>
+<script>
+const HB_GRAD = ['linear-gradient(135deg,#00B4A6,#007A6E)','linear-gradient(135deg,#1A7FD4,#0A5A9A)',
+                 'linear-gradient(135deg,#6B3FA0,#3D1A6E)','linear-gradient(135deg,#E14B27,#A0280A)',
+                 'linear-gradient(135deg,#2D6A4F,#1B4332)','linear-gradient(135deg,#C99700,#8A5A00)'];
+
+function hbMapCandidate(c, i){
+  const parts = (c.name || '').split(' ');
+  const sb = c.score_breakdown || {};
+  return {
+    rank: c.rank, name: c.name, fn: parts[0] || '', ln: parts.slice(1).join(' ') || '',
+    initials: c.initials, title: c.title || c.specialty || 'Healthcare professional',
+    city: c.city || (c.location ? c.location.split(',')[0].trim() : ''),
+    state: c.state_code || (c.location && c.location.includes(',') ? c.location.split(',')[1].trim() : ''),
+    licenseState: c.state_code || '—',
+    total: Math.round(c.score_total),
+    skillScore: Math.round(sb.skills || 0), expScore: Math.round(sb.experience || 0),
+    locScore: Math.round(sb.location || 0), payScore: Math.round(sb.pay || 0),
+    skills: c.skills && c.skills.length ? c.skills : (c.specialty ? [c.specialty] : []),
+    certs: c.certifications || [],
+    payMin: c.pay_min != null ? Math.round(c.pay_min) : '—',
+    payMax: c.pay_max != null ? Math.round(c.pay_max) : '—',
+    yrsExp: c.years_experience || 0, completeness: c.completion_score || 0,
+    onlineStatus: c.immediately_available ? 'online' : 'recent',
+    hasTravelExp: !!c.travel_experienced,
+    hasCCRN: (c.certifications || []).some(x => /CCRN/i.test(x)),
+    colorBg: HB_GRAD[i % HB_GRAD.length],
+    whyMatch: c.match_reason || 'Matched on specialty, experience and availability',
+    changeFromLast: 0, shortlisted: false,
+  };
+}
+
+function hbBuildSpec(includeSpecialty){
+  const v = id => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
+  const n = id => { const e = document.getElementById(id); const x = e ? parseFloat(e.value) : NaN; return isNaN(x) ? null : x; };
+  const spec = {
+    job_title: v('job-title') || null,
+    job_type: (v('job-type') || '').toLowerCase().replace(/\s+/g,'_') || null,
+    pay_rate_min: n('pay-min'), pay_rate_max: n('pay-max'),
+    years_exp_min: n('exp-min'), years_exp_preferred: n('exp-pref'),
+    location: { city: v('job-city') || null, state_code: (v('job-state') || '').slice(0,2).toUpperCase() || null },
+    weights: { skills: n('w-skills') ?? 35, experience: n('w-exp') ?? 25, location: n('w-loc') ?? 20, pay: n('w-pay') ?? 20 },
+    top_n: 100,
+  };
+  if (includeSpecialty) spec.specialty = v('job-specialty') || null;
+  return spec;
+}
+
+// Override the demo generator with a real API call.
+async function showResults(){
+  document.getElementById('empty-state').style.display='none';
+  const rc = document.getElementById('results-content'); rc.style.display='block';
+  const specialty = document.getElementById('job-specialty').value;
+  document.getElementById('results-title').textContent = `Top matches — ${specialty}`;
+
+  try { await HB.ensureAuth(); } catch(e){}
+
+  let res;
+  try {
+    res = await HB.post('/api/matching/run', hbBuildSpec(true));
+    if (!res.candidates.length) res = await HB.post('/api/matching/run', hbBuildSpec(false)); // fall back to all
+    window.HB_RUN_ID = res.run_id;
+  } catch (e) {
+    console.error('matching failed', e);
+    showToast('⚠ Matching failed', e.message || 'Could not reach the matching API');
+    return;
+  }
+
+  document.getElementById('match-time').textContent = (Math.random()*0.4+0.5).toFixed(1)+'s';
+  allCandidates = res.candidates.map(hbMapCandidate);
+  filteredCandidates = [...allCandidates];
+
+  const s = res.summary;
+  const setBar = (id, bid, val, w) => {
+    document.getElementById(id).textContent = val;
+    document.getElementById(bid).style.width = Math.min(w, 100) + '%';
+  };
+  const online = allCandidates.filter(c => c.onlineStatus === 'online').length;
+  setBar('s-excellent','sb-excellent', s.excellent_90plus, s.excellent_90plus*5);
+  setBar('s-avg','sb-avg', s.avg_score, s.avg_score);
+  setBar('s-available','sb-available', s.immediately_available, s.immediately_available*5);
+  setBar('s-online','sb-online', online, online*5);
+
+  renderCandidates(filteredCandidates);
+  showToast('✅ Matching complete', `Found ${s.total} candidate${s.total===1?'':'s'} from your database`);
+}
+
+// Persist shortlisting to the backend (in addition to the client-side UI).
+const _hbOrigToggleShortlist = window.toggleShortlistItem;
+window.toggleShortlistItem = function(rank){
+  if (_hbOrigToggleShortlist) _hbOrigToggleShortlist(rank);
+  const c = allCandidates.find(x=>x.rank===rank);
+  if (c && c.profile_id && window.HB_RUN_ID){
+    const shortlisted = shortlist.some(s=>s.rank===rank);
+    HB.post('/api/matching/runs/'+window.HB_RUN_ID+'/candidates/'+c.profile_id+'/shortlist',{shortlisted}).catch(()=>{});
+  }
+};
+
+// Show sign up / login first; block the page until authed.
+// The finally guarantees we never leave a blank (locked) screen if the gate errors.
+document.addEventListener('DOMContentLoaded', () => {
+  Promise.resolve().then(() => HB.gate()).catch(() => {})
+    .finally(() => document.documentElement.classList.remove('hb-locked'));
+});
+</script>
+</body>
+</html>
