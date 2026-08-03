@@ -78,33 +78,33 @@ CREDENTIALS = [
 PROFESSION_FROM_CRED = ["DO", "MD", "MBBS", "MBChB", "DPM", "DMD", "DDS", "PharmD",
                         "DPT", "DNP", "NP", "PA", "RN"]
 
-# --- Provider categories (Physicians / Nursing / Allied / APP) ------------
+# --- Provider categories (Physicians / Nursing / Allied / APP / Others) ---
 # Used by the Providers directory. APP is checked first because CRNA/NP names
 # contain the word "nurse" and would otherwise fall into Nursing.
-PROVIDER_CATEGORIES = ["Physicians", "Nursing", "Allied", "APP"]
+PROVIDER_CATEGORIES = ["Physicians", "Nursing", "Allied", "APP", "Others"]
 
-_APP_CODES = {"NP", "CRNA", "CNM", "FNP", "AGNP", "PMHNP", "ACNP", "AGACNP",
-              "DNP", "PA", "PA-C", "APRN", "APP"}
+_APP_CODES = {"NP", "CRNA", "FNP", "FNP-C", "FNP-BC", "AGNP", "PMHNP",
+              "PMHNP-BC", "ACNP", "AGACNP", "PNP", "WHNP", "NP-C"}
 _APP_KW = ["nurse practitioner", "nurse anesthetist", "crna",
-           "certified registered nurse anesthetist", "certified nurse midwife",
-           "nurse midwife", "advanced practice",
-           "physician assistant", "physician associate"]
-_PHYS_CODES = {"MD", "DO", "MBBS", "MBCHB"}
-_PHYS_KW = ["physician", "family medicine", "internal medicine"]
-_NURSE_CODES = {"RN", "LPN", "LVN", "CNA", "BSN", "MSN", "ADN"}
+           "certified registered nurse anesthetist"]
+_PHYS_CODES = {"MD"}
+_PHYS_KW = ["medical doctor", "doctor of medicine", "family medicine"]
+_NURSE_CODES = {"RN", "LPN", "CNA"}
 _NURSE_KW = ["registered nurse", "licensed practical nurse",
-             "licensed vocational nurse", "certified nursing assistant"]
-_ALLIED_CODES = {"RT", "PT", "OT", "RAD", "RADTECH", "RTR", "ARRT", "RDMS",
-                 "RVT", "RCIS", "CNMT", "RDCS"}
+             "certified nursing assistant"]
+_ALLIED_CODES = {"RAD", "RADTECH", "RTR", "ARRT", "RDMS", "RVT", "RCIS",
+                 "CNMT", "RDCS", "CT", "MRI"}
 _ALLIED_KW = [
     "radiologic technologist", "rad tech", "radiographer", "x-ray", "x ray",
     "ct technologist", "ct tech", "mri technologist", "mri tech",
-    "mammography", "mammographer", "ultrasound", "sonographer",
-    "echocardiograph", "echo tech", "echo technologist", "vascular technologist",
-    "nuclear medicine", "interventional radiology", "ir technologist",
-    "cardiac cath", "cath lab", "radiology technologist", "technologist",
-    "respiratory therapist", "physical therapist", "occupational therapist",
-    "surgical technologist", "surg tech", "allied",
+    "mammography technologist", "mammography tech", "mammographer",
+    "ultrasound technologist", "ultrasound tech", "sonographer",
+    "echocardiography technologist", "echo tech", "echo technologist",
+    "vascular technologist", "vascular tech", "nuclear medicine technologist",
+    "nuclear medicine tech", "interventional radiology technologist",
+    "interventional radiology tech", "ir technologist", "ir tech",
+    "cardiac cath lab technologist", "cardiac cath lab tech",
+    "cath lab technologist", "cath lab tech", "radiology technologist",
 ]
 
 ABPS = "american board of physician specialties"
@@ -189,19 +189,19 @@ def is_real_name(first, last) -> bool:
 
 def classify_provider(profession_type=None, specialty=None,
                       headline=None, title=None) -> str:
-    """Bucket a profile into Physicians / Nursing / Allied / APP (or 'Other')."""
+    """Bucket a profile into the four requested groups, or ``Others``."""
     code = (profession_type or "").upper().strip().strip(".")
     text = " ".join(x for x in (profession_type, specialty, headline, title) if x).lower()
     if code in _APP_CODES or any(k in text for k in _APP_KW):
         return "APP"
     if code in _PHYS_CODES or any(k in text for k in _PHYS_KW) \
-            or re.search(r"\bm\.?d\.?\b", text) or re.search(r"\bd\.?o\.?\b", text):
+            or re.search(r"\bm\.?d\.?\b", text):
         return "Physicians"
     if code in _NURSE_CODES or any(k in text for k in _NURSE_KW):
         return "Nursing"
     if code in _ALLIED_CODES or any(k in text for k in _ALLIED_KW):
         return "Allied"
-    return "Other"
+    return "Others"
 
 
 def primary_american_board(cert_names) -> str | None:
@@ -578,7 +578,7 @@ def format_resume_fields(fields: dict, text: str, path: Path) -> dict:
 
     out["american_board"] = primary_american_board(out.get("certifications")) or out.get("american_board")
     category = classify_provider(out.get("profession_type"), out.get("specialty"), out.get("headline"))
-    out["provider_category"] = category if category != "Other" else (out.get("provider_category") or "Other")
+    out["provider_category"] = category
     return out
 
 

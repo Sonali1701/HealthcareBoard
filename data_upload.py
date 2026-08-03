@@ -257,19 +257,24 @@ CREDENTIALS = {
 
 PROFESSION_FROM_CRED = ["DO", "MD", "MBBS", "MBCHB", "DPM", "DMD", "DDS", "PharmD", "DPT", "DNP", "NP", "PA", "RN"]
 
-APP_CODES = {"NP", "CRNA", "CNM", "FNP", "AGNP", "PMHNP", "ACNP", "AGACNP", "DNP", "PA", "PA-C", "APRN", "APP"}
-APP_KW = ["nurse practitioner", "nurse anesthetist", "crna", "certified nurse midwife", "nurse midwife", "advanced practice", "physician assistant"]
-PHYS_CODES = {"MD", "DO", "MBBS", "MBCHB"}
-PHYS_KW = ["physician", "family medicine", "internal medicine"]
-NURSE_CODES = {"RN", "LPN", "LVN", "CNA", "BSN", "MSN", "ADN"}
-NURSE_KW = ["registered nurse", "licensed practical nurse", "licensed vocational nurse", "nursing assistant"]
-ALLIED_CODES = {"RT", "PT", "OT", "RAD", "RADTECH", "RTR", "ARRT", "RDMS", "RVT", "RCIS", "CNMT", "RDCS"}
+APP_CODES = {"NP", "CRNA", "FNP", "FNP-C", "FNP-BC", "AGNP", "PMHNP", "PMHNP-BC", "ACNP", "AGACNP", "PNP", "WHNP", "NP-C"}
+APP_KW = ["nurse practitioner", "nurse anesthetist", "crna", "certified registered nurse anesthetist"]
+PHYS_CODES = {"MD"}
+PHYS_KW = ["medical doctor", "doctor of medicine", "family medicine"]
+NURSE_CODES = {"RN", "LPN", "CNA"}
+NURSE_KW = ["registered nurse", "licensed practical nurse", "certified nursing assistant"]
+ALLIED_CODES = {"RAD", "RADTECH", "RTR", "ARRT", "RDMS", "RVT", "RCIS", "CNMT", "RDCS", "CT", "MRI"}
 ALLIED_KW = [
     "radiologic technologist", "rad tech", "radiographer", "x-ray", "x ray",
-    "ct technologist", "ct tech", "mri technologist", "mri tech", "ultrasound",
-    "sonographer", "echo tech", "vascular technologist", "nuclear medicine",
-    "interventional radiology", "cardiac cath", "cath lab", "respiratory therapist",
-    "physical therapist", "occupational therapist", "surgical technologist", "allied",
+    "ct technologist", "ct tech", "mri technologist", "mri tech",
+    "mammography technologist", "mammography tech", "mammographer",
+    "ultrasound technologist", "ultrasound tech", "sonographer",
+    "echocardiography technologist", "echo tech", "echo technologist",
+    "vascular technologist", "vascular tech", "nuclear medicine technologist",
+    "nuclear medicine tech", "interventional radiology technologist",
+    "interventional radiology tech", "ir technologist", "ir tech",
+    "cardiac cath lab technologist", "cardiac cath lab tech",
+    "cath lab technologist", "cath lab tech", "radiology technologist",
 ]
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -347,7 +352,7 @@ def classify_provider(profession_type=None, specialty=None, headline=None, title
         return "Nursing"
     if code in ALLIED_CODES or any(k in text for k in ALLIED_KW):
         return "Allied"
-    return "Other"
+    return "Others"
 
 
 def primary_american_board(cert_names) -> str | None:
@@ -625,7 +630,7 @@ def format_resume_fields(fields: dict, text: str, path: Path) -> dict:
     out["headline"] = headline[:255] if headline else None
     out["american_board"] = primary_american_board(out.get("certifications")) or out.get("american_board")
     category = classify_provider(out.get("profession_type"), out.get("specialty"), out.get("headline"))
-    out["provider_category"] = category if category != "Other" else (out.get("provider_category") or "Other")
+    out["provider_category"] = category
     return out
 
 

@@ -38,7 +38,7 @@ class Profile(Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), index=True)
     specialty: Mapped[Optional[str]] = mapped_column(String(100), index=True)
     profession_type: Mapped[Optional[str]] = mapped_column(String(50), index=True)
-    # Physicians | Nursing | Allied | APP  (derived from profession/specialty).
+    # Physicians | Nursing | Allied | APP | Others (derived from résumé evidence).
     provider_category: Mapped[Optional[str]] = mapped_column(String(20), index=True)
     # Primary certifying board, e.g. "American Board of Allergy and Immunology".
     american_board: Mapped[Optional[str]] = mapped_column(String(150), index=True)

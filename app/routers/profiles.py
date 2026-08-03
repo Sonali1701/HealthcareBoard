@@ -422,7 +422,7 @@ def _provider_conditions(
     return conds
 
 
-_PROVIDER_CATS = ["Physicians", "Nursing", "Allied", "APP"]
+_PROVIDER_CATS = ["Physicians", "Nursing", "Allied", "APP", "Others"]
 
 
 @router.get("", response_model=Page[ProfileOut])
@@ -430,8 +430,8 @@ def search_profiles(
     db: DbSession,
     user: CurrentUser,
     q: Optional[str] = Query(None, description="Full-text search"),
-    category: Optional[str] = Query(None, description="Physicians|Nursing|Allied|APP"),
-    providers_only: bool = Query(False, description="Only classified providers (exclude uncategorised)"),
+    category: Optional[str] = Query(None, description="Physicians|Nursing|Allied|APP|Others"),
+    providers_only: bool = Query(False, description="Only listable provider profiles"),
     specialty: Optional[str] = None,
     license_title: Optional[str] = Query(None, description="License/title such as RN, MD, NP, PA"),
     profession_type: Optional[str] = None,
@@ -497,7 +497,7 @@ def category_counts(
     contact_available: Optional[str] = None,
 ):
     """Provider counts per category for the CURRENT filters, so the tab numbers
-    (Physicians / Nursing / Allied / APP) reflect the applied filters."""
+    (Physicians / Nursing / Allied / APP / Others) reflect the applied filters."""
     _require_provider_directory_access(user)
     conds = _provider_conditions(
         db, providers_only=True, q=q, specialty=specialty,
@@ -551,7 +551,7 @@ def profile_facets(user: CurrentUser, db: DbSession):
         .where(Profile.is_listable.is_(True))
         .group_by(Profile.provider_category)
     ).all()
-    categories = {(c or "Other"): n for c, n in cat_rows}
+    categories = {(c or "Others"): n for c, n in cat_rows}
     data = {
         "categories": categories,
         "license_titles": license_titles,

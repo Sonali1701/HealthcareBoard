@@ -51,7 +51,7 @@
   const providerSubtitle = p => {
     if (!noisyProfileText(p.specialty)) return short(p.specialty, 58);
     if (!noisyProfileText(p.headline)) return short(p.headline, 58);
-    if (p.provider_category && p.provider_category !== "Other") return `${p.provider_category} provider`;
+    if (p.provider_category && !["Other", "Others"].includes(p.provider_category)) return `${p.provider_category} provider`;
     if (p.profession_type) return `${p.profession_type} provider`;
     return "Healthcare provider";
   };
@@ -248,7 +248,7 @@
   function facetTotalFor(category){
     const c = S.activeCounts || S.facetCategories;   // counts reflect the active filters
     if (!c || !Object.keys(c).length) return null;
-    return category ? (c[category] || 0) : ["Physicians","Nursing","Allied","APP"].reduce((s,k)=>s+(c[k]||0),0);
+    return category ? (c[category] || 0) : ["Physicians","Nursing","Allied","APP","Others"].reduce((s,k)=>s+(c[k]||0),0);
   }
   // Faceted counts: the headline + tab numbers reflect the CURRENT filters.
   function countParams(){
@@ -259,7 +259,7 @@
   }
   function paintCounts(){
     const c = S.activeCounts || S.facetCategories || {};
-    const total = ["Physicians","Nursing","Allied","APP"].reduce((s,k)=>s+(c[k]||0),0);
+    const total = ["Physicians","Nursing","Allied","APP","Others"].reduce((s,k)=>s+(c[k]||0),0);
     $("#providers-count").textContent = `${total.toLocaleString()} provider${total===1?"":"s"}`;
     $$("#provider-tabs .tab").forEach(t => {
       if (t.dataset.base == null) t.dataset.base = t.textContent.replace(/\s+[\d,]+$/, "").trim();
@@ -295,7 +295,7 @@
   }
   function prefetchProviderTabs(){
     if (hasNonCategoryFilters()) return;  // only warm tabs on an unfiltered browse
-    ["Physicians","Nursing","Allied","APP"].forEach(category => {
+    ["Physicians","Nursing","Allied","APP","Others"].forEach(category => {
       fetchProviders(providerParams({...S.provider, category}, {offset:0, count:false})).catch(()=>{});
     });
   }
@@ -387,7 +387,7 @@
         </div>
       </td>
       <td><span class="badge accent"><i class="fas fa-circle-check"></i>${esc(profession)}</span></td>
-      <td><span class="badge">${esc(p.provider_category || "Other")}</span></td>
+      <td><span class="badge">${esc(p.provider_category || "Others")}</span></td>
       <td>${p.years_experience ? `${esc(p.years_experience)} yrs` : `<span class="cell-none">—</span>`}</td>
       <td>${loc ? esc(loc) : `<span class="cell-none">—</span>`}</td>
       <td class="td-contact">${providerContactCell(p)}</td>
