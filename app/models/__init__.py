@@ -11,6 +11,11 @@ Table inventory (28):
               application_events, saved_jobs
   Social:     connections, posts, post_likes, post_comments
   Messaging:  message_threads, messages, notifications, interviews, offers
+  Pools:      talent_pools, talent_pool_members
+  Searches:   saved_searches
+  Credits:    credit_accounts, credit_transactions
+  Outreach:   email_templates, outreach_campaigns, outreach_messages,
+              outreach_suppressions
   Analytics:  match_runs, match_results, pay_packages, audit_logs
 """
 from .analytics import AuditLog, MatchResult, MatchRun, PayPackage
@@ -20,6 +25,12 @@ from .auth import (
     PasswordResetToken,
     Session,
     User,
+)
+from .credits import (
+    COST_REVEAL_CONTACT,
+    DEFAULT_COSTS,
+    CreditAccount,
+    CreditTransaction,
 )
 from .enums import (
     ApplicationStatus,
@@ -45,6 +56,16 @@ from .job import (
     SavedJob,
 )
 from .messaging import Interview, Message, MessageThread, Notification, Offer
+from .outreach import (
+    MERGE_FIELDS,
+    SEND_STATUSES,
+    EmailTemplate,
+    OutreachCampaign,
+    OutreachMessage,
+    Suppression,
+)
+from .pools import POOL_STAGES, TalentPool, TalentPoolMember
+from .saved_search import SavedSearch
 from .profile import Certification, License, Profile, ProfileSkill, WorkHistory
 from .social import Connection, Post, PostComment, PostLike
 
@@ -59,6 +80,16 @@ __all__ = [
     "Connection", "Post", "PostLike", "PostComment",
     # messaging
     "MessageThread", "Message", "Notification", "Interview", "Offer",
+    # talent pools
+    "TalentPool", "TalentPoolMember", "POOL_STAGES",
+    # saved searches
+    "SavedSearch",
+    # credits
+    "CreditAccount", "CreditTransaction", "DEFAULT_COSTS",
+    "COST_REVEAL_CONTACT",
+    # outreach
+    "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",
+    "MERGE_FIELDS", "SEND_STATUSES",
     # analytics
     "MatchRun", "MatchResult", "PayPackage", "AuditLog",
     # enums

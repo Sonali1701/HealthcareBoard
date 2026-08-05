@@ -1,0 +1,283 @@
+"""Screen the provider directory for résumés that are not healthcare at all.
+
+The bulk import brought in a large population of IT/admin résumés and some
+empty files. The existing ingest check only asked whether the *name* looked
+real, so these sit in the directory as "Others" with no profession, polluting
+search results, match runs and pools.
+
+This reads each suspect résumé from storage and scores it on healthcare signal.
+No LLM: clinical vocabulary is distinctive enough that keyword evidence beats a
+model here, and it is deterministic, free, and explainable.
+
+Design rules:
+  * Conservative — a profile is hidden only when healthcare evidence is
+    essentially ABSENT, not merely when IT evidence is present. A nurse who
+    lists Epic and SQL stays.
+  * Auditable — every decision writes screen_reason/screen_score/screened_at,
+    so `--restore` can undo the whole sweep.
+  * Resumable — each processed id is appended to a manifest, so a re-run picks
+    up where it stopped.
+
+Run:
+    python -m app.screen_directory --dry-run --limit 300
+    python -m app.screen_directory --workers 8
+    python -m app.screen_directory --restore        # undo every hide this made
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+from sqlalchemy import func, or_, select, text as sqltext
+
+from .database import SessionLocal, utcnow
+from .models import Profile
+
+MANIFEST = "screen_manifest.jsonl"
+SCREEN_REASON_NOT_HEALTHCARE = "not_healthcare"
+SCREEN_REASON_EMPTY = "empty_resume"
+SCREEN_REASON_KEPT = "healthcare_ok"
+
+# Distinctive clinical vocabulary. Deliberately excludes ambiguous words like
+# "care", "support" or "assistant" that appear in plenty of IT résumés.
+_HEALTHCARE = re.compile(
+    r"\b("
+    r"registered nurse|licensed practical nurse|nurse practitioner|nursing assistant|"
+    r"\bRN\b|\bLPN\b|\bLVN\b|\bCNA\b|\bCRNA\b|\bAPRN\b|\bPACU\b|\bICU\b|\bNICU\b|\bPICU\b|"
+    r"\bBSN\b|\bMSN\b|\bNCLEX\b|\bBLS\b|\bACLS\b|\bPALS\b|\bCPR certified\b|"
+    r"patient care|patient safety|patients|clinical|bedside|charge nurse|staff nurse|"
+    r"med[- ]?surg|telemetry|phlebotomy|venipuncture|catheter|foley|"
+    r"wound care|vital signs|medication administration|IV therapy|infusion|"
+    r"triage|emergency department|operating room|perioperative|labor and delivery|"
+    r"hospice|home health|long[- ]term care|skilled nursing|rehabilitation facility|"
+    r"physical therapist|occupational therapist|speech language patholog|"
+    r"respiratory therap|radiolog|sonograph|phlebotomist|paramedic|\bEMT\b|"
+    r"physician|surgeon|anesthesiolog|cardiolog|oncolog|pediatric|geriatric|"
+    r"epic systems|cerner|meditech|\bEMR\b|\bEHR\b|\bHIPAA\b|"
+    r"nursing home|medical surgical|acute care|ambulatory|dialysis|"
+    r"board of nursing|state license|nursing license"
+    r")\b", re.I)
+
+# Only used to explain a decision, never to force one on its own.
+_TECH = re.compile(
+    r"\b(java|javascript|typescript|python|\.net|c\+\+|c#|sql server|oracle|"
+    r"kubernetes|docker|aws|azure|devops|scrum master|agile|jira|selenium|"
+    r"software (engineer|developer|test)|quality assurance analyst|qa engineer|"
+    r"web developer|full stack|front[- ]end|back[- ]end|weblogic|websphere|"
+    r"data engineer|business analyst|salesforce|sap|etl|tableau|power bi)\b", re.I)
+
+_lock = threading.Lock()
+
+
+def _load_done(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    done = set()
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            # Errors are transient (dropped connection, unreadable byte range):
+            # leave them out so a re-run gets another shot at them.
+            if row.get("reason") != "error":
+                done.add(row["profile_id"])
+    return done
+
+
+def _append(path: Path, row: dict) -> None:
+    with _lock, path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row) + "\n")
+
+
+def classify(txt: str, strict: bool = False) -> tuple[bool, str, int]:
+    """-> (keep, reason, healthcare_hit_count).
+
+    `strict=True` is used when re-screening profiles the importer ALREADY put in
+    a clinical category. Something in those résumés once read as healthcare, so
+    the bar to overturn that is higher: hide only when there is no clinical
+    vocabulary whatsoever.
+    """
+    if not txt or len(txt.strip()) < 40:
+        return False, SCREEN_REASON_EMPTY, 0
+    hits = len(set(m.group(0).lower() for m in _HEALTHCARE.finditer(txt)))
+    if hits >= 2:
+        return True, SCREEN_REASON_KEPT, hits
+    if strict:
+        # A genuine clinical résumé always says *something* — "patient", "RN",
+        # "clinical". Only a total absence justifies overriding the category.
+        return (hits >= 1), (SCREEN_REASON_KEPT if hits else SCREEN_REASON_NOT_HEALTHCARE), hits
+    if hits == 1 and not _TECH.search(txt):
+        # One clinical term and nothing contradicting it: keep, and let a human
+        # judge. False negatives cost a real candidate; false positives cost noise.
+        return True, SCREEN_REASON_KEPT, hits
+    return False, SCREEN_REASON_NOT_HEALTHCARE, hits
+
+
+_CLINICAL_CATEGORIES = ("Nursing", "Physicians", "Allied", "APP")
+
+
+def _suspects(db, limit: int | None, done: set[str],
+              scope: str = "others") -> list[tuple[str, str]]:
+    """Profiles worth re-reading.
+
+    scope="others"     — no role signal at all (category Others/NULL, no
+                         profession, no specialty). Where the junk sample came from.
+    scope="clinical"   — sits in a clinical category but carries weak evidence
+                         (no specialty AND no parsed skills). ~12% of these turn
+                         out to be IT/admin résumés miscategorised at import,
+                         and they do the most damage because recruiters filter
+                         straight to these categories.
+    """
+    base = [Profile.is_listable.is_(True),
+            Profile.resume_url.isnot(None),
+            Profile.screen_reason.is_(None)]
+    if scope == "clinical":
+        from .models import ProfileSkill
+        conds = base + [
+            Profile.provider_category.in_(_CLINICAL_CATEGORIES),
+            or_(Profile.specialty.is_(None), Profile.specialty == ""),
+            ~select(ProfileSkill.profile_id)
+            .where(ProfileSkill.profile_id == Profile.profile_id).exists(),
+        ]
+    else:
+        conds = base + [
+            or_(Profile.provider_category == "Others",
+                Profile.provider_category.is_(None)),
+            or_(Profile.profession_type.is_(None), Profile.profession_type == ""),
+            or_(Profile.specialty.is_(None), Profile.specialty == ""),
+        ]
+    stmt = (select(Profile.profile_id, Profile.resume_url)
+            .where(*conds).order_by(Profile.profile_id))
+    if limit:
+        stmt = stmt.limit(limit + len(done) + 200)
+    rows = [(p, u) for p, u in db.execute(stmt).all() if p not in done]
+    return rows[:limit] if limit else rows
+
+
+def run(limit: int | None = None, workers: int = 6, dry_run: bool = False,
+        manifest: str = MANIFEST, scope: str = "others") -> None:
+    from .services import storage
+    from .importers.parsing import extract_text_from_bytes
+
+    strict = scope == "clinical"
+    path = Path(manifest)
+    done = _load_done(path)
+    db = SessionLocal()
+    try:
+        targets = _suspects(db, limit, done, scope)
+    finally:
+        db.close()
+    print(f"{len(targets):,} profiles to screen "
+          f"({len(done):,} already in {manifest})")
+    if not targets:
+        return
+
+    stats = {"kept": 0, "not_healthcare": 0, "empty_resume": 0, "error": 0}
+
+    def _persist(pid: str, reason: str, hits: int, keep: bool) -> bool:
+        """Write one verdict, retrying transient drops.
+
+        Neon closes pooled connections aggressively under concurrency, and a
+        dropped socket must not lose a whole multi-hour sweep.
+        """
+        for attempt in range(4):
+            s = SessionLocal()
+            try:
+                p = s.get(Profile, pid)
+                if p:
+                    p.screen_reason = reason
+                    p.screen_score = hits
+                    p.screened_at = utcnow()
+                    if not keep:
+                        p.is_listable = False
+                    s.commit()
+                return True
+            except Exception:
+                s.rollback()
+                if attempt == 3:
+                    return False
+                time.sleep(1.5 * (attempt + 1))
+            finally:
+                s.close()
+        return False
+
+    def work(item: tuple[str, str]) -> None:
+        pid, url = item
+        try:
+            key, _ = storage.key_from_url(url)
+            txt = extract_text_from_bytes(storage.download_bytes(key), key) or ""
+            keep, reason, hits = classify(txt, strict=strict)
+        except Exception as exc:                       # unreadable file: leave it alone
+            with _lock:
+                stats["error"] += 1
+            _append(path, {"profile_id": pid, "reason": "error", "error": str(exc)[:120]})
+            return
+
+        # Persist BEFORE logging: the manifest must only ever record work that
+        # actually landed, or a resume would skip a profile that was never written.
+        if not dry_run and not _persist(pid, reason, hits, keep):
+            with _lock:
+                stats["error"] += 1
+            _append(path, {"profile_id": pid, "reason": "error", "error": "db write failed"})
+            return
+
+        with _lock:
+            stats["kept" if keep else reason] += 1
+        _append(path, {"profile_id": pid, "reason": reason, "hits": hits, "keep": keep})
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, _ in enumerate(pool.map(work, targets), 1):
+            if i % 250 == 0:
+                print(f"  {i:,}/{len(targets):,}  {stats}", flush=True)
+
+    print(f"\n{'DRY RUN - nothing written' if dry_run else 'done'}: {stats}")
+    if not dry_run:
+        db = SessionLocal()
+        try:
+            listable = db.scalar(select(func.count()).select_from(Profile)
+                                 .where(Profile.is_listable.is_(True)))
+            print(f"directory now lists {listable:,} profiles")
+        finally:
+            db.close()
+
+
+def restore(manifest: str = MANIFEST) -> None:
+    """Undo every hide this screen made (screen_reason is the marker)."""
+    db = SessionLocal()
+    try:
+        n = db.execute(sqltext(
+            "UPDATE profiles SET is_listable = TRUE "
+            "WHERE screen_reason IN (:a, :b)"),
+            {"a": SCREEN_REASON_NOT_HEALTHCARE, "b": SCREEN_REASON_EMPTY}).rowcount
+        db.execute(sqltext(
+            "UPDATE profiles SET screen_reason = NULL, screen_score = NULL, "
+            "screened_at = NULL WHERE screen_reason IS NOT NULL"))
+        db.commit()
+        print(f"restored {n:,} profiles to the directory; screening cleared")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--limit", type=int)
+    ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--restore", action="store_true")
+    ap.add_argument("--manifest", default=MANIFEST)
+    ap.add_argument("--scope", choices=("others", "clinical"), default="others",
+                    help="'others' = no role signal; 'clinical' = weak-evidence "
+                         "profiles already sitting in a clinical category")
+    a = ap.parse_args()
+    if a.restore:
+        restore(a.manifest)
+    else:
+        run(limit=a.limit, workers=a.workers, dry_run=a.dry_run,
+            manifest=a.manifest, scope=a.scope)

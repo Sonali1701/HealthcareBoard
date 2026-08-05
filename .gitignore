@@ -22,3 +22,13 @@ __pycache__/
 # IDE
 .idea/
 .vscode/
+
+# Run artifacts from batch jobs (screening, enrichment, imports)
+*_manifest.jsonl
+*.stdout.log
+*.stderr.log
+local-healthboard*.log
+exports/
+audit_review.csv
+.runtime/
+*.pyc

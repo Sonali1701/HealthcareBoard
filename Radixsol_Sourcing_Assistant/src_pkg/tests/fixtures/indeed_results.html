@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Indeed Smart Sourcing fixture</title>
+  <style>
+    body { margin: 0; font: 14px Arial, sans-serif; background: #f5f7fb; }
+    header { position: sticky; top: 0; padding: 18px 24px; color: #fff; background: #2557a7; z-index: 2; }
+    main { max-width: 880px; margin: 20px auto; }
+    article { margin: 10px; padding: 16px; border: 1px solid #d8deea; border-radius: 10px; background: #fff; }
+    h2 { margin: 0 0 6px; font-size: 17px; }
+    p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <header><strong>Indeed Smart Sourcing – browser test fixture</strong></header>
+  <main id="results" aria-label="Candidate results"></main>
+  <script>
+    const roles = ["Radiologic Technologist", "Registered Nurse", "MRI Technologist", "X-Ray Technologist"];
+    const cities = ["Atlanta, GA", "Decatur, GA", "Marietta, GA", "Savannah, GA"];
+    const firstNames = ["Alex", "Bailey", "Cameron", "Devon", "Emery", "Frankie", "Gray", "Harper", "Indiana", "Jordan"];
+    const lastNames = ["Anderson", "Bennett", "Carter", "Diaz", "Ellis"];
+    const results = document.querySelector("#results");
+    for (let index = 1; index <= 50; index += 1) {
+      const card = document.createElement("article");
+      card.dataset.cautoId = `MATCH_CARD_BASE-fixture-${index}`;
+      card.innerHTML = `
+        <a href="/candidate?id=fixture-${index}" data-cauto-id="candidate-name">
+          <h2>${firstNames[(index - 1) % firstNames.length]} ${lastNames[Math.floor((index - 1) / firstNames.length)]}</h2>
+        </a>
+        <p data-cauto-id="candidate-location">${cities[(index - 1) % cities.length]}</p>
+        <p data-cauto-id="candidate-job-title">${roles[(index - 1) % roles.length]}</p>
+        <p>Active today · Resume updated recently</p>`;
+      results.append(card);
+    }
+  </script>
+</body>
+</html>

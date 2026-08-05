@@ -26,6 +26,9 @@ class User(Base):
     email_verified_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_secret: Mapped[Optional[str]] = mapped_column(String(64))
+    # Long-lived personal token the browser extension uses to push captures to
+    # /api/ingest/* as this recruiter (issued on the "Get the Extension" page).
+    capture_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime, index=True)
     created_at: Mapped[datetime] = created_col()
     updated_at: Mapped[datetime] = updated_col()

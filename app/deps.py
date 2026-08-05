@@ -4,8 +4,9 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import get_db
@@ -63,6 +64,29 @@ def get_optional_user(
 
 
 OptionalUser = Annotated[Optional[User], Depends(get_optional_user)]
+
+
+def get_ingest_user(
+    db: DbSession,
+    token: Annotated[Optional[str], Depends(oauth2_scheme)] = None,
+    x_capture_token: Annotated[Optional[str], Header()] = None,
+) -> User:
+    """Authenticate a capture request by a normal Bearer JWT OR the extension's
+    long-lived X-Capture-Token header."""
+    if token:
+        return get_current_user(db=db, token=token)
+    if x_capture_token:
+        user = db.scalar(select(User).where(User.capture_token == x_capture_token))
+        if user and user.deleted_at is None and user.status != UserStatus.suspended:
+            return user
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Provide a Bearer token or a valid X-Capture-Token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+IngestUser = Annotated[User, Depends(get_ingest_user)]
 
 
 def require_roles(*roles: UserRole):

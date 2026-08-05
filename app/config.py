@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     gsa_base_url: str = "https://api.gsa.gov/travel/perdiem/v2"
     gsa_fiscal_year: int = 2025
 
+    # --- Credits ---
+    # One credit per candidate, spent when their contact is revealed. Nothing
+    # else is metered: once a recruiter has paid for a candidate, emailing them
+    # or reading their résumé must not bill for the same person again.
+    credits_enabled: bool = True
+    credit_signup_bonus: int = 25          # starting balance for a new recruiter
+    credit_cost_reveal_contact: int = 1
+
     # --- Email (SendGrid) ---
     # When email_enabled is False, reset/verification tokens are returned in the
     # API response (dev convenience) instead of being emailed.

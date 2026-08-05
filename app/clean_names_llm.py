@@ -118,22 +118,39 @@ def cost_usd() -> float:
     return _USAGE["in"] / 1e6 * _PRICE_IN + _USAGE["out"] / 1e6 * _PRICE_OUT
 
 
-def _llm(text: str) -> dict | None:
+def _llm(text: str, *, system: str | None = None, instr: str | None = None,
+         max_chars: int = 6000, retries: int = 6,
+         timeout: float | None = None) -> dict | None:
+    """Call the LLM and return the parsed JSON object (None on failure).
+
+    Defaults to the name/field extraction prompt; other jobs (e.g. résumé
+    section extraction) pass their own prompt so they share this function's
+    retry, rate-limit handling and token accounting.
+
+    ``retries`` / ``timeout`` let latency-sensitive callers (the interactive
+    copilot) fail fast — retries=1 never sleeps, so a depleted key returns None
+    immediately instead of blocking for ~45s of back-off.
+    """
     body = {
         "model": settings.llm_model,
         "temperature": 0,
         "messages": [
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": _INSTR + "\n\nRESUME:\n" + text[:6000]},
+            {"role": "system", "content": system or _SYSTEM},
+            {"role": "user",
+             "content": (instr or _INSTR) + "\n\nRESUME:\n" + text[:max_chars]},
         ],
         "response_format": {"type": "json_object"},
     }
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": "Bearer " + settings.llm_api_key}
-    for attempt in range(6):
+    for attempt in range(retries):
+        last = attempt == retries - 1
         try:
-            r = httpx.post(url, json=body, timeout=settings.llm_timeout, headers=headers)
-            if r.status_code == 429:            # rate limited — honor the hint
+            r = httpx.post(url, json=body, timeout=timeout or settings.llm_timeout,
+                           headers=headers)
+            if r.status_code == 429:            # rate limited / out of quota
+                if last:
+                    return None
                 delay = _retry_after_seconds(r) or (2 * (attempt + 1))
                 time.sleep(min(delay + 0.5, 65))
                 continue
@@ -148,7 +165,7 @@ def _llm(text: str) -> dict | None:
             blob = _extract_json_object(content)
             return json.loads(blob) if blob else None
         except Exception:  # noqa: BLE001
-            if attempt == 5:
+            if last:
                 return None
             time.sleep(1.5 * (attempt + 1))
     return None

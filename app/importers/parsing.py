@@ -78,33 +78,38 @@ CREDENTIALS = [
 PROFESSION_FROM_CRED = ["DO", "MD", "MBBS", "MBChB", "DPM", "DMD", "DDS", "PharmD",
                         "DPT", "DNP", "NP", "PA", "RN"]
 
-# --- Provider categories (Physicians / Nursing / Allied / APP) ------------
+# --- Provider categories (Physicians / Nursing / Allied / APP / Others) ---
 # Used by the Providers directory. APP is checked first because CRNA/NP names
 # contain the word "nurse" and would otherwise fall into Nursing.
-PROVIDER_CATEGORIES = ["Physicians", "Nursing", "Allied", "APP"]
+PROVIDER_CATEGORIES = ["Physicians", "Nursing", "Allied", "APP", "Others"]
 
-_APP_CODES = {"NP", "CRNA", "CNM", "FNP", "AGNP", "PMHNP", "ACNP", "AGACNP",
-              "DNP", "PA", "PA-C", "APRN", "APP"}
+_NURSING_SPECIALTY_LABELS = {
+    "icu", "er", "picu", "nicu", "labor & delivery", "med-surg",
+    "telemetry", "oncology", "pacu", "or", "operating room", "dialysis",
+}
+
+_APP_CODES = {"NP", "CRNA", "FNP", "FNP-C", "FNP-BC", "AGNP", "PMHNP",
+              "PMHNP-BC", "ACNP", "AGACNP", "PNP", "WHNP", "NP-C"}
 _APP_KW = ["nurse practitioner", "nurse anesthetist", "crna",
-           "certified registered nurse anesthetist", "certified nurse midwife",
-           "nurse midwife", "advanced practice",
-           "physician assistant", "physician associate"]
-_PHYS_CODES = {"MD", "DO", "MBBS", "MBCHB"}
-_PHYS_KW = ["physician", "family medicine", "internal medicine"]
-_NURSE_CODES = {"RN", "LPN", "LVN", "CNA", "BSN", "MSN", "ADN"}
+           "certified registered nurse anesthetist"]
+_PHYS_CODES = {"MD"}
+_PHYS_KW = ["medical doctor", "doctor of medicine", "family medicine"]
+_NURSE_CODES = {"RN", "LPN", "CNA"}
 _NURSE_KW = ["registered nurse", "licensed practical nurse",
-             "licensed vocational nurse", "certified nursing assistant"]
-_ALLIED_CODES = {"RT", "PT", "OT", "RAD", "RADTECH", "RTR", "ARRT", "RDMS",
-                 "RVT", "RCIS", "CNMT", "RDCS"}
+             "certified nursing assistant"]
+_ALLIED_CODES = {"RAD", "RADTECH", "RTR", "ARRT", "RDMS", "RVT", "RCIS",
+                 "CNMT", "RDCS", "CT", "MRI"}
 _ALLIED_KW = [
     "radiologic technologist", "rad tech", "radiographer", "x-ray", "x ray",
     "ct technologist", "ct tech", "mri technologist", "mri tech",
-    "mammography", "mammographer", "ultrasound", "sonographer",
-    "echocardiograph", "echo tech", "echo technologist", "vascular technologist",
-    "nuclear medicine", "interventional radiology", "ir technologist",
-    "cardiac cath", "cath lab", "radiology technologist", "technologist",
-    "respiratory therapist", "physical therapist", "occupational therapist",
-    "surgical technologist", "surg tech", "allied",
+    "mammography technologist", "mammography tech", "mammographer",
+    "ultrasound technologist", "ultrasound tech", "sonographer",
+    "echocardiography technologist", "echo tech", "echo technologist",
+    "vascular technologist", "vascular tech", "nuclear medicine technologist",
+    "nuclear medicine tech", "interventional radiology technologist",
+    "interventional radiology tech", "ir technologist", "ir tech",
+    "cardiac cath lab technologist", "cardiac cath lab tech",
+    "cath lab technologist", "cath lab tech", "radiology technologist",
 ]
 
 ABPS = "american board of physician specialties"
@@ -156,6 +161,35 @@ JUNK_NAME_WORDS = {
     "department", "unit", "team", "group",
     # credentials that leak in as a name token
     "adn", "bsn", "msn", "dnp", "aprn", "faan", "mba", "mph", "phd",
+    # placeholders the importers emit when they cannot find a name
+    "not", "found", "nil", "blank", "empty", "tbd", "missing", "undefined",
+    # résumé section headings that get read as the name line
+    "personal", "information", "contact", "details", "address", "areas",
+    "expertise", "competencies", "core", "key", "highlights", "achievements",
+    "accomplishments", "responsibilities", "projects", "activities", "interests",
+    "additional", "background", "overview", "introduction", "declaration",
+    "hobbies", "languages", "awards", "publications", "training", "courses",
+    "workshops", "affiliations", "memberships", "strengths", "attributes",
+    # job-board scrape artifacts
+    "view", "lead", "leads", "apply", "click", "page", "search", "results",
+    # non-clinical role words that show up as names on IT résumés
+    "developer", "engineer", "analyst", "architect", "programmer", "designer",
+    "tester", "scrum", "sr", "jr", "senior", "junior", "intern", "freelance",
+    # Function words of 3+ letters only. Two-letter words are excluded on
+    # purpose: "An", "To", "Bo", "Le" are real Vietnamese names and rejecting
+    # them would erase real people.
+    "and", "the", "for", "with", "from", "more", "than", "are", "was", "were",
+    "but", "not",
+}
+
+# A surname that is really a US state code means the parser grabbed a location
+# line ("San TX", "Columbus OH") instead of a person.
+_STATE_CODES = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID",
+    "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+    "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
+    "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+    "WI", "WY", "DC",
 }
 NAME_PLACEHOLDERS = JUNK_NAME_WORDS   # back-compat alias
 _JUNK_SUBSTRINGS = tuple(w for w in JUNK_NAME_WORDS if len(w) >= 6)
@@ -171,7 +205,10 @@ def is_real_name(first, last) -> bool:
     f = (first or "").strip().lower().strip(".")
     if not f or not any(c.isalpha() for c in f):
         return False
-    full = f"{f} {(last or '').strip().lower().strip('.')}".strip()
+    lastname = (last or "").strip().strip(".")
+    if lastname.upper() in _STATE_CODES:
+        return False                        # "San TX" — a location, not a person
+    full = f"{f} {lastname.lower()}".strip()
     if any(ch.isdigit() for ch in full):
         return False
     for w in re.split(r"[\s\-]+", full):
@@ -189,19 +226,22 @@ def is_real_name(first, last) -> bool:
 
 def classify_provider(profession_type=None, specialty=None,
                       headline=None, title=None) -> str:
-    """Bucket a profile into Physicians / Nursing / Allied / APP (or 'Other')."""
+    """Bucket a profile into the four requested groups, or ``Others``."""
     code = (profession_type or "").upper().strip().strip(".")
     text = " ".join(x for x in (profession_type, specialty, headline, title) if x).lower()
     if code in _APP_CODES or any(k in text for k in _APP_KW):
         return "APP"
     if code in _PHYS_CODES or any(k in text for k in _PHYS_KW) \
-            or re.search(r"\bm\.?d\.?\b", text) or re.search(r"\bd\.?o\.?\b", text):
+            or re.search(r"\bm\.?d\.?\b", text):
         return "Physicians"
     if code in _NURSE_CODES or any(k in text for k in _NURSE_KW):
         return "Nursing"
     if code in _ALLIED_CODES or any(k in text for k in _ALLIED_KW):
         return "Allied"
-    return "Other"
+    specialty_label = (specialty or "").strip().lower()
+    if specialty_label in _NURSING_SPECIALTY_LABELS and code in {"", "NURSE"}:
+        return "Nursing"
+    return "Others"
 
 
 def primary_american_board(cert_names) -> str | None:
@@ -263,11 +303,57 @@ def extract_text(path: Path) -> str:
     raise ValueError(f"Unsupported resume type: {suffix} (use .pdf or .docx)")
 
 
+# A "glued" token: a long word with an internal lower->upper transition, e.g.
+# "AssistedLiving" / "SpecialtyInformation". These appear when the PDF has no
+# space glyphs and pypdf's default mode runs words together.
+_GLUED_TOKEN = re.compile(r"\b(?=\w{12,}\b)[A-Za-z]*[a-z][A-Z][A-Za-z]*\b")
+_ALPHA_WORD = re.compile(r"[A-Za-z]{2,}")
+
+
+def _glue_score(text: str) -> float:
+    """Fraction of words that look run-together. Lower is better."""
+    words = _ALPHA_WORD.findall(text or "")
+    if not words:
+        return 1.0
+    return len(_GLUED_TOKEN.findall(text)) / len(words)
+
+
+def _pdf_text(reader) -> str:
+    """PDF text, preferring whichever pypdf mode preserves word spacing.
+
+    pypdf's default mode silently drops inter-word spaces on some documents
+    ("Unit:LTC,Skilled,AssistedLiving"), which also hides section headings from
+    the résumé parser. Layout mode keeps the spacing but can interleave columns
+    on multi-column résumés, so we extract both and keep the cleaner one rather
+    than committing to either.
+    """
+    def _render(mode: str | None) -> str:
+        out = []
+        for page in reader.pages:
+            try:
+                out.append((page.extract_text(extraction_mode=mode) if mode
+                            else page.extract_text()) or "")
+            except Exception:
+                out.append("")
+        return "\n".join(out)
+
+    plain = _render(None)
+    try:
+        layout = _render("layout")
+    except Exception:
+        return plain
+    if not _ALPHA_WORD.search(layout):
+        return plain
+    if not _ALPHA_WORD.search(plain):
+        return layout
+    # Prefer layout unless it is measurably worse at keeping words apart.
+    return layout if _glue_score(layout) <= _glue_score(plain) else plain
+
+
 def _extract_pdf(path: Path) -> str:
     from pypdf import PdfReader
 
-    reader = PdfReader(str(path))
-    return "\n".join((page.extract_text() or "") for page in reader.pages)
+    return _pdf_text(PdfReader(str(path)))
 
 
 def _extract_docx(path: Path) -> str:
@@ -286,8 +372,7 @@ def extract_text_from_bytes(data: bytes, filename: str) -> str:
     if suffix == ".pdf":
         from pypdf import PdfReader
 
-        reader = PdfReader(io.BytesIO(data))
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
+        return _pdf_text(PdfReader(io.BytesIO(data)))
     if suffix == ".docx":
         from docx import Document
 
@@ -324,8 +409,13 @@ def _guess_name(text: str, path: Path) -> tuple[str, str]:
 
 def _detect(text_lower: str, vocab: dict[str, list[str]]) -> str | None:
     for label, needles in vocab.items():
-        if any(n in text_lower for n in needles):
-            return label
+        for needle in needles:
+            keyword = needle.strip().lower()
+            if keyword and re.search(
+                rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])",
+                text_lower,
+            ):
+                return label
     return None
 
 
@@ -578,7 +668,7 @@ def format_resume_fields(fields: dict, text: str, path: Path) -> dict:
 
     out["american_board"] = primary_american_board(out.get("certifications")) or out.get("american_board")
     category = classify_provider(out.get("profession_type"), out.get("specialty"), out.get("headline"))
-    out["provider_category"] = category if category != "Other" else (out.get("provider_category") or "Other")
+    out["provider_category"] = category
     return out
 
 

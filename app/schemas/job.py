@@ -120,6 +120,11 @@ class JobOut(ORMModel, JobBase):
     status: JobStatus
     view_count: int
     application_count: int
+    facility: Optional[str] = None
+    agency: Optional[str] = None
+    req_code: Optional[str] = None
+    # Seats open for this same role/facility, when the list is grouped.
+    openings: int = 1
     created_at: datetime
     updated_at: datetime
 

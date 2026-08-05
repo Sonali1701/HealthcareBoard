@@ -91,6 +91,11 @@ class JobPosting(Base):
     state_code: Mapped[Optional[str]] = mapped_column(String(2), index=True)
     lat: Mapped[Optional[float]] = mapped_column(Float)
     lng: Mapped[Optional[float]] = mapped_column(Float)
+    # Parsed out of the imported description: the end client the req is for,
+    # the staffing agency, and the ATS requisition code (unique per opening).
+    facility: Mapped[Optional[str]] = mapped_column(String(200), index=True)
+    agency: Mapped[Optional[str]] = mapped_column(String(150))
+    req_code: Mapped[Optional[str]] = mapped_column(String(60), index=True)
     description: Mapped[Optional[str]] = mapped_column(Text)
     requirements: Mapped[dict] = mapped_column(JSON, default=dict)
     benefits: Mapped[list] = mapped_column(JSON, default=list)  # health|dental|401k|housing

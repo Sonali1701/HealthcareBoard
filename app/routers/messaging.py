@@ -15,6 +15,7 @@ from ..models import (
     Notification,
     Offer,
     Profile,
+    User,
 )
 from ..models.enums import (
     InterviewStatus,
@@ -35,6 +36,7 @@ from ..schemas.messaging import (
     ThreadCreate,
     ThreadDetail,
     ThreadOut,
+    ThreadSummary,
 )
 
 router = APIRouter(prefix="/api/messages", tags=["messaging"])
@@ -55,39 +57,140 @@ def _other(thread: MessageThread, user: CurrentUser) -> str:
         else thread.participant_a_id
 
 
+def _people(db: DbSession, user_ids: list[str]) -> dict[str, dict]:
+    """Resolve display identities for a batch of user ids in two queries.
+
+    Names live on the profile; users who never completed one fall back to the
+    local part of their email so the inbox never shows a raw UUID.
+    """
+    ids = [u for u in {*user_ids} if u]
+    if not ids:
+        return {}
+    names = {
+        uid: " ".join(p for p in (first, last) if p).strip()
+        for uid, first, last in db.execute(
+            select(Profile.user_id, Profile.first_name, Profile.last_name)
+            .where(Profile.user_id.in_(ids))
+        ).all()
+    }
+    out: dict[str, dict] = {}
+    for uid, email, role in db.execute(
+        select(User.user_id, User.email, User.role).where(User.user_id.in_(ids))
+    ).all():
+        name = names.get(uid) or (email or "").split("@")[0] or "Unknown"
+        parts = [p for p in name.replace(".", " ").split() if p]
+        initials = "".join(p[0] for p in parts[:2]).upper() or "?"
+        out[uid] = {"name": name, "role": getattr(role, "value", role),
+                    "initials": initials}
+    return out
+
+
+def _unread_by_thread(db: DbSession, user: CurrentUser,
+                      thread_ids: list[str]) -> dict[str, int]:
+    if not thread_ids:
+        return {}
+    rows = db.execute(
+        select(Message.thread_id, func.count())
+        .where(Message.thread_id.in_(thread_ids),
+               Message.recipient_id == user.user_id,
+               Message.is_read.is_(False))
+        .group_by(Message.thread_id)
+    ).all()
+    return {tid: n for tid, n in rows}
+
+
+def _last_by_thread(db: DbSession, thread_ids: list[str]) -> dict[str, Message]:
+    """Most recent message per thread (one query, newest-first de-dup)."""
+    if not thread_ids:
+        return {}
+    out: dict[str, Message] = {}
+    for m in db.scalars(
+        select(Message).where(Message.thread_id.in_(thread_ids))
+        .order_by(Message.created_at.desc())
+    ):
+        out.setdefault(m.thread_id, m)
+    return out
+
+
+def _summarise(thread: MessageThread, user: CurrentUser, people: dict,
+               unread: dict, last: dict) -> ThreadSummary:
+    other_id = _other(thread, user)
+    who = people.get(other_id) or {}
+    s = ThreadSummary.model_validate(thread)
+    s.other_name = who.get("name", "Unknown")
+    s.other_role = who.get("role")
+    s.other_initials = who.get("initials", "?")
+    s.unread_count = unread.get(thread.thread_id, 0)
+    msg = last.get(thread.thread_id)
+    if msg:
+        s.last_message = msg.body or msg.kind.value.replace("_", " ").title()
+        s.last_message_kind = msg.kind
+        s.last_sender_is_me = msg.sender_id == user.user_id
+    return s
+
+
 # --- Threads --------------------------------------------------------------
 
-@router.get("/threads", response_model=list[ThreadOut])
+@router.get("/threads", response_model=list[ThreadSummary])
 def list_threads(user: CurrentUser, db: DbSession,
                  unread_only: bool = False):
-    stmt = select(MessageThread).where(
-        or_(MessageThread.participant_a_id == user.user_id,
-            MessageThread.participant_b_id == user.user_id)
-    ).order_by(MessageThread.last_message_at.desc().nullslast())
-    threads = db.scalars(stmt).all()
+    threads = db.scalars(
+        select(MessageThread).where(
+            or_(MessageThread.participant_a_id == user.user_id,
+                MessageThread.participant_b_id == user.user_id)
+        ).order_by(MessageThread.last_message_at.desc().nullslast())
+    ).all()
+    ids = [t.thread_id for t in threads]
+    people = _people(db, [_other(t, user) for t in threads])
+    unread = _unread_by_thread(db, user, ids)
+    last = _last_by_thread(db, ids)
+    out = [_summarise(t, user, people, unread, last) for t in threads]
     if unread_only:
-        threads = [
-            t for t in threads
-            if db.scalar(
-                select(func.count()).select_from(Message).where(
-                    and_(Message.thread_id == t.thread_id,
-                         Message.recipient_id == user.user_id,
-                         Message.is_read.is_(False))
-                )
-            )
-        ]
-    return threads
+        out = [t for t in out if t.unread_count]
+    return out
+
+
+@router.get("/unread-count")
+def unread_count(user: CurrentUser, db: DbSession):
+    """Badge counter for the nav — unread messages and how many threads they span."""
+    total = db.scalar(
+        select(func.count()).select_from(Message)
+        .where(Message.recipient_id == user.user_id, Message.is_read.is_(False))
+    ) or 0
+    threads = db.scalar(
+        select(func.count(func.distinct(Message.thread_id)))
+        .where(Message.recipient_id == user.user_id, Message.is_read.is_(False))
+    ) or 0
+    return {"unread": total, "threads": threads}
 
 
 @router.post("/threads", response_model=ThreadDetail, status_code=201)
 def create_thread(body: ThreadCreate, user: CurrentUser, db: DbSession):
+    recipient_id = body.recipient_id
+    if not recipient_id and body.profile_id:
+        profile = db.get(Profile, body.profile_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        if not profile.user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="This candidate has no platform account yet — release their "
+                       "contact details and reach out by email or phone instead.")
+        recipient_id = profile.user_id
+    if not recipient_id:
+        raise HTTPException(status_code=400,
+                            detail="Provide either recipient_id or profile_id")
+    if recipient_id == user.user_id:
+        raise HTTPException(status_code=400, detail="You cannot message yourself")
+    if not db.get(User, recipient_id):
+        raise HTTPException(status_code=404, detail="Recipient not found")
     # Reuse an existing thread between these two users if present.
     thread = db.scalar(
         select(MessageThread).where(
             or_(
                 and_(MessageThread.participant_a_id == user.user_id,
-                     MessageThread.participant_b_id == body.recipient_id),
-                and_(MessageThread.participant_a_id == body.recipient_id,
+                     MessageThread.participant_b_id == recipient_id),
+                and_(MessageThread.participant_a_id == recipient_id,
                      MessageThread.participant_b_id == user.user_id),
             )
         )
@@ -95,7 +198,7 @@ def create_thread(body: ThreadCreate, user: CurrentUser, db: DbSession):
     if not thread:
         thread = MessageThread(
             participant_a_id=user.user_id,
-            participant_b_id=body.recipient_id,
+            participant_b_id=recipient_id,
             job_id=body.job_id,
         )
         db.add(thread)
@@ -168,14 +271,50 @@ def _thread_detail(db: DbSession, thread: MessageThread, user: CurrentUser) -> T
         select(Message).where(Message.thread_id == thread.thread_id)
         .order_by(Message.created_at.asc())
     ).all()
-    unread = sum(1 for m in messages if m.recipient_id == user.user_id and not m.is_read)
+    other_id = _other(thread, user)
+    who = _people(db, [other_id]).get(other_id) or {}
     detail = ThreadDetail.model_validate(thread)
     detail.messages = [MessageOut.model_validate(m) for m in messages]
-    detail.unread_count = unread
+    detail.unread_count = sum(
+        1 for m in messages if m.recipient_id == user.user_id and not m.is_read)
+    detail.other_name = who.get("name", "Unknown")
+    detail.other_role = who.get("role")
+    detail.other_initials = who.get("initials", "?")
+    if messages:
+        last = messages[-1]
+        detail.last_message = last.body or last.kind.value.replace("_", " ").title()
+        detail.last_message_kind = last.kind
+        detail.last_sender_is_me = last.sender_id == user.user_id
     return detail
 
 
 # --- Interviews -----------------------------------------------------------
+
+@router.get("/interviews", response_model=list[InterviewOut])
+def list_interviews(user: CurrentUser, db: DbSession):
+    """Interviews this recruiter scheduled, or that were proposed to them."""
+    own_profiles = db.scalars(
+        select(Profile.profile_id).where(Profile.user_id == user.user_id)).all()
+    return db.scalars(
+        select(Interview).where(
+            or_(Interview.recruiter_user_id == user.user_id,
+                Interview.profile_id.in_(own_profiles) if own_profiles else False)
+        ).order_by(Interview.created_at.desc())
+    ).all()
+
+
+@router.get("/offers", response_model=list[OfferOut])
+def list_offers(user: CurrentUser, db: DbSession):
+    """Offers this recruiter extended, or that were extended to them."""
+    own_profiles = db.scalars(
+        select(Profile.profile_id).where(Profile.user_id == user.user_id)).all()
+    return db.scalars(
+        select(Offer).where(
+            or_(Offer.recruiter_user_id == user.user_id,
+                Offer.profile_id.in_(own_profiles) if own_profiles else False)
+        ).order_by(Offer.created_at.desc())
+    ).all()
+
 
 @router.post("/interviews", response_model=InterviewOut, status_code=201)
 def schedule_interview(body: InterviewCreate, user: CurrentUser, db: DbSession):

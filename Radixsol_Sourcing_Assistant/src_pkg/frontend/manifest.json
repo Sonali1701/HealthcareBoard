@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "Radixsol Sourcing Assistant",
+  "description": "Capture displayed Indeed candidates, run reviewed USPhoneBook contact lookup, and manage recruiting matches.",
+  "version": "2.5.2",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "downloads",
+    "debugger",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "*://*.indeed.com/*",
+    "https://www.usphonebook.com/*",
+    "https://usphonebook.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Radixsol Sourcing Assistant"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.indeed.com/*"
+      ],
+      "js": [
+        "inject.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.indeed.com/*"
+      ],
+      "js": [
+        "indeed-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.usphonebook.com/*",
+        "https://usphonebook.com/*"
+      ],
+      "js": [
+        "usphonebook-parser.js",
+        "usphonebook-content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -56,7 +56,8 @@ class ScoreBreakdown(BaseModel):
 class CandidateMatch(BaseModel):
     rank: int
     profile_id: str
-    name: str
+    name: str          # masked ("T. H.") until the recruiter releases the profile
+    is_released: bool = False
     initials: str
     title: Optional[str] = None
     specialty: Optional[str] = None

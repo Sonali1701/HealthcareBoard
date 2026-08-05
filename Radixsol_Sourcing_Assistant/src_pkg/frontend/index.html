@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radixsol Sourcing Assistant</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">R</div>
+        <div><strong>Radixsol</strong><span>Sourcing Assistant</span></div>
+      </div>
+      <nav class="nav" id="nav" aria-label="Main navigation">
+        <button type="button" class="nav-link active" data-view="candidates">
+          <span aria-hidden="true">◉</span><span>Candidates</span>
+        </button>
+        <button type="button" class="nav-link" data-view="indeed">
+          <span aria-hidden="true">▤</span><span>Indeed Profiles</span>
+        </button>
+        <button type="button" class="nav-link" data-view="add">
+          <span aria-hidden="true">＋</span><span>Add Candidates</span>
+        </button>
+        <button type="button" class="nav-link" data-view="pipeline">
+          <span aria-hidden="true">◇</span><span>Pipeline</span>
+        </button>
+        <button type="button" class="nav-link" data-view="dnc">
+          <span aria-hidden="true">⊘</span><span>Do-Not-Contact</span>
+        </button>
+        <button type="button" class="nav-link" data-view="settings">
+          <span aria-hidden="true">⚙</span><span>Settings</span>
+        </button>
+      </nav>
+      <div class="side-foot">v2.3 · Candidate autosave</div>
+    </aside>
+
+    <main class="main">
+      <header class="top">
+        <div>
+          <h1 id="title">Candidates</h1>
+          <span class="connection" id="connection">Checking backend…</span>
+        </div>
+        <div class="top-right">
+          <span class="pill" id="mode">offline</span>
+          <div class="user-avatar" aria-label="Radixsol Talent Team">RT</div>
+        </div>
+      </header>
+      <div class="wrap" id="content"></div>
+    </main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

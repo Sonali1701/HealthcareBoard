@@ -28,14 +28,21 @@ from .routers import (
     analytics,
     applications,
     auth,
+    credits,
+    duplicates,
     employers,
+    extension,
     gsa,
+    ingest,
     integrations,
     jobs,
     matching,
     messaging,
     notifications,
+    outreach,
+    pools,
     profiles,
+    saved_searches,
     social,
     uploads,
 )
@@ -105,6 +112,7 @@ async def _no_cache_app_assets(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
     if (path in _PROTOTYPE_ROUTES or path.startswith("/ui/") or path == "/"
+            or path.startswith("/api/")   # API reads must never come from cache
             or (path.startswith(("/static/", "/assets/")) and path.endswith((".js", ".css", ".html")))):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
@@ -121,7 +129,8 @@ async def _handle_redirect(request: Request, exc: RedirectException):
 for module in (
     auth, profiles, employers, jobs, applications, social,
     messaging, notifications, matching, gsa, analytics, uploads,
-    integrations, admin_import,
+    integrations, admin_import, ingest, extension, pools, saved_searches,
+    duplicates, outreach, credits,
 ):
     app.include_router(module.router)
 

@@ -21,6 +21,10 @@ from ..schemas.matching import (
 )
 
 
+# Upper bound on how many profiles are pulled into memory for one scoring run.
+POOL_CAP = 4000
+
+
 @dataclass
 class _Spec:
     specialty: str | None
@@ -33,6 +37,9 @@ class _Spec:
     city: str | None
     pay_min: float | None
     pay_max: float | None
+    # False when the req never stated an experience requirement, which is
+    # different from deliberately asking for zero years.
+    years_declared: bool = False
 
 
 def _spec_from_request(req: MatchRequest, job: JobPosting | None) -> _Spec:
@@ -48,6 +55,7 @@ def _spec_from_request(req: MatchRequest, job: JobPosting | None) -> _Spec:
             city=job.city,
             pay_min=float(job.pay_rate_min) if job.pay_rate_min is not None else None,
             pay_max=float(job.pay_rate_max) if job.pay_rate_max is not None else None,
+            years_declared=job.years_exp_min is not None,
         )
     return _Spec(
         specialty=req.specialty,
@@ -60,21 +68,39 @@ def _spec_from_request(req: MatchRequest, job: JobPosting | None) -> _Spec:
         city=req.location.city,
         pay_min=req.pay_rate_min,
         pay_max=req.pay_rate_max,
+        years_declared=req.years_exp_min is not None or req.years_exp_preferred is not None,
     )
 
 
-def _score_skills(spec: _Spec, profile_skill_names: set[str], cert_names: set[str]) -> float:
-    """Fraction of required skills+certs the candidate has (0-100)."""
+def _score_skills(spec: _Spec, profile_skill_names: set[str], cert_names: set[str],
+                  profile_specialty: str | None = None) -> float:
+    """Fraction of required skills+certs the candidate has (0-100).
+
+    Most imported reqs carry no explicit skill list, so falling back to a flat
+    score would tie every candidate. Without requirements we rank on specialty
+    alignment first, then on how much evidence the profile actually carries.
+    """
     required = spec.skills | spec.certs
     if not required:
-        # No explicit requirement: reward by specialty alignment instead.
-        return 80.0
-    have = profile_skill_names | cert_names
-    matched = sum(1 for r in required if any(r in h or h in r for h in have))
+        have = len(profile_skill_names) + len(cert_names)
+        depth = min(15.0, 3.0 * have)          # 0-15 for documented skills/certs
+        if spec.specialty and profile_specialty:
+            if profile_specialty.strip().lower() == spec.specialty.strip().lower():
+                return round(85.0 + depth, 2)  # exact specialty match
+            return round(55.0 + depth, 2)      # different specialty, right credential
+        return round(65.0 + depth, 2)          # req names no specialty
+    have_all = profile_skill_names | cert_names
+    matched = sum(1 for r in required if any(r in h or h in r for h in have_all))
     return round(100.0 * matched / len(required), 2)
 
 
 def _score_experience(spec: _Spec, years: int) -> float:
+    if spec.years_min <= 0 and not spec.years_declared:
+        # The req states no requirement: rank on seniority with diminishing
+        # returns, so a 15-year nurse outranks a 3-year one instead of tying.
+        if years <= 0:
+            return 45.0
+        return round(min(100.0, 45.0 + 55.0 * (min(years, 20) / 20) ** 0.6), 2)
     if spec.years_pref <= 0:
         return 100.0 if years > 0 else 60.0
     if years >= spec.years_pref:
@@ -120,6 +146,12 @@ def _score_pay(spec: _Spec, profile: Profile) -> float:
     return round(max(0.0, 100.0 - overshoot * 120.0), 2)
 
 
+def _masked(p: Profile) -> str:
+    """'Ta'Nyah Hoskins' -> 'T. H.' — matches the directory's masking exactly."""
+    parts = [(p.first_name or "").strip(), (p.last_name or "").strip()]
+    return " ".join(f"{x[0].upper()}." for x in parts if x) or "—"
+
+
 def _initials(first: str, last: str) -> str:
     return (first[:1] + last[:1]).upper()
 
@@ -132,6 +164,8 @@ def _reason(spec: _Spec, profile: Profile, b: ScoreBreakdown) -> str:
         bits.append(f"{profile.specialty} background")
     if b.experience >= 90:
         bits.append(f"{profile.years_experience}+ yrs experience")
+    elif (profile.years_experience or 0) >= 3:
+        bits.append(f"{profile.years_experience} yrs experience")
     if b.location >= 90:
         bits.append("local to the role")
     elif b.location >= 70 and "travel" in (profile.job_type_prefs or []):
@@ -141,7 +175,15 @@ def _reason(spec: _Spec, profile: Profile, b: ScoreBreakdown) -> str:
     return " · ".join(bits) or "General match on specialty and availability"
 
 
-def run_matching(db: Session, req: MatchRequest) -> tuple[list[CandidateMatch], MatchSummary]:
+def run_matching(db: Session, req: MatchRequest,
+                 released: set[str] | None = None) -> tuple[list[CandidateMatch], MatchSummary]:
+    """Score and rank candidates for a req.
+
+    `released` is the set of profile ids whose identity this recruiter has
+    already paid to reveal; everyone else is returned masked, exactly as in the
+    provider directory.
+    """
+    released = released or set()
     job = db.get(JobPosting, req.job_id) if req.job_id else None
     spec = _spec_from_request(req, job)
 
@@ -157,8 +199,33 @@ def run_matching(db: Session, req: MatchRequest) -> tuple[list[CandidateMatch], 
         stmt = stmt.where(Profile.profession_type == spec.profession_type)
     if spec.specialty:
         stmt = stmt.where(Profile.specialty == spec.specialty)
+    # Same state first when the req has one: location is a scored dimension, but
+    # it is also the cheapest way to keep the shortlist locally relevant.
+    if spec.state_code:
+        stmt = stmt.where(Profile.state_code == spec.state_code)
 
+    # Hard cap the pool. Without it an unspecific req (no profession, no
+    # specialty) would load every open-to-work profile — ~160k rows with their
+    # skills, certifications and licenses eagerly loaded.
+    stmt = stmt.order_by(Profile.completion_score.desc().nullslast(),
+                         Profile.profile_id).limit(POOL_CAP)
     profiles = db.scalars(stmt).all()
+    # If a state filter left too little to rank, retry nationwide.
+    if spec.state_code and len(profiles) < 25:
+        wide = (
+            select(Profile)
+            .options(selectinload(Profile.skills), selectinload(Profile.certifications),
+                     selectinload(Profile.licenses))
+            .where(Profile.open_to_work.is_(True))
+        )
+        if spec.profession_type:
+            wide = wide.where(Profile.profession_type == spec.profession_type)
+        if spec.specialty:
+            wide = wide.where(Profile.specialty == spec.specialty)
+        profiles = db.scalars(
+            wide.order_by(Profile.completion_score.desc().nullslast(),
+                          Profile.profile_id).limit(POOL_CAP)
+        ).all()
 
     w = req.weights
     w_total = max(w.skills + w.experience + w.location + w.pay, 1)
@@ -179,7 +246,7 @@ def run_matching(db: Session, req: MatchRequest) -> tuple[list[CandidateMatch], 
         if req.filters.immediately_available_only and not p.open_to_work:
             continue
 
-        s_skills = _score_skills(spec, skill_names, cert_names)
+        s_skills = _score_skills(spec, skill_names, cert_names, p.specialty)
         s_exp = _score_experience(spec, p.years_experience or 0)
         s_loc = _score_location(spec, p, req.filters.travel_experienced_boost)
         s_pay = _score_pay(spec, p)
@@ -197,7 +264,11 @@ def run_matching(db: Session, req: MatchRequest) -> tuple[list[CandidateMatch], 
             CandidateMatch(
                 rank=0,
                 profile_id=p.profile_id,
-                name=f"{p.first_name} {p.last_name}",
+                # Identity is withheld until the recruiter releases the profile,
+                # the same rule the directory enforces.
+                name=(f"{p.first_name or ''} {p.last_name or ''}".strip() or "Unnamed")
+                     if p.profile_id in released else _masked(p),
+                is_released=p.profile_id in released,
                 initials=_initials(p.first_name, p.last_name),
                 title=p.headline or (f"{p.specialty} {p.profession_type}"
                                      if p.specialty else p.profession_type),

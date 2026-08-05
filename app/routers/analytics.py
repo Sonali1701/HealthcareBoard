@@ -147,3 +147,89 @@ def conversation_table(user: CurrentUser, db: DbSession):
             "last_message_at": t.last_message_at,
         })
     return {"conversations": rows, "total": len(rows)}
+
+
+# --- Sourcing analytics ---------------------------------------------------
+# The funnel above measures inbound applications, which a sourcing-led agency
+# has none of. What a recruiter here actually does is reveal contacts, build
+# pools, run match jobs and message people — so measure that instead.
+
+@router.get("/sourcing")
+def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
+    from datetime import timedelta
+
+    from ..database import utcnow
+    from ..models import (
+        AuditLog,
+        MatchRun,
+        Notification,
+        SavedSearch,
+        TalentPool,
+        TalentPoolMember,
+    )
+    from .profiles import RELEASE_ACTION
+
+    since = utcnow() - timedelta(days=max(1, days))
+    uid = user.user_id
+
+    def count(stmt) -> int:
+        return db.scalar(stmt) or 0
+
+    releases = count(select(func.count()).select_from(AuditLog)
+                     .where(AuditLog.actor_user_id == uid, AuditLog.action == RELEASE_ACTION))
+    releases_recent = count(select(func.count()).select_from(AuditLog)
+                            .where(AuditLog.actor_user_id == uid,
+                                   AuditLog.action == RELEASE_ACTION,
+                                   AuditLog.created_at >= since))
+    pool_ids = db.scalars(select(TalentPool.pool_id)
+                          .where(TalentPool.owner_user_id == uid)).all()
+    shortlisted = count(select(func.count()).select_from(TalentPoolMember)
+                        .where(TalentPoolMember.pool_id.in_(pool_ids))) if pool_ids else 0
+    by_stage = dict(db.execute(
+        select(TalentPoolMember.stage, func.count())
+        .where(TalentPoolMember.pool_id.in_(pool_ids))
+        .group_by(TalentPoolMember.stage)).all()) if pool_ids else {}
+
+    runs = db.scalars(select(MatchRun).where(MatchRun.requested_by_user_id == uid)).all()
+    ranked = sum(r.candidate_count or 0 for r in runs)
+    avg_score = (round(sum(float(r.avg_score or 0) for r in runs) / len(runs), 1)
+                 if runs else 0.0)
+
+    sent = count(select(func.count()).select_from(Message).where(Message.sender_id == uid))
+    received = count(select(func.count()).select_from(Message).where(Message.recipient_id == uid))
+    threads = count(select(func.count()).select_from(MessageThread).where(
+        (MessageThread.participant_a_id == uid) | (MessageThread.participant_b_id == uid)))
+
+    listable = count(select(func.count()).select_from(Profile)
+                     .where(Profile.is_listable.is_(True)))
+    reachable = count(select(func.count()).select_from(Profile).where(
+        Profile.is_listable.is_(True),
+        ((Profile.email.isnot(None)) & (func.length(func.btrim(Profile.email)) > 0))
+        | ((Profile.phone.isnot(None)) & (func.length(func.btrim(Profile.phone)) > 0))))
+
+    # How much of the shortlist actually got worked, and how far it got.
+    moved = sum(n for s, n in by_stage.items() if s != "sourced")
+    return {
+        "window_days": days,
+        "directory": {
+            "listable": listable,
+            "reachable": reachable,
+            "reachable_pct": round(100 * reachable / listable, 1) if listable else 0.0,
+        },
+        "contacts": {"released_total": releases, "released_recent": releases_recent},
+        "pools": {
+            "pools": len(pool_ids),
+            "shortlisted": shortlisted,
+            "by_stage": by_stage,
+            "worked": moved,
+            "worked_pct": round(100 * moved / shortlisted, 1) if shortlisted else 0.0,
+        },
+        "sourcing_runs": {
+            "runs": len(runs), "candidates_ranked": ranked, "avg_match_score": avg_score,
+        },
+        "messaging": {"threads": threads, "sent": sent, "received": received},
+        "saved_searches": count(select(func.count()).select_from(SavedSearch)
+                                .where(SavedSearch.owner_user_id == uid)),
+        "notifications": count(select(func.count()).select_from(Notification)
+                               .where(Notification.user_id == uid)),
+    }

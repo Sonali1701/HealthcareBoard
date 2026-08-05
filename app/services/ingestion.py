@@ -130,6 +130,23 @@ def _content_key(data: bytes, filename: str) -> str:
     return f"resumes/import/{digest[:2]}/{digest}{ext}"
 
 
+def parse_resume_bytes(data: bytes, filename: str) -> dict:
+    """Parse a résumé file into candidate fields (no DB, no storage). Used by the
+    ingest endpoint to de-dup/merge before deciding to create."""
+    text = extract_text_from_bytes(data, filename)
+    fields = parse_resume(text, Path(filename))
+    _llm_refine(text, fields)   # silent no-op if the LLM is unavailable
+    return fields
+
+
+def store_resume_file(data: bytes, filename: str) -> str:
+    """Store a résumé (content-addressed) and return its URL."""
+    from . import storage
+    key = _content_key(data, filename)
+    ctype = _PDF if key.endswith(".pdf") else _DOCX
+    return storage.upload(io.BytesIO(data), key, ctype)
+
+
 def ingest_resume_bytes(db, data: bytes, filename: str, *,
                         source: ProfileSource = ProfileSource.resume_parse,
                         do_commit: bool = True) -> dict:

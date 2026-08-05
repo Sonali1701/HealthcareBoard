@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
 from ..deps import CurrentUser, DbSession
-from ..models import MatchResult, MatchRun
+from ..models import AuditLog, MatchResult, MatchRun
 from ..schemas.matching import (
     MatchRequest,
     MatchResponse,
@@ -16,9 +16,36 @@ from ..services.matching import run_matching
 router = APIRouter(prefix="/api/matching", tags=["matching"])
 
 
+def _released_for(db: DbSession, user: CurrentUser) -> set[str]:
+    """Every profile this recruiter has already released. Matching scores a pool
+    of thousands, so this is fetched once rather than per candidate."""
+    from .profiles import RELEASE_ACTION
+    rows = db.scalars(
+        select(AuditLog.entity_id).where(AuditLog.actor_user_id == user.user_id,
+                                         AuditLog.action == RELEASE_ACTION)
+    ).all()
+    return {r for r in rows if r}
+
+
+def _require_recruiter(user: CurrentUser) -> None:
+    if user.role.value not in {"recruiter", "admin"}:
+        raise HTTPException(status_code=403,
+                            detail="Candidate matching is available to recruiters only")
+
+
+def _own_run_or_404(db: DbSession, run_id: str, user: CurrentUser) -> MatchRun:
+    run_row = db.get(MatchRun, run_id)
+    if not run_row:
+        raise HTTPException(status_code=404, detail="Match run not found")
+    if run_row.requested_by_user_id != user.user_id and user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="This match run belongs to another recruiter")
+    return run_row
+
+
 @router.post("/run", response_model=MatchResponse)
 def run(req: MatchRequest, user: CurrentUser, db: DbSession):
-    candidates, summary = run_matching(db, req)
+    _require_recruiter(user)
+    candidates, summary = run_matching(db, req, released=_released_for(db, user))
 
     run_row = MatchRun(
         job_id=req.job_id,
@@ -47,26 +74,61 @@ def run(req: MatchRequest, user: CurrentUser, db: DbSession):
     return MatchResponse(run_id=run_row.run_id, summary=summary, candidates=candidates)
 
 
+@router.get("/runs")
+def list_runs(user: CurrentUser, db: DbSession, limit: int = 20):
+    """This recruiter's recent sourcing runs, newest first."""
+    _require_recruiter(user)
+    from ..models import JobPosting
+    runs = db.scalars(
+        select(MatchRun).where(MatchRun.requested_by_user_id == user.user_id)
+        .order_by(MatchRun.created_at.desc()).limit(limit)
+    ).all()
+    titles = {
+        j.job_id: j.title for j in db.scalars(
+            select(JobPosting).where(
+                JobPosting.job_id.in_([r.job_id for r in runs if r.job_id]))
+        )
+    } if runs else {}
+    return [{
+        "run_id": r.run_id,
+        "job_id": r.job_id,
+        "job_title": titles.get(r.job_id) or (r.job_spec or {}).get("job_title"),
+        "candidate_count": r.candidate_count,
+        "avg_score": float(r.avg_score) if r.avg_score is not None else None,
+        "created_at": r.created_at,
+    } for r in runs]
+
+
 @router.get("/runs/{run_id}", response_model=MatchResponse)
 def get_run(run_id: str, user: CurrentUser, db: DbSession):
     from ..models import Profile
     from ..schemas.matching import CandidateMatch, MatchSummary, ScoreBreakdown
+    from .profiles import _masked_name
 
-    run_row = db.get(MatchRun, run_id)
-    if not run_row:
-        raise HTTPException(status_code=404, detail="Match run not found")
+    _require_recruiter(user)
+    run_row = _own_run_or_404(db, run_id, user)
     results = db.scalars(
         select(MatchResult).where(MatchResult.run_id == run_id)
         .order_by(MatchResult.rank.asc())
     ).all()
+    # One query for the whole page instead of a db.get() per candidate.
+    profiles = {
+        p.profile_id: p for p in db.scalars(
+            select(Profile).where(Profile.profile_id.in_([r.profile_id for r in results]))
+        )
+    } if results else {}
+    released = _released_for(db, user)
 
     candidates = []
     for r in results:
-        p = db.get(Profile, r.profile_id)
+        p = profiles.get(r.profile_id)
+        is_open = r.profile_id in released
         candidates.append(CandidateMatch(
             rank=r.rank,
             profile_id=r.profile_id,
-            name=f"{p.first_name} {p.last_name}" if p else "Unknown",
+            name=(f"{p.first_name or ''} {p.last_name or ''}".strip() or "Unnamed"
+                  if is_open else _masked_name(p)) if p else "Unknown",
+            is_released=is_open,
             initials=((p.first_name[:1] + p.last_name[:1]).upper() if p else "?"),
             title=p.headline if p else None,
             specialty=p.specialty if p else None,
@@ -106,6 +168,8 @@ def get_run(run_id: str, user: CurrentUser, db: DbSession):
 @router.post("/runs/{run_id}/candidates/{profile_id}/shortlist")
 def shortlist(run_id: str, profile_id: str, body: ShortlistUpdate,
               user: CurrentUser, db: DbSession):
+    _require_recruiter(user)
+    _own_run_or_404(db, run_id, user)
     result = db.scalar(
         select(MatchResult).where(MatchResult.run_id == run_id,
                                   MatchResult.profile_id == profile_id)

@@ -71,6 +71,10 @@ def search_jobs(
     pay_min: Optional[float] = None,
     is_urgent: Optional[bool] = None,
     employer_id: Optional[str] = None,
+    facility: Optional[str] = None,
+    group_openings: bool = Query(
+        False, description="Collapse identical roles at the same facility into "
+                           "one row carrying an `openings` count"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
@@ -93,6 +97,11 @@ def search_jobs(
         stmt = stmt.where(JobPosting.is_urgent.is_(is_urgent))
     if employer_id:
         stmt = stmt.where(JobPosting.employer_id == employer_id)
+    if facility:
+        stmt = stmt.where(JobPosting.facility == facility)
+
+    if group_openings:
+        return _grouped_page(db, stmt, limit, offset)
 
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(
@@ -100,6 +109,41 @@ def search_jobs(
         .limit(limit).offset(offset)
     ).all()
     return Page(items=rows, total=total, limit=limit, offset=offset)
+
+
+# Agencies file one requisition per seat, so a single role at one facility can
+# appear 30 times with 30 distinct req codes. They are NOT duplicates and must
+# not be merged in the database — but the board is unreadable without folding
+# them into a single row that says how many seats are open.
+_GROUP_KEY = (JobPosting.title, JobPosting.facility, JobPosting.city,
+              JobPosting.state_code, JobPosting.pay_rate_max)
+
+
+def _grouped_page(db, stmt, limit: int, offset: int) -> Page:
+    base = stmt.subquery()
+    groups = (
+        select(*[getattr(base.c, c.key) for c in _GROUP_KEY],
+               func.count().label("openings"),
+               func.min(base.c.job_id).label("job_id"))
+        .group_by(*[getattr(base.c, c.key) for c in _GROUP_KEY])
+    ).subquery()
+
+    total = db.scalar(select(func.count()).select_from(groups)) or 0
+    rows = db.execute(
+        select(groups.c.job_id, groups.c.openings)
+        .order_by(groups.c.openings.desc(), groups.c.job_id)
+        .limit(limit).offset(offset)
+    ).all()
+    openings = {jid: n for jid, n in rows}
+    jobs = db.scalars(
+        select(JobPosting).where(JobPosting.job_id.in_(list(openings)))
+    ).all() if openings else []
+    items = []
+    for job in sorted(jobs, key=lambda j: -openings[j.job_id]):
+        out = JobOut.model_validate(job)
+        out.openings = openings[job.job_id]
+        items.append(out)
+    return Page(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post("", response_model=JobOut, status_code=status.HTTP_201_CREATED)

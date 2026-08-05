@@ -257,20 +257,29 @@ CREDENTIALS = {
 
 PROFESSION_FROM_CRED = ["DO", "MD", "MBBS", "MBCHB", "DPM", "DMD", "DDS", "PharmD", "DPT", "DNP", "NP", "PA", "RN"]
 
-APP_CODES = {"NP", "CRNA", "CNM", "FNP", "AGNP", "PMHNP", "ACNP", "AGACNP", "DNP", "PA", "PA-C", "APRN", "APP"}
-APP_KW = ["nurse practitioner", "nurse anesthetist", "crna", "certified nurse midwife", "nurse midwife", "advanced practice", "physician assistant"]
-PHYS_CODES = {"MD", "DO", "MBBS", "MBCHB"}
-PHYS_KW = ["physician", "family medicine", "internal medicine"]
-NURSE_CODES = {"RN", "LPN", "LVN", "CNA", "BSN", "MSN", "ADN"}
-NURSE_KW = ["registered nurse", "licensed practical nurse", "licensed vocational nurse", "nursing assistant"]
-ALLIED_CODES = {"RT", "PT", "OT", "RAD", "RADTECH", "RTR", "ARRT", "RDMS", "RVT", "RCIS", "CNMT", "RDCS"}
+APP_CODES = {"NP", "CRNA", "FNP", "FNP-C", "FNP-BC", "AGNP", "PMHNP", "PMHNP-BC", "ACNP", "AGACNP", "PNP", "WHNP", "NP-C"}
+APP_KW = ["nurse practitioner", "nurse anesthetist", "crna", "certified registered nurse anesthetist"]
+PHYS_CODES = {"MD"}
+PHYS_KW = ["medical doctor", "doctor of medicine", "family medicine"]
+NURSE_CODES = {"RN", "LPN", "CNA"}
+NURSE_KW = ["registered nurse", "licensed practical nurse", "certified nursing assistant"]
+ALLIED_CODES = {"RAD", "RADTECH", "RTR", "ARRT", "RDMS", "RVT", "RCIS", "CNMT", "RDCS", "CT", "MRI"}
 ALLIED_KW = [
     "radiologic technologist", "rad tech", "radiographer", "x-ray", "x ray",
-    "ct technologist", "ct tech", "mri technologist", "mri tech", "ultrasound",
-    "sonographer", "echo tech", "vascular technologist", "nuclear medicine",
-    "interventional radiology", "cardiac cath", "cath lab", "respiratory therapist",
-    "physical therapist", "occupational therapist", "surgical technologist", "allied",
+    "ct technologist", "ct tech", "mri technologist", "mri tech",
+    "mammography technologist", "mammography tech", "mammographer",
+    "ultrasound technologist", "ultrasound tech", "sonographer",
+    "echocardiography technologist", "echo tech", "echo technologist",
+    "vascular technologist", "vascular tech", "nuclear medicine technologist",
+    "nuclear medicine tech", "interventional radiology technologist",
+    "interventional radiology tech", "ir technologist", "ir tech",
+    "cardiac cath lab technologist", "cardiac cath lab tech",
+    "cath lab technologist", "cath lab tech", "radiology technologist",
 ]
+NURSING_SPECIALTY_LABELS = {
+    "icu", "er", "picu", "nicu", "labor & delivery", "med-surg",
+    "telemetry", "oncology", "pacu", "or", "operating room", "dialysis",
+}
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}")
@@ -347,7 +356,10 @@ def classify_provider(profession_type=None, specialty=None, headline=None, title
         return "Nursing"
     if code in ALLIED_CODES or any(k in text for k in ALLIED_KW):
         return "Allied"
-    return "Other"
+    specialty_label = (specialty or "").strip().lower()
+    if specialty_label in NURSING_SPECIALTY_LABELS and code in {"", "NURSE"}:
+        return "Nursing"
+    return "Others"
 
 
 def primary_american_board(cert_names) -> str | None:
@@ -380,8 +392,13 @@ def _guess_name(text: str, path: Path) -> tuple[str, str]:
 
 def _detect(text_lower: str, vocab: dict[str, list[str]]) -> str | None:
     for label, needles in vocab.items():
-        if any(n in text_lower for n in needles):
-            return label
+        for needle in needles:
+            keyword = needle.strip().lower()
+            if keyword and re.search(
+                rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])",
+                text_lower,
+            ):
+                return label
     return None
 
 
@@ -625,7 +642,7 @@ def format_resume_fields(fields: dict, text: str, path: Path) -> dict:
     out["headline"] = headline[:255] if headline else None
     out["american_board"] = primary_american_board(out.get("certifications")) or out.get("american_board")
     category = classify_provider(out.get("profession_type"), out.get("specialty"), out.get("headline"))
-    out["provider_category"] = category if category != "Other" else (out.get("provider_category") or "Other")
+    out["provider_category"] = category
     return out
 
 

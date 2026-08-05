@@ -18,7 +18,10 @@ from .common import ORMModel
 # --- Threads & messages ---------------------------------------------------
 
 class ThreadCreate(BaseModel):
-    recipient_id: str
+    """Address a thread either by user id or by profile id (the profile must
+    belong to a registered user — sourced résumés have no account to message)."""
+    recipient_id: Optional[str] = None
+    profile_id: Optional[str] = None
     job_id: Optional[str] = None
     body: Optional[str] = None
 
@@ -52,9 +55,20 @@ class ThreadOut(ORMModel):
     created_at: datetime
 
 
-class ThreadDetail(ThreadOut):
-    messages: list[MessageOut] = Field(default_factory=list)
+class ThreadSummary(ThreadOut):
+    """A thread as it appears in the inbox list — resolved for the *viewer*, so
+    the client never has to look up who the other participant is."""
+    other_name: str = "Unknown"
+    other_role: Optional[str] = None
+    other_initials: str = "?"
+    last_message: Optional[str] = None
+    last_message_kind: Optional[MessageKind] = None
+    last_sender_is_me: bool = False
     unread_count: int = 0
+
+
+class ThreadDetail(ThreadSummary):
+    messages: list[MessageOut] = Field(default_factory=list)
 
 
 class ATSStageUpdate(BaseModel):

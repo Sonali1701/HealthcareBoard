@@ -38,12 +38,21 @@ class Profile(Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), index=True)
     specialty: Mapped[Optional[str]] = mapped_column(String(100), index=True)
     profession_type: Mapped[Optional[str]] = mapped_column(String(50), index=True)
-    # Physicians | Nursing | Allied | APP  (derived from profession/specialty).
+    # Physicians | Nursing | Allied | APP | Others (derived from résumé evidence).
     provider_category: Mapped[Optional[str]] = mapped_column(String(20), index=True)
     # Primary certifying board, e.g. "American Board of Allergy and Immunology".
     american_board: Mapped[Optional[str]] = mapped_column(String(150), index=True)
     # False = parser produced junk (placeholder name); hidden from the directory.
     is_listable: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # Why the directory screen hid (or kept) this profile, so the decision is
+    # auditable and reversible rather than an unexplained flipped bit.
+    # Set when this row was folded into another as a duplicate. The row is
+    # hidden rather than deleted, so the merge stays reversible.
+    merged_into: Mapped[Optional[str]] = mapped_column(String(36), index=True)
+    merged_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
+    screen_reason: Mapped[Optional[str]] = mapped_column(String(60), index=True)
+    screen_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    screened_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
     contact_updated_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
     contact_updated_by_email: Mapped[Optional[str]] = mapped_column(String(255))
     contact_updated_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
@@ -61,6 +70,20 @@ class Profile(Base):
     npi_number: Mapped[Optional[str]] = mapped_column(String(10), unique=True)
     profile_photo_url: Mapped[Optional[str]] = mapped_column(Text)
     resume_url: Mapped[Optional[str]] = mapped_column(Text)
+    # LLM-extracted résumé sections: {"summary": [...], "experience": [...], ...}.
+    # Populated by `python -m app.extract_resume_sections`. When present the
+    # résumé view serves this instead of re-parsing the file with heuristics.
+    resume_sections: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Enrichment (python -m app.enrich_profiles): work authorization / visa status,
+    # and structured education [{institution, degree, field, year}].
+    work_authorization: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    education: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Capture provenance / recruiter ownership (extension + central ingest). The
+    # first recruiter to capture a candidate owns it; captures elsewhere merge in.
+    capture_source: Mapped[Optional[str]] = mapped_column(String(60), index=True)
+    captured_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
+    captured_by_email: Mapped[Optional[str]] = mapped_column(String(255))
+    captured_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
     completion_score: Mapped[int] = mapped_column(SmallInteger, default=0, index=True)
     source: Mapped[ProfileSource] = mapped_column(
         Enum(ProfileSource), default=ProfileSource.signup, index=True

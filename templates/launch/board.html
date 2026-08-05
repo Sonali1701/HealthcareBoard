@@ -71,13 +71,17 @@
       <button class="nav-item active" data-page="dashboard"><i class="fas fa-table-cells-large"></i>Dashboard</button>
       <button class="nav-item" data-page="jobs"><i class="fas fa-search"></i>Find Jobs</button>
       <button class="nav-item" data-page="community"><i class="fas fa-stream"></i>Community Feed</button>
+      <button class="nav-item recruiter-only" data-page="ai"><i class="fas fa-wand-magic-sparkles"></i>AI Search</button>
       <button class="nav-item recruiter-only" data-page="providers"><i class="fas fa-user-doctor"></i>Providers</button>
+      <button class="nav-item recruiter-only" data-page="pools"><i class="fas fa-layer-group"></i>Talent Pools</button>
+      <button class="nav-item recruiter-only" data-page="outreach"><i class="fas fa-paper-plane"></i>Outreach</button>
       <div class="nav-label">Workspace</div>
       <button class="nav-item" data-page="profile"><i class="fas fa-id-card"></i>My Profile</button>
-      <button class="nav-item" data-page="messages"><i class="fas fa-comment-dots"></i>Messages</button>
-      <button class="nav-item" data-page="notifications"><i class="fas fa-bell"></i>Notifications</button>
+      <button class="nav-item" data-page="messages"><i class="fas fa-comment-dots"></i>Messages<span class="nav-badge hidden" id="nav-unread"></span></button>
+      <button class="nav-item" data-page="notifications"><i class="fas fa-bell"></i>Notifications<span class="nav-badge hidden" id="nav-notif"></span></button>
       <button class="nav-item" data-page="resume"><i class="fas fa-file-lines"></i>Resume</button>
       <div class="nav-label recruiter-only">Recruiter</div>
+      <button class="nav-item recruiter-only" data-page="extension"><i class="fas fa-puzzle-piece"></i>Get Extension</button>
       <button class="nav-item recruiter-only" data-page="employer"><i class="fas fa-building"></i>Employer Portal</button>
       <button class="nav-item recruiter-only" data-page="analytics"><i class="fas fa-chart-line"></i>Analytics</button>
     </nav>
@@ -92,6 +96,7 @@
     <header class="topbar">
       <div class="top-search"><i class="fas fa-magnifying-glass"></i><input id="global-search" placeholder="Search jobs, providers, topics"></div>
       <div class="top-actions">
+        <button class="credit-chip" id="credit-chip" data-page="credits" title="Credits remaining"><i class="fas fa-coins"></i><b id="credit-balance">--</b></button>
         <button class="icon-btn" data-page="messages"><i class="fas fa-comment-dots"></i></button>
         <button class="icon-btn" data-page="notifications"><i class="fas fa-bell"></i></button>
         <button class="top-user" data-page="profile"><span id="top-avatar" class="avatar">H</span><span id="top-name">Account</span></button>
@@ -133,6 +138,28 @@
       </div>
     </section>
 
+    <section id="page-ai" class="page ai-page">
+      <div class="ai-stage" id="ai-stage">
+        <div class="ai-hero">
+          <h1>Describe the candidate you're looking for</h1>
+          <p>Use natural language — no Boolean or filters required</p>
+        </div>
+        <form class="ai-search" id="ai-form">
+          <i class="fas fa-wand-magic-sparkles ai-search-icon"></i>
+          <input id="ai-input" autocomplete="off" placeholder="e.g. ICU nurses in California with 10+ years of experience">
+          <button class="ai-send" id="ai-send" type="submit" aria-label="Search"><i class="fas fa-arrow-up"></i></button>
+        </form>
+        <button class="ai-new" id="ai-new" type="button" title="Start a fresh search"><i class="fas fa-rotate-left"></i>New search</button>
+        <div class="ai-suggestions" id="ai-suggestions">
+          <button class="ai-chip">ICU nurses in California with 5+ years</button>
+          <button class="ai-chip">Registered nurses in Texas</button>
+          <button class="ai-chip">Physical therapists in Florida</button>
+          <button class="ai-chip">MDs in New York with 10+ years</button>
+        </div>
+      </div>
+      <div class="ai-thread" id="ai-thread"></div>
+    </section>
+
     <section id="page-providers" class="page">
       <div class="section-head"><div><h1>Providers</h1><p id="providers-count">Loading providers...</p></div></div>
       <div class="filter-row provider-filters">
@@ -154,16 +181,34 @@
           </div>
         </div>
       </div>
+      <div class="saved-row">
+        <button class="btn ghost small" id="search-save"><i class="fas fa-bookmark"></i>Save this search</button>
+        <div class="saved-chips" id="saved-chips"></div>
+      </div>
+      <div class="provider-toggles">
+        <span class="ptoggle-label">Credentials</span>
+        <button type="button" class="ptoggle" data-toggle="compact"><i class="fas fa-shield-halved"></i>Compact / multistate license</button>
+        <button type="button" class="ptoggle" data-toggle="travel_experience"><i class="fas fa-suitcase-rolling"></i>Has travel experience</button>
+      </div>
       <div class="tabs" id="provider-tabs">
         <button class="tab active" data-category="">All</button>
         <button class="tab" data-category="Physicians">Physicians</button>
         <button class="tab" data-category="Nursing">Nursing</button>
         <button class="tab" data-category="Allied">Allied</button>
         <button class="tab" data-category="APP">APP</button>
+        <button class="tab" data-category="Others">Others</button>
+      </div>
+      <div class="bulk-bar hidden" id="bulk-bar">
+        <strong id="bulk-count">0 selected</strong>
+        <button class="btn primary small" id="bulk-to-pool"><i class="fas fa-layer-group"></i>Add to pool</button>
+        <button class="btn ghost small" id="bulk-clear">Clear</button>
       </div>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Provider</th><th>License</th><th>Category</th><th>Experience</th><th>Location</th><th>Contact</th><th class="th-actions"></th></tr></thead>
+          <thead><tr>
+            <th class="th-check"><input type="checkbox" id="bulk-all" title="Select all on this page"></th>
+            <th>Provider</th><th>License</th><th>Category</th><th>Experience</th><th>Location</th><th>Contact</th><th class="th-actions"></th>
+          </tr></thead>
           <tbody id="providers-grid"></tbody>
         </table>
       </div>
@@ -186,14 +231,132 @@
     </section>
 
     <section id="page-community" class="page"><div class="section-head"><div><h1>Community Feed</h1><p>Recent posts</p></div></div><div id="feed-list" class="list"></div></section>
-    <section id="page-messages" class="page"><div class="section-head"><div><h1>Messages</h1><p>Conversations</p></div></div><div class="empty">No conversation selected.</div></section>
+    <section id="page-messages" class="page">
+      <div class="section-head"><div><h1>Messages</h1><p id="messages-sub">Conversations</p></div></div>
+      <div class="msg-layout">
+        <aside class="msg-list-pane">
+          <div class="msg-list-head">
+            <input id="msg-search" class="input" placeholder="Search conversations">
+          </div>
+          <div id="msg-threads" class="msg-threads"></div>
+        </aside>
+        <section class="msg-convo-pane" id="msg-convo">
+          <div class="msg-empty" id="msg-placeholder">
+            <i class="fas fa-comments"></i>
+            <h3>Select a conversation</h3>
+            <p>Your messages with candidates and recruiters appear here.</p>
+          </div>
+          <div class="msg-convo hidden" id="msg-convo-inner">
+            <header class="msg-convo-head">
+              <div class="msg-avatar" id="msg-head-avatar">?</div>
+              <div class="msg-head-meta">
+                <strong id="msg-head-name">—</strong>
+                <span id="msg-head-role" class="muted"></span>
+              </div>
+              <div class="msg-head-actions">
+                <select id="msg-stage" class="input small" title="Pipeline stage"></select>
+              </div>
+            </header>
+            <div class="msg-bubbles" id="msg-bubbles"></div>
+            <form class="msg-composer" id="msg-composer">
+              <textarea id="msg-input" rows="1" placeholder="Write a message..."></textarea>
+              <button class="btn primary" type="submit" id="msg-send"><i class="fas fa-paper-plane"></i></button>
+            </form>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="page-matching" class="page">
+      <div class="section-head">
+        <div><h1 id="match-title">Sourcing</h1><p id="match-sub">Ranked candidates for this role</p></div>
+        <button class="btn ghost" id="match-back"><i class="fas fa-arrow-left"></i>Back to jobs</button>
+      </div>
+      <div id="match-body"></div>
+    </section>
+
+    <section id="page-pools" class="page">
+      <div class="section-head">
+        <div><h1>Talent Pools</h1><p id="pools-sub">Shortlist candidates, track them through your pipeline, and export for outreach.</p></div>
+        <button class="btn primary" id="pool-new"><i class="fas fa-plus"></i>New pool</button>
+      </div>
+      <div id="pools-body"></div>
+    </section>
     <section id="page-notifications" class="page"><div class="section-head"><div><h1>Notifications</h1><p>Account activity</p></div></div><div id="notifications-list" class="list"></div></section>
-    <section id="page-employer" class="page"><div class="section-head"><div><h1>Employer Portal</h1><p id="employer-sub">Recruiter workspace</p></div></div><div id="employer-panel" class="profile-panel"></div></section>
-    <section id="page-analytics" class="page"><div class="section-head"><div><h1>Analytics</h1><p>Recruitment activity</p></div></div><div id="analytics-panel" class="metrics"></div></section>
+    <section id="page-employer" class="page">
+      <div class="section-head">
+        <div><h1>Employer Portal</h1><p id="employer-sub">Recruiter workspace</p></div>
+        <button class="btn primary" id="job-new"><i class="fas fa-plus"></i>Post a job</button>
+      </div>
+      <div id="employer-panel" class="profile-panel"></div>
+      <div id="employer-jobs"></div>
+    </section>
+    <section id="page-analytics" class="page">
+      <div class="section-head"><div><h1>Analytics</h1><p id="analytics-sub">Your sourcing activity</p></div></div>
+      <div id="analytics-panel"></div>
+    </section>
+
+    <section id="page-credits" class="page">
+      <div class="section-head"><div><h1>Credits</h1><p id="credits-sub">What you have, and what you have spent it on</p></div></div>
+      <div id="credits-body"></div>
+    </section>
+
+    <section id="page-outreach" class="page">
+      <div class="section-head">
+        <div><h1>Outreach</h1><p id="outreach-sub">Email a talent pool, then track opens and replies.</p></div>
+        <div>
+          <button class="btn ghost" id="tmpl-new"><i class="fas fa-file-lines"></i>New template</button>
+          <button class="btn primary" id="camp-new"><i class="fas fa-paper-plane"></i>New campaign</button>
+        </div>
+      </div>
+      <div id="outreach-banner"></div>
+      <div id="outreach-body"></div>
+    </section>
+
+            <section id="page-extension" class="page">
+      <div class="section-head"><div><h1>Capture candidates from anywhere</h1><p>Install the browser extension to save candidates from job sites straight into your database — auto-deduplicated and owned by you.</p></div></div>
+      <div class="ext-grid">
+        <div class="ext-main">
+          <div class="ext-card ext-steps">
+            <ol class="ext-step-list">
+              <li><b>Download the extension</b><span>Get the packaged extension, pre-configured for your workspace.</span>
+                <button class="btn primary" id="ext-download"><i class="fas fa-download"></i>Download extension</button>
+                <span class="ext-hint" id="ext-download-hint"></span></li>
+              <li><b>Load it in Chrome or Edge</b><span>Unzip it, open <code>chrome://extensions</code> (or <code>edge://extensions</code>), turn on <b>Developer mode</b>, click <b>Load unpacked</b>, and pick the unzipped folder.</span></li>
+              <li><b>Connect it to your account</b><span>Open the extension's side panel and paste your connection token below so captures land under your account.</span></li>
+              <li><b>Capture on a job site</b><span>Open an Indeed results or profile page and click <b>Capture</b> — candidates flow into your central database.</span></li>
+            </ol>
+          </div>
+        </div>
+        <aside class="ext-side">
+          <div class="ext-card ext-connect">
+            <div class="ext-card-head"><i class="fas fa-plug"></i>Connection</div>
+            <label class="ext-label">Job board URL</label>
+            <div class="ext-field"><input id="ext-api-base" readonly><button class="btn ghost small" data-copy="ext-api-base" title="Copy"><i class="fas fa-copy"></i></button></div>
+            <label class="ext-label">Your capture token</label>
+            <div class="ext-field"><input id="ext-token" type="password" readonly><button class="btn ghost small" id="ext-token-reveal" title="Show"><i class="fas fa-eye"></i></button><button class="btn ghost small" data-copy="ext-token" title="Copy"><i class="fas fa-copy"></i></button></div>
+            <button class="btn small ext-regen" id="ext-token-regen"><i class="fas fa-rotate"></i>Regenerate token</button>
+            <p class="ext-note"><i class="fas fa-shield-halved"></i>Treat this token like a password — it lets the extension save candidates as you. Regenerating revokes the old one.</p>
+          </div>
+          <div class="ext-card ext-platforms">
+            <div class="ext-card-head"><i class="fas fa-globe"></i>Supported sites</div>
+            <div id="ext-platforms" class="ext-plat-list"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
   </main>
 </div>
 
 <div id="modal-root"></div>
+
+<!-- Floating shortcut to the full-page AI Search (recruiter-only) -->
+<div class="copilot recruiter-only hidden" id="copilot">
+  <button class="copilot-fab" id="copilot-fab" title="AI Search" aria-label="Open AI search">
+    <i class="fas fa-wand-magic-sparkles"></i>
+  </button>
+</div>
+
 <script src="/assets/js/launch-board.js"></script>
 </body>
 </html>

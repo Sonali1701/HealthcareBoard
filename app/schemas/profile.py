@@ -161,6 +161,41 @@ class ProfileOut(ORMModel, ProfileBase):
     updated_at: datetime
 
 
+class ProfileCardOut(BaseModel):
+    """A provider row in the recruiter directory, with identity withheld.
+
+    Name and contact are omitted from the payload entirely until the recruiter
+    deliberately releases the profile (POST /profiles/{id}/contact-release),
+    which is audit-logged. Masking only in the browser would leave the real
+    values sitting in the network response, so they are never serialised here.
+    """
+
+    profile_id: str
+    # Always present, safe to show: "T. H." and "TH".
+    masked_name: str
+    initials: str
+    is_released: bool = False
+    # Populated only once released.
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    contact_updated_by_email: Optional[str] = None
+    # Enough to drive the UI without revealing the values themselves.
+    has_email: bool = False
+    has_phone: bool = False
+    # Non-identifying professional attributes.
+    headline: Optional[str] = None
+    specialty: Optional[str] = None
+    profession_type: Optional[str] = None
+    provider_category: Optional[str] = None
+    american_board: Optional[str] = None
+    years_experience: int = 0
+    city: Optional[str] = None
+    state_code: Optional[str] = None
+    completion_score: int = 0
+
+
 class ProfileDetail(ProfileOut):
     licenses: list[LicenseOut] = Field(default_factory=list)
     certifications: list[CertificationOut] = Field(default_factory=list)
