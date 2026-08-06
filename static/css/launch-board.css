@@ -819,3 +819,35 @@ tr.is-selected{background:var(--accent-soft)}
 
 /* "Load earlier messages" sits above the first bubble in a long thread. */
 .msg-older-wrap{display:flex;justify-content:center;padding:4px 0 10px}
+
+/* --- Form dialogs & toasts ------------------------------------------------ */
+/* Replaces prompt()/alert() chains: adding a licence was four sequential
+   browser dialogs with no way back and no validation. */
+.modal-card.form-card{width:min(560px,100%)}
+.dlg-body{padding:20px 22px}
+.dlg-intro{font-size:12.5px;color:var(--faint);margin:0 0 16px;line-height:1.55}
+.dlg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.dlg-grid label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted);font-weight:500}
+.dlg-grid .input,.dlg-grid select,.dlg-grid textarea{width:100%}
+.dlg-grid textarea{resize:vertical;min-height:74px;padding:9px 12px;border:1px solid var(--line-2);
+  border-radius:var(--radius);font-family:inherit;font-size:13.5px;color:var(--ink);outline:none}
+.dlg-grid textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.dlg-wide{grid-column:1/-1}
+.dlg-check{flex-direction:row!important;align-items:center;gap:8px;grid-column:1/-1;font-size:13px}
+.dlg-check input{width:15px;height:15px;accent-color:var(--accent)}
+.dlg-hint{font-size:11.5px;color:var(--dim);font-weight:400}
+.dlg-foot{display:flex;align-items:center;gap:10px;padding:15px 22px;border-top:1px solid var(--line);background:var(--soft)}
+.dlg-foot .spacer{margin-left:auto}
+.dlg-error{font-size:12.5px;color:var(--rose)}
+#toast-root{position:fixed;right:20px;bottom:20px;z-index:120;display:flex;flex-direction:column;gap:9px;pointer-events:none}
+.toast{display:flex;align-items:flex-start;gap:10px;background:var(--white);border:1px solid var(--line-2);
+  border-left:3px solid var(--accent);border-radius:var(--radius);box-shadow:var(--shadow-lift);
+  padding:11px 15px;font-size:13px;color:var(--ink);max-width:380px;pointer-events:auto;animation:toast-in .18s ease-out}
+.toast.ok{border-left-color:#059669}
+.toast.err{border-left-color:var(--rose)}
+.toast i{margin-top:2px;color:var(--accent)}
+.toast.ok i{color:#059669}
+.toast.err i{color:var(--rose)}
+.toast b{display:block;font-weight:600;margin-bottom:2px}
+.toast span{color:var(--faint);font-size:12.5px;line-height:1.45}
+@keyframes toast-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}

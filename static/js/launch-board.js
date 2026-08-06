@@ -600,18 +600,28 @@
     } catch(e) { box.innerHTML = ""; }
   }
   async function addCredential(){
-    const type = prompt("Licence type (RN, LPN, MD, PT…):", "");
-    if (!type || !type.trim()) return;
-    const st = prompt("Issuing state (2 letters, e.g. TX):", "");
-    if (!st || !st.trim()) return;
-    const num = prompt("Licence number (optional):", "") || "";
-    const exp = prompt("Expiry date (YYYY-MM-DD, optional):", "") || null;
+    const v = await formDialog({
+      title: "Add a licence",
+      intro: "Recruiters filter by licence and state. An expiry date lets us warn "
+           + "you before it lapses.",
+      submit: "Add licence",
+      fields: [
+        {name:"license_type", label:"Licence type", required:true, placeholder:"RN, LPN, MD, PT…"},
+        {name:"state_code", label:"Issuing state", required:true, placeholder:"TX", max:2},
+        {name:"license_number", label:"Licence number", hint:"optional"},
+        {name:"expiry_date", label:"Expires", type:"date", hint:"optional", wide:true},
+      ],
+    });
+    if (!v) return;
     try {
       await post("/api/profiles/me/licenses", {
-        license_type: type.trim().toUpperCase(), state_code: st.trim().toUpperCase(),
-        license_number: num.trim(), expiry_date: exp || null});
+        license_type: v.license_type.toUpperCase(),
+        state_code: v.state_code.toUpperCase(),
+        license_number: v.license_number || "",
+        expiry_date: v.expiry_date || null});
+      toast("Added to your profile.", {title:"Licence saved"});
       loadCredentials();
-    } catch(e) { alert(e.message); }
+    } catch(e) { toast(e.message, {title:"Could not add licence", kind:"err"}); }
   }
 
   function openProfileForm(){
@@ -1206,6 +1216,90 @@
     wireAi();
     wireExtension();
   }
+  // --- Dialogs & toasts ----------------------------------------------------
+  // Browser prompt() chains were the worst of the interface: adding a licence
+  // meant four sequential dialogs with no way back and no validation. These
+  // collect a whole form at once and report the result without blocking.
+
+  function toast(message, {title = "", kind = "ok", ms = 4200} = {}){
+    const root = $("#toast-root");
+    if (!root) return;
+    const icon = kind === "err" ? "fa-circle-exclamation"
+               : kind === "info" ? "fa-circle-info" : "fa-circle-check";
+    const el = document.createElement("div");
+    el.className = "toast " + kind;
+    el.innerHTML = `<i class="fas ${icon}"></i><div>${
+      title ? `<b>${esc(title)}</b>` : ""}<span>${esc(message)}</span></div>`;
+    root.appendChild(el);
+    setTimeout(() => {
+      el.style.transition = "opacity .2s"; el.style.opacity = "0";
+      setTimeout(() => el.remove(), 220);
+    }, ms);
+  }
+
+  function formDialog({title, intro = "", fields = [], submit = "Save"}){
+    return new Promise(resolve => {
+      const control = f => {
+        const common = `name="${f.name}" class="input"${f.required ? " required" : ""}` +
+                       `${f.placeholder ? ` placeholder="${esc(f.placeholder)}"` : ""}`;
+        const val = f.value == null ? "" : String(f.value);
+        if (f.type === "select")
+          return `<select ${common}>${(f.options || []).map(o => {
+            const v = Array.isArray(o) ? o[0] : o, label = Array.isArray(o) ? o[1] : o;
+            return `<option value="${esc(v)}"${String(val) === String(v) ? " selected" : ""}>${esc(label)}</option>`;
+          }).join("")}</select>`;
+        if (f.type === "textarea") return `<textarea ${common} rows="3">${esc(val)}</textarea>`;
+        if (f.type === "checkbox") return `<input type="checkbox" name="${f.name}"${f.value ? " checked" : ""}>`;
+        return `<input type="${f.type || "text"}" ${common} value="${esc(val)}"${
+          f.step ? ` step="${f.step}"` : ""}${f.max ? ` maxlength="${f.max}"` : ""}>`;
+      };
+      $("#modal-root").innerHTML = `
+        <div class="modal"><div class="modal-card form-card">
+          <div class="modal-head"><strong>${esc(title)}</strong>
+            <button class="icon-btn" data-dlg-x><i class="fas fa-xmark"></i></button></div>
+          <form id="dlg-form"><div class="dlg-body">
+            ${intro ? `<p class="dlg-intro">${esc(intro)}</p>` : ""}
+            <div class="dlg-grid">${fields.map(f => f.type === "checkbox"
+              ? `<label class="dlg-check">${control(f)}${esc(f.label)}</label>`
+              : `<label class="${f.wide ? "dlg-wide" : ""}">${esc(f.label)}${
+                  f.hint ? ` <span class="dlg-hint">${esc(f.hint)}</span>` : ""}${control(f)}</label>`
+            ).join("")}</div></div>
+          <div class="dlg-foot">
+            <span class="dlg-error" id="dlg-error"></span><span class="spacer"></span>
+            <button type="button" class="btn ghost" data-dlg-x>Cancel</button>
+            <button type="submit" class="btn primary">${esc(submit)}</button>
+          </div></form>
+        </div></div>`;
+      let settled = false;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener("keydown", onKey);
+        $("#modal-root").innerHTML = "";
+        resolve(value);
+      };
+      const onKey = e => { if (e.key === "Escape") finish(null); };
+      document.addEventListener("keydown", onKey);
+      $$("#modal-root [data-dlg-x]").forEach(b => b.onclick = () => finish(null));
+      $("#modal-root .modal").addEventListener("click", e => {
+        if (e.target.classList.contains("modal")) finish(null);
+      });
+      $("#dlg-form").addEventListener("submit", e => {
+        e.preventDefault();
+        const out = {};
+        fields.forEach(f => {
+          const el = e.target.elements[f.name];
+          if (el) out[f.name] = f.type === "checkbox" ? el.checked : (el.value || "").trim();
+        });
+        const missing = fields.find(f => f.required && !out[f.name]);
+        if (missing){ $("#dlg-error").textContent = missing.label + " is required."; return; }
+        finish(out);
+      });
+      const first = $("#dlg-form .input");
+      if (first) setTimeout(() => first.focus(), 40);
+    });
+  }
+
   function debounce(fn, ms){ let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; }
 
   // --- Messaging -----------------------------------------------------------
