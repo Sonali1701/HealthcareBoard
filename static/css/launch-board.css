@@ -816,3 +816,6 @@ tr.is-selected{background:var(--accent-soft)}
 .privacy-state.off{background:var(--soft);color:var(--muted);border:1px solid var(--line)}
 .btn.danger{background:#fff1f4;border-color:#fecdd3;color:var(--rose)}
 .btn.danger:hover{background:var(--rose);border-color:var(--rose);color:#fff}
+
+/* "Load earlier messages" sits above the first bubble in a long thread. */
+.msg-older-wrap{display:flex;justify-content:center;padding:4px 0 10px}

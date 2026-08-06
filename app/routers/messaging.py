@@ -164,6 +164,33 @@ def unread_count(user: CurrentUser, db: DbSession):
     return {"unread": total, "threads": threads}
 
 
+@router.get("/can-message/{profile_id}")
+def can_message(profile_id: str, user: CurrentUser, db: DbSession):
+    """Whether this candidate is reachable in-app, and why not if they are not.
+
+    Almost every profile came from an imported résumé and has no account, so
+    the UI needs to know before it offers a Message button — otherwise it
+    invites an action that always fails.
+    """
+    profile = db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if not profile.user_id:
+        return {"can_message": False,
+                "reason": "This candidate has no account yet. Release their contact "
+                          "details and reach them by email instead."}
+    if profile.user_id == user.user_id:
+        return {"can_message": False, "reason": "That is your own profile."}
+    existing = db.scalar(
+        select(MessageThread).where(
+            or_(and_(MessageThread.participant_a_id == user.user_id,
+                     MessageThread.participant_b_id == profile.user_id),
+                and_(MessageThread.participant_a_id == profile.user_id,
+                     MessageThread.participant_b_id == user.user_id))))
+    return {"can_message": True,
+            "thread_id": existing.thread_id if existing else None}
+
+
 @router.post("/threads", response_model=ThreadDetail, status_code=201)
 def create_thread(body: ThreadCreate, user: CurrentUser, db: DbSession):
     recipient_id = body.recipient_id
@@ -211,7 +238,9 @@ def create_thread(body: ThreadCreate, user: CurrentUser, db: DbSession):
 
 
 @router.get("/threads/{thread_id}", response_model=ThreadDetail)
-def get_thread(thread_id: str, user: CurrentUser, db: DbSession):
+def get_thread(thread_id: str, user: CurrentUser, db: DbSession,
+               limit: int = Query(50, ge=1, le=200),
+               before: str | None = Query(None, description="Load history older than this message id")):
     thread = _thread_or_404(db, thread_id, user)
     # Mark inbound messages read.
     for m in db.scalars(
@@ -222,7 +251,7 @@ def get_thread(thread_id: str, user: CurrentUser, db: DbSession):
         m.is_read = True
         m.read_at = utcnow()
     db.commit()
-    return _thread_detail(db, thread, user)
+    return _thread_detail(db, thread, user, limit=limit, before=before)
 
 
 @router.post("/threads/{thread_id}/messages", response_model=MessageOut, status_code=201)
@@ -266,22 +295,44 @@ def _persist_message(db: DbSession, thread: MessageThread, user: CurrentUser,
     return msg
 
 
-def _thread_detail(db: DbSession, thread: MessageThread, user: CurrentUser) -> ThreadDetail:
-    messages = db.scalars(
-        select(Message).where(Message.thread_id == thread.thread_id)
-        .order_by(Message.created_at.asc())
-    ).all()
+def _thread_detail(db: DbSession, thread: MessageThread, user: CurrentUser,
+                   limit: int = 50, before: str | None = None) -> ThreadDetail:
+    """Newest `limit` messages, oldest-first for rendering.
+
+    The whole thread used to be re-fetched on every open and on every poll
+    tick. That is fine at five messages and wasteful at five hundred, so the
+    read is paged: newest first in SQL, reversed for display, with `before`
+    walking backwards through older history.
+    """
+    total = db.scalar(
+        select(func.count()).select_from(Message)
+        .where(Message.thread_id == thread.thread_id)) or 0
+
+    window = select(Message).where(Message.thread_id == thread.thread_id)
+    if before:
+        anchor = db.get(Message, before)
+        if anchor:
+            window = window.where(Message.created_at < anchor.created_at)
+    newest = db.scalars(
+        window.order_by(Message.created_at.desc()).limit(limit + 1)).all()
+    has_more = len(newest) > limit
+    messages = list(reversed(newest[:limit]))
     other_id = _other(thread, user)
     who = _people(db, [other_id]).get(other_id) or {}
     detail = ThreadDetail.model_validate(thread)
     detail.messages = [MessageOut.model_validate(m) for m in messages]
-    detail.unread_count = sum(
-        1 for m in messages if m.recipient_id == user.user_id and not m.is_read)
+    detail.total_messages = total
+    detail.has_more = has_more
+    detail.unread_count = db.scalar(
+        select(func.count()).select_from(Message).where(
+            Message.thread_id == thread.thread_id,
+            Message.recipient_id == user.user_id,
+            Message.is_read.is_(False))) or 0
     detail.other_name = who.get("name", "Unknown")
     detail.other_role = who.get("role")
     detail.other_initials = who.get("initials", "?")
-    if messages:
-        last = messages[-1]
+    if newest:
+        last = newest[0]            # newest-first ordering
         detail.last_message = last.body or last.kind.value.replace("_", " ").title()
         detail.last_message_kind = last.kind
         detail.last_sender_is_me = last.sender_id == user.user_id

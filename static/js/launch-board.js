@@ -1317,8 +1317,68 @@
         <div class="msg-meta">${esc(shortTime(m.created_at))}${mine && m.is_read ? " · Read" : ""}</div></div>
       </div>`;
     }).join("");
-    box.innerHTML = html || `<div class="msg-system">No messages yet — say hello.</div>`;
+    const older = detail.has_more
+      ? `<button class="btn ghost small" id="msg-older" data-before="${
+           (detail.messages[0] || {}).message_id || ""}">Load earlier messages</button>`
+      : "";
+    box.innerHTML = (older ? `<div class="msg-older-wrap">${older}</div>` : "")
+                  + (html || `<div class="msg-system">No messages yet — say hello.</div>`);
     box.scrollTop = box.scrollHeight;
+    const btn = $("#msg-older");
+    if (btn) btn.onclick = () => loadOlderMessages(btn.dataset.before);
+  }
+
+  // Older history is prepended, keeping the reader where they were rather than
+  // jumping them to the top of the thread.
+  // Starting a conversation existed in the API and had no caller. Reachability
+  // is checked first: almost every profile is an imported résumé with no
+  // account, and offering a button that always fails is worse than none.
+  async function messageCandidate(profileId){
+    try {
+      const check = await get(`/api/messages/can-message/${profileId}`);
+      if (!check.can_message) return toastOrAlert(check.reason);
+      if (check.thread_id){
+        showPage("messages");
+        setTimeout(() => openThread(check.thread_id), 400);
+        return;
+      }
+      const body = prompt("Send a first message:", "");
+      if (!body || !body.trim()) return;
+      const thread = await post("/api/messages/threads",
+                                {profile_id: profileId, body: body.trim()});
+      showPage("messages");
+      setTimeout(() => openThread(thread.thread_id), 400);
+    } catch(e) { toastOrAlert(e.message || "Could not start a conversation."); }
+  }
+  // Small shim so this works before the toast system lands in the polish pass.
+  function toastOrAlert(msg){ alert(msg); }
+
+  async function loadOlderMessages(beforeId){
+    if (!S.activeThread || !beforeId) return;
+    const box = $("#msg-bubbles");
+    const heightBefore = box.scrollHeight;
+    try {
+      const d = await get(`/api/messages/threads/${S.activeThread}?before=${beforeId}&limit=50`);
+      const me = S.user && S.user.user_id;
+      const older = (d.messages || []).map(m => {
+        const mine = m.sender_id === me;
+        if (m.kind && m.kind !== "text")
+          return `<div class="msg-system"><i class="fas fa-circle-info"></i> ${esc(m.body || m.kind)}</div>`;
+        return `<div class="msg-row ${mine ? "me" : "them"}">
+          <div><div class="msg-bubble">${esc(m.body || "")}</div>
+          <div class="msg-meta">${esc(shortTime(m.created_at))}</div></div></div>`;
+      }).join("");
+      const wrap = $(".msg-older-wrap");
+      if (wrap){
+        wrap.outerHTML = (d.has_more
+          ? `<div class="msg-older-wrap"><button class="btn ghost small" id="msg-older" data-before="${
+              (d.messages[0] || {}).message_id || ""}">Load earlier messages</button></div>`
+          : "") + older;
+        const btn = $("#msg-older");
+        if (btn) btn.onclick = () => loadOlderMessages(btn.dataset.before);
+      }
+      box.scrollTop = box.scrollHeight - heightBefore;
+    } catch(e) { /* leave what is already shown */ }
   }
 
   async function openThread(id, {quiet=false} = {}){
@@ -2124,6 +2184,7 @@
       </td>
       <td class="td-actions">
         <button class="btn small" data-resume="${m.profile_id}" title="View résumé"><i class="fas fa-file-lines"></i></button>
+        <button class="btn small" data-message="${m.profile_id}" title="Message this candidate"><i class="fas fa-comment-dots"></i></button>
         <button class="btn small" data-submit="${m.profile_id}" title="Submit to a client"><i class="fas fa-share-from-square"></i></button>
         <button class="btn small" data-pool-remove="${m.profile_id}" title="Remove from pool"><i class="fas fa-xmark"></i></button>
       </td>

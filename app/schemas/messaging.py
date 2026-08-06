@@ -69,6 +69,10 @@ class ThreadSummary(ThreadOut):
 
 class ThreadDetail(ThreadSummary):
     messages: list[MessageOut] = Field(default_factory=list)
+    # A long thread is loaded newest-last in pages; `has_more` tells the client
+    # there is older history above what it holds.
+    total_messages: int = 0
+    has_more: bool = False
 
 
 class ATSStageUpdate(BaseModel):
