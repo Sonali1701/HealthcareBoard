@@ -700,10 +700,19 @@
     } catch(e) { $("#employer-panel").innerHTML = loading("Could not load employer dashboard."); }
   }
   async function createOrg(){
-    const name = prompt("Organization name:", "");
-    if (!name || !name.trim()) return;
-    try { await post("/api/employers", {org_name: name.trim()}); loadEmployer(); }
-    catch(e) { alert(e.message); }
+    const v = await formDialog({
+      title: "Create your organization",
+      intro: "Jobs are posted under an organization, and it is what groups your team.",
+      submit: "Create",
+      fields: [{name:"org_name", label:"Organization name", required:true, wide:true,
+                placeholder:"Radixsol Staffing"}],
+    });
+    if (!v) return;
+    try {
+      await post("/api/employers", {org_name: v.org_name});
+      toast("You can post jobs now.", {title:"Organization created"});
+      loadEmployer();
+    } catch(e) { toast(e.message, {title:"Could not create", kind:"err"}); }
   }
   async function loadEmployerJobs(){
     const box = $("#employer-jobs");
@@ -727,28 +736,51 @@
     } catch(e) { box.innerHTML = loading("Could not load your jobs."); }
   }
   async function postJob(){
-    if (!S.employer) return alert("Create an organization first.");
-    const title = prompt("Job title (e.g. \"ICU Registered Nurse\"):", "");
-    if (!title || !title.trim()) return;
-    const city = prompt("City:", "") || null;
-    const state = (prompt("State code (e.g. TX):", "") || "").trim().toUpperCase() || null;
-    const pay = parseFloat(prompt("Max pay rate per hour (numbers only):", "") || "");
-    const spec = prompt("Specialty (optional, e.g. ICU):", "") || null;
-    const prof = prompt("License / profession (optional, e.g. RN):", "") || null;
+    if (!S.employer) return toast("Create an organization first.", {kind:"err"});
+    const v = await formDialog({
+      title: "Post a job",
+      intro: "A role with a licence and specialty scores far better against candidates "
+           + "than a bare title — those are what the matching engine ranks on.",
+      submit: "Post job",
+      fields: [
+        {name:"title", label:"Job title", required:true, wide:true,
+         placeholder:"ICU Registered Nurse"},
+        {name:"profession_type", label:"Licence required", placeholder:"RN"},
+        {name:"specialty", label:"Specialty", placeholder:"ICU"},
+        {name:"city", label:"City", placeholder:"Austin"},
+        {name:"state_code", label:"State", placeholder:"TX", max:2},
+        {name:"pay_rate_max", label:"Pay rate ($/hr)", type:"number", step:"1"},
+        {name:"job_type", label:"Type", type:"select",
+         options:[["travel","Travel"],["staff","Staff"],["per_diem","Per diem"],["contract","Contract"]]},
+        {name:"is_urgent", label:"Mark as urgent", type:"checkbox"},
+      ],
+    });
+    if (!v) return;
+    const body = {title: v.title, job_type: v.job_type || "travel",
+                  pay_unit: "hourly", is_urgent: !!v.is_urgent};
+    if (v.profession_type) body.profession_type = v.profession_type.toUpperCase();
+    if (v.specialty) body.specialty = v.specialty;
+    if (v.city) body.city = v.city;
+    if (v.state_code) body.state_code = v.state_code.toUpperCase();
+    const pay = parseFloat(v.pay_rate_max);
+    if (!isNaN(pay)) { body.pay_rate_max = pay; body.pay_rate_min = pay; }
     try {
-      const body = {title: title.trim(), city, state_code: state, specialty: spec,
-                    profession_type: prof, job_type: "travel", pay_unit: "hourly"};
-      if (!isNaN(pay)) { body.pay_rate_max = pay; body.pay_rate_min = pay; }
       await post(`/api/jobs?employer_id=${encodeURIComponent(S.employer.employer_id)}`, body);
-      alert("Job posted.");
+      toast(`"${v.title}" is live on the board.`, {title:"Job posted"});
       loadEmployerJobs();
       loadJobs();
-    } catch(e) { alert(e.message); }
+    } catch(e) { toast(e.message, {title:"Could not post job", kind:"err"}); }
   }
 
   async function applyJob(id){
-    try { await post(`/api/jobs/${id}/apply`, {}); alert("Application submitted."); loadDashboard(); }
-    catch(e) { alert(e.status === 409 ? "You already applied to this job." : e.message); }
+    try {
+      await post(`/api/jobs/${id}/apply`, {});
+      toast("Track it under My Applications.", {title:"Application sent"});
+      loadDashboard();
+    } catch(e) {
+      toast(e.status === 409 ? "You already applied to this job." : e.message,
+            {kind:"err"});
+    }
   }
   async function uploadResume(file){
     const fd = new FormData(); fd.append("file", file);
@@ -1430,19 +1462,25 @@
   async function messageCandidate(profileId){
     try {
       const check = await get(`/api/messages/can-message/${profileId}`);
-      if (!check.can_message) return toastOrAlert(check.reason);
+      if (!check.can_message) return toast(check.reason, {title:"Cannot message", kind:"err", ms:6000});
       if (check.thread_id){
         showPage("messages");
         setTimeout(() => openThread(check.thread_id), 400);
         return;
       }
-      const body = prompt("Send a first message:", "");
-      if (!body || !body.trim()) return;
+      const v = await formDialog({
+        title: "Start a conversation",
+        submit: "Send",
+        fields: [{name:"body", label:"First message", type:"textarea", required:true,
+                  wide:true,
+                  placeholder:"Hi — I'm recruiting for a role that looks like a fit…"}],
+      });
+      if (!v) return;
       const thread = await post("/api/messages/threads",
-                                {profile_id: profileId, body: body.trim()});
+                                {profile_id: profileId, body: v.body});
       showPage("messages");
       setTimeout(() => openThread(thread.thread_id), 400);
-    } catch(e) { toastOrAlert(e.message || "Could not start a conversation."); }
+    } catch(e) { toast(e.message || "Could not start a conversation.", {kind:"err"}); }
   }
   // Small shim so this works before the toast system lands in the polish pass.
   function toastOrAlert(msg){ alert(msg); }
@@ -1627,15 +1665,24 @@
     } catch(e) { box.innerHTML = ""; }
   }
   async function newJobAlert(){
-    const name = prompt("Name this alert (e.g. \"ICU roles in Texas\"):", "");
-    if (!name || !name.trim()) return;
-    const spec = prompt("Specialty (optional, e.g. ICU):", "") || "";
-    const st = prompt("State (optional, 2 letters e.g. TX):", "") || "";
-    const pay = prompt("Minimum hourly rate (optional):", "") || "";
+    const v = await formDialog({
+      title: "New job alert",
+      intro: "We re-check your criteria and tell you when new roles appear.",
+      submit: "Create alert",
+      fields: [
+        {name:"name", label:"Alert name", required:true, wide:true,
+         placeholder:"ICU roles in Texas"},
+        {name:"specialty", label:"Specialty", placeholder:"ICU"},
+        {name:"state_code", label:"State", placeholder:"TX", max:2},
+        {name:"pay_min", label:"Minimum $/hr", type:"number", step:"1"},
+      ],
+    });
+    if (!v) return;
     const params = {};
-    if (spec.trim()) params.specialty = spec.trim();
-    if (st.trim()) params.state_code = st.trim().toUpperCase();
-    if (pay.trim() && !isNaN(Number(pay))) params.pay_min = Number(pay);
+    if (v.specialty) params.specialty = v.specialty;
+    if (v.state_code) params.state_code = v.state_code.toUpperCase();
+    if (v.pay_min && !isNaN(Number(v.pay_min))) params.pay_min = Number(v.pay_min);
+    const name = v.name;
     try {
       const r = await post("/api/saved-searches", {name:name.trim(), kind:"jobs", params, notify:true});
       alert(`Alert saved — ${r.matches} role${r.matches === 1 ? "" : "s"} match right now.\n`
@@ -1691,13 +1738,25 @@
     } catch(e) { box.innerHTML = loading("Could not load submissions."); }
   }
   async function submitCandidate(profileId){
-    const bill = prompt("Bill rate to the client ($/hr, optional):", "") || "";
-    const pay = prompt("Pay rate to the candidate ($/hr, optional):", "") || "";
-    const facility = prompt("Client facility (optional):", "") || "";
+    const v = await formDialog({
+      title: "Submit to a client",
+      intro: "Records what you put forward so the desk can see it and the margin "
+           + "is tracked.",
+      submit: "Submit candidate",
+      fields: [
+        {name:"facility", label:"Client facility", wide:true,
+         placeholder:"Genesis - Mid-America"},
+        {name:"bill_rate", label:"Bill rate ($/hr)", type:"number", step:"1"},
+        {name:"pay_rate", label:"Pay rate ($/hr)", type:"number", step:"1"},
+        {name:"note", label:"Note", type:"textarea", hint:"optional", wide:true},
+      ],
+    });
+    if (!v) return;
     const body = {profile_id: profileId};
-    if (bill && !isNaN(Number(bill))) body.bill_rate = Number(bill);
-    if (pay && !isNaN(Number(pay))) body.pay_rate = Number(pay);
-    if (facility.trim()) body.facility = facility.trim();
+    if (v.bill_rate && !isNaN(Number(v.bill_rate))) body.bill_rate = Number(v.bill_rate);
+    if (v.pay_rate && !isNaN(Number(v.pay_rate))) body.pay_rate = Number(v.pay_rate);
+    if (v.facility) body.facility = v.facility;
+    if (v.note) body.note = v.note;
     try {
       await post("/api/submissions", body);
       alert("Submitted. Track it on the Submissions page.");
@@ -1871,40 +1930,63 @@
     } catch(e) { box.innerHTML = loading("Could not load outreach."); }
   }
   async function newTemplate(){
-    const name = prompt("Template name (e.g. \"ICU intro\"):", "");
-    if (!name || !name.trim()) return;
-    const subject = prompt("Subject line — merge fields allowed, e.g. {{first_name}}:",
-                           "{{specialty}} roles near {{city}}");
-    if (!subject) return;
-    const body = prompt("Message body:",
-      "Hi {{first_name}},\n\nI'm recruiting for {{specialty}} roles near {{city}}. "
-      + "With your {{years_experience}} years of experience I thought it might be a fit.\n\n"
-      + "Would you be open to a quick chat?\n\nBest regards");
-    if (!body) return;
-    try { await post("/api/outreach/templates", {name:name.trim(), subject, body}); loadOutreach(); }
-    catch(e) { alert(e.status === 409 ? "You already have a template with that name." : e.message); }
+    const DEFAULT_BODY = ["Hi {{first_name}},", "",
+      "I'm recruiting for {{specialty}} roles near {{city}}. With your "
+      + "{{years_experience}} years of experience I thought it might be a fit.", "",
+      "Would you be open to a quick chat?"].join("\n");
+    const v = await formDialog({
+      title: "New email template",
+      intro: "Merge fields like {{first_name}}, {{specialty}} and {{city}} are filled "
+           + "per recipient when the campaign sends.",
+      submit: "Save template",
+      fields: [
+        {name:"name", label:"Template name", required:true, wide:true, placeholder:"ICU intro"},
+        {name:"subject", label:"Subject line", required:true, wide:true,
+         value:"{{specialty}} roles near {{city}}"},
+        {name:"body", label:"Message", type:"textarea", required:true, wide:true,
+         value:DEFAULT_BODY},
+      ],
+    });
+    if (!v) return;
+    try {
+      await post("/api/outreach/templates", {name:v.name, subject:v.subject, body:v.body});
+      toast("Ready to use in a campaign.", {title:"Template saved"});
+      loadOutreach();
+    } catch(e) {
+      toast(e.status === 409 ? "You already have a template with that name." : e.message,
+            {title:"Could not save", kind:"err"});
+    }
   }
   async function newCampaign(){
     if (!S.pools.length){
       try { S.pools = (await get("/api/pools")).items || []; } catch(e) { S.pools = []; }
     }
-    if (!S.pools.length) return alert("Create a talent pool first — a campaign sends to a pool.");
-    if (!S.templates.length) return alert("Create a template first.");
-    const pl = prompt(`Send to which pool?\n\n${S.pools.map((p,i) => `${i+1}. ${p.name} (${p.member_count})`).join("\n")}\n\nEnter a number:`, "1");
-    const pool = S.pools[parseInt(pl, 10) - 1];
-    if (!pool) return;
-    const tl = prompt(`Use which template?\n\n${S.templates.map((t,i) => `${i+1}. ${t.name}`).join("\n")}\n\nEnter a number:`, "1");
-    const tmpl = S.templates[parseInt(tl, 10) - 1];
-    if (!tmpl) return;
-    const name = prompt("Campaign name:", `${pool.name} — ${tmpl.name}`);
-    if (!name || !name.trim()) return;
+    if (!S.pools.length)
+      return toast("Create a talent pool first — a campaign sends to a pool.", {kind:"err"});
+    if (!S.templates.length) return toast("Create a template first.", {kind:"err"});
+    const v = await formDialog({
+      title: "New campaign",
+      intro: "Only candidates whose contact you have released can be emailed — the "
+           + "rest are skipped automatically.",
+      submit: "Build campaign",
+      fields: [
+        {name:"name", label:"Campaign name", required:true, wide:true,
+         value:S.pools[0].name + " — " + S.templates[0].name},
+        {name:"pool_id", label:"Send to pool", type:"select",
+         options:S.pools.map(p => [p.pool_id, p.name + " (" + p.member_count + ")"])},
+        {name:"template_id", label:"Template", type:"select",
+         options:S.templates.map(t => [t.template_id, t.name])},
+      ],
+    });
+    if (!v) return;
     try {
       const r = await post("/api/outreach/campaigns",
-        {name:name.trim(), pool_id: pool.pool_id, template_id: tmpl.template_id});
-      alert(`Campaign built.\n${r.ready_to_send} ready to send, ${r.skipped} skipped.\n\n`
-            + `Skipped candidates have no released contact, no email, or opted out.`);
+        {name:v.name, pool_id:v.pool_id, template_id:v.template_id});
+      toast(r.ready_to_send + " ready to send, " + r.skipped
+            + " skipped (no released contact, no email, or opted out).",
+            {title:"Campaign built", ms:6500});
       loadOutreach();
-    } catch(e) { alert(e.message); }
+    } catch(e) { toast(e.message, {title:"Could not build campaign", kind:"err"}); }
   }
   async function sendCampaign(id){
     if (!confirm("Send this campaign now?")) return;
@@ -2029,8 +2111,15 @@
     renderSavedChips();
   }
   async function saveCurrentSearch(){
-    const name = prompt("Name this search (e.g. \"ICU RNs in Texas\"):", "");
-    if (!name || !name.trim()) return;
+    const v = await formDialog({
+      title: "Save this search",
+      intro: "We'll alert you when new candidates match these filters.",
+      submit: "Save search",
+      fields: [{name:"name", label:"Name", required:true, wide:true,
+                placeholder:"ICU RNs in Texas"}],
+    });
+    if (!v) return;
+    const name = v.name;
     try {
       await post("/api/saved-searches", {name: name.trim(), params: currentSearchParams(), notify: true});
       loadSavedSearches();
@@ -2189,24 +2278,38 @@
     if (!S.pools.length){
       try { S.pools = (await get("/api/pools")).items || []; } catch(e) { S.pools = []; }
     }
-    const names = S.pools.map((p,i) => `${i+1}. ${p.name}`).join("\n");
-    const answer = prompt(
-      `Add ${profileIds.length} candidates to which pool?\n\n${names || "(no pools yet)"}\n\n` +
-      `Enter a number, or type a new pool name:`, S.pools.length ? "1" : "");
-    if (answer === null || !answer.trim()) return;
+    // Picking a pool by typing its number in a list was the worst of the
+    // prompt flows — this is a dropdown of real pools, with "new" as an option.
+    const options = [...S.pools.map(p => [p.pool_id, p.name + " (" + p.member_count + ")"]),
+                     ["__new__", "+ Create a new pool"]];
+    const v = await formDialog({
+      title: "Add " + profileIds.length + " candidate"
+             + (profileIds.length === 1 ? "" : "s") + " to a pool",
+      submit: "Add to pool",
+      fields: [
+        {name:"pool_id", label:"Pool", type:"select", options, wide:true},
+        {name:"new_name", label:"New pool name", hint:"only if creating one", wide:true},
+      ],
+    });
+    if (!v) return;
     try {
-      let pool = S.pools[parseInt(answer, 10) - 1];
+      let pool = S.pools.find(p => p.pool_id === v.pool_id);
       if (!pool){
-        pool = await post("/api/pools", {name: answer.trim(), color:"blue"});
+        if (!v.new_name) return toast("Give the new pool a name.", {kind:"err"});
+        pool = await post("/api/pools", {name: v.new_name, color:"blue"});
         S.pools.unshift(pool);
       }
       const res = await post(`/api/pools/${pool.pool_id}/members`, {profile_ids: profileIds});
       profileIds.forEach(pid => S.poolMembership.set(pid,
         [...new Set([...(S.poolMembership.get(pid) || []), pool.pool_id])]));
       paintPoolButtons();
-      alert(`Added ${res.added} candidate${res.added === 1 ? "" : "s"} to "${pool.name}"`
-            + (res.skipped ? ` (${res.skipped} already there).` : "."));
-    } catch(e) { alert(e.status === 409 ? "You already have a pool with that name." : e.message); }
+      toast("Added " + res.added + " candidate" + (res.added === 1 ? "" : "s")
+            + (res.skipped ? " (" + res.skipped + " already there)." : "."),
+            {title: pool.name});
+    } catch(e) {
+      toast(e.status === 409 ? "You already have a pool with that name." : e.message,
+            {kind:"err"});
+    }
   }
 
   // --- Talent pools --------------------------------------------------------
@@ -2319,8 +2422,14 @@
       });
       $$("#pools-body [data-note-for]").forEach(b => b.onclick = async () => {
         const row = (d.items || []).find(x => x.profile_id === b.dataset.noteFor);
-        const note = prompt("Note about this candidate:", (row && row.note) || "");
-        if (note === null) return;
+        const v = await formDialog({
+          title: "Note about this candidate",
+          submit: "Save note",
+          fields: [{name:"note", label:"Note", type:"textarea", wide:true,
+                    value:(row && row.note) || ""}],
+        });
+        if (!v) return;
+        const note = v.note;
         try { await patch(`/api/pools/${poolId}/members/${b.dataset.noteFor}`, {note}); openPool(poolId, S.poolStage); }
         catch(err) { alert(err.message); }
       });
@@ -2351,10 +2460,23 @@
   }
 
   async function createPool(){
-    const name = prompt("Name this pool (e.g. \"ICU travel RNs — Q3\"):", "");
-    if (!name || !name.trim()) return;
+    const v = await formDialog({
+      title: "New talent pool",
+      intro: "A shortlist you can move through stages, export, and email as a campaign.",
+      submit: "Create pool",
+      fields: [
+        {name:"name", label:"Pool name", required:true, wide:true,
+         placeholder:"ICU travel RNs — Q3"},
+        {name:"description", label:"Description", hint:"optional", wide:true},
+        {name:"visibility", label:"Who can work it", type:"select",
+         options:[["private","Only me"],["team","Everyone at my agency"]]},
+      ],
+    });
+    if (!v) return;
     try {
-      await post("/api/pools", {name:name.trim(), color:"blue"});
+      await post("/api/pools", {name:v.name, description:v.description || null,
+                                visibility:v.visibility, color:"blue"});
+      toast("Save candidates to it from the directory.", {title:v.name});
       loadPools();
     } catch(e) { alert(e.status === 409 ? "You already have a pool with that name." : e.message); }
   }
@@ -2424,10 +2546,19 @@
     });
     menu.querySelector("[data-new-pool]").onclick = async () => {
       closePoolMenu();
-      const name = prompt("Name this pool:", "");
-      if (!name || !name.trim()) return;
+      const v = await formDialog({
+        title: "New talent pool",
+        submit: "Create and add",
+        fields: [
+          {name:"name", label:"Pool name", required:true, wide:true},
+          {name:"visibility", label:"Who can work it", type:"select",
+           options:[["private","Only me"],["team","Everyone at my agency"]]},
+        ],
+      });
+      if (!v) return;
       try {
-        const pool = await post("/api/pools", {name:name.trim(), color:"blue"});
+        const pool = await post("/api/pools", {name:v.name, visibility:v.visibility,
+                                               color:"blue"});
         S.pools.unshift(pool);
         S.poolMembership.set(profileId, [...(S.poolMembership.get(profileId) || []), pool.pool_id]);
         paintPoolButtons();
