@@ -20,7 +20,8 @@
     // Saved searches (standing sourcing criteria + their alerts)
     searches:[],
     // Duplicates review + employer portal
-    dupes:[], employer:null, templates:[], credits:null
+    dupes:[], employer:null, templates:[], credits:null,
+    jobAlerts:[], subStatuses:[]
   };
 
   const $ = (sel, root=document) => root.querySelector(sel);
@@ -116,6 +117,7 @@
 
   function applyRole(){
     $$(".recruiter-only").forEach(el => el.classList.toggle("hidden", !isRecruiter()));
+    $$(".seeker-only").forEach(el => el.classList.toggle("hidden", isRecruiter()));
     if (!isRecruiter() && $("#page-providers").classList.contains("active")) showPage("dashboard");
   }
 
@@ -179,7 +181,7 @@
 
   function showPage(id){
     if ((id === "providers" || id === "ai" || id === "extension" || id === "pools"
-         || id === "matching" || id === "outreach" || id === "credits") && !isRecruiter()) id = "dashboard";
+         || id === "matching" || id === "outreach" || id === "credits" || id === "submissions") && !isRecruiter()) id = "dashboard";
     if (id !== "messages") stopMessagePolling();
     try { localStorage.setItem("hb_page", id); } catch(e) {}   // restored on refresh
     $$(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + id));
@@ -198,6 +200,8 @@
     if (id === "analytics") loadAnalytics();
     if (id === "outreach") loadOutreach();
     if (id === "credits") loadCredits();
+    if (id === "applications") loadApplications();
+    if (id === "submissions") loadSubmissions();
   }
 
   function jobRow(j){
@@ -535,6 +539,7 @@
     </div>`;
     loadCompletion();
     loadCredentials();
+    loadPrivacy();
   }
   // Tells a professional exactly what is still missing. An incomplete profile
   // is not a cosmetic problem here: the matching engine ranks on licence,
@@ -1151,6 +1156,7 @@
       const apply = e.target.closest("[data-apply]"); if (apply) applyJob(apply.dataset.apply);
       const resume = e.target.closest("[data-resume]"); if (resume) viewResume(resume.dataset.resume);
       const release = e.target.closest("[data-release]"); if (release) releaseContact(release.dataset.release);
+      const sub = e.target.closest("[data-submit]"); if (sub) submitCandidate(sub.dataset.submit);
       const pick = e.target.closest("[data-pick]");
       if (pick) togglePick(pick.dataset.pick, pick.checked);
       const source = e.target.closest("[data-source]"); if (source) sourceForJob(source.dataset.source);
@@ -1184,6 +1190,8 @@
     if (pfCancel) pfCancel.onclick = closeProfileForm;
     const pfForm = $("#profile-form");
     if (pfForm) pfForm.addEventListener("submit", saveProfile);
+    const alertNew = $("#alert-new");
+    if (alertNew) alertNew.onclick = newJobAlert;
     const searchSave = $("#search-save");
     if (searchSave) searchSave.onclick = saveCurrentSearch;
     const jobNew = $("#job-new");
@@ -1402,6 +1410,194 @@
       try { await patch(`/api/messages/threads/${S.activeThread}/ats`, {ats_stage: stage.value}); }
       catch(e) { alert(e.message); }
     };
+  }
+
+  // --- My applications (professional) --------------------------------------
+  function appCard(a){
+    const steps = (a.stages || []).map((s, i) => {
+      const done = a.stage_index != null && i <= a.stage_index;
+      return `<span class="app-step ${a.is_closed && i === 0 ? "closed" : done ? "done" : ""}">${esc(s)}</span>`;
+    }).join("");
+    const where = [a.facility, a.location].filter(Boolean).join(" · ");
+    return `<div class="app-card">
+      <div class="app-head">
+        <h3>${esc(a.title)}</h3>
+        <span class="status-pill ${a.status === "hired" ? "ok" : a.is_closed ? "no" : ""}">${esc(a.status)}</span>
+        <span class="spacer"></span>
+        ${!a.is_closed ? `<button class="btn small" data-withdraw="${a.application_id}">Withdraw</button>` : ""}
+      </div>
+      <div class="app-meta">${esc(where || "Location not listed")}
+        ${a.pay_rate_max ? ` · $${Math.round(a.pay_rate_max)}/hr` : ""}
+        · applied ${esc(shortTime(a.applied_at))}</div>
+      ${a.is_closed ? "" : `<div class="app-steps">${steps}</div>`}
+    </div>`;
+  }
+  async function loadApplications(){
+    const box = $("#apps-body");
+    box.innerHTML = loading("Loading your applications...");
+    loadJobAlerts();
+    try {
+      const d = await get("/api/applications/mine/detail");
+      const n = d.items.length;
+      $("#apps-sub").textContent = n
+        ? `${n} application${n === 1 ? "" : "s"} · ` +
+          Object.entries(d.by_status).map(([s,c]) => `${c} ${s}`).join(" · ")
+        : "Where each application stands";
+      box.innerHTML = n ? d.items.map(appCard).join("")
+        : `<div class="match-empty"><i class="fas fa-list-check"></i><h3>No applications yet</h3>
+           <p>Roles you apply to appear here, with where each one stands.</p></div>`;
+      $$("#apps-body [data-withdraw]").forEach(b => b.onclick = async () => {
+        if (!confirm("Withdraw this application?")) return;
+        try { await post(`/api/applications/${b.dataset.withdraw}/withdraw`, {}); loadApplications(); }
+        catch(e) { alert(e.message); }
+      });
+    } catch(e) { box.innerHTML = loading("Could not load your applications."); }
+  }
+
+  // --- Job alerts (professional saved searches) ----------------------------
+  async function loadJobAlerts(){
+    const box = $("#alerts-strip");
+    if (!box) return;
+    try {
+      const d = await get("/api/saved-searches?kind=jobs");
+      S.jobAlerts = d.items || [];
+      box.innerHTML = S.jobAlerts.length ? `<div class="alert-strip">${
+        S.jobAlerts.map(a => `<span class="alert-chip"><b>${esc(a.name)}</b>
+          ${a.new_matches ? `<span class="new">+${a.new_matches}</span>` : ""}
+          <button class="drop" data-alert-del="${a.search_id}" title="Delete"><i class="fas fa-xmark"></i></button>
+        </span>`).join("")}</div>` : "";
+      $$("#alerts-strip [data-alert-del]").forEach(b => b.onclick = async () => {
+        try { await del(`/api/saved-searches/${b.dataset.alertDel}`); loadJobAlerts(); }
+        catch(e) { alert(e.message); }
+      });
+    } catch(e) { box.innerHTML = ""; }
+  }
+  async function newJobAlert(){
+    const name = prompt("Name this alert (e.g. \"ICU roles in Texas\"):", "");
+    if (!name || !name.trim()) return;
+    const spec = prompt("Specialty (optional, e.g. ICU):", "") || "";
+    const st = prompt("State (optional, 2 letters e.g. TX):", "") || "";
+    const pay = prompt("Minimum hourly rate (optional):", "") || "";
+    const params = {};
+    if (spec.trim()) params.specialty = spec.trim();
+    if (st.trim()) params.state_code = st.trim().toUpperCase();
+    if (pay.trim() && !isNaN(Number(pay))) params.pay_min = Number(pay);
+    try {
+      const r = await post("/api/saved-searches", {name:name.trim(), kind:"jobs", params, notify:true});
+      alert(`Alert saved — ${r.matches} role${r.matches === 1 ? "" : "s"} match right now.\n`
+            + `We'll tell you when new ones appear.`);
+      loadJobAlerts();
+    } catch(e) { alert(e.status === 409 ? "You already have an alert with that name." : e.message); }
+  }
+
+  // --- Submissions (recruiter) ---------------------------------------------
+  function subRow(s){
+    const margin = s.margin != null
+      ? `<span class="margin-pos">$${s.margin.toFixed(0)}</span>` : `<span class="cell-none">—</span>`;
+    return `<tr>
+      <td><div class="cell-name">${esc(s.candidate)}</div>
+          <div class="cell-sub">${esc([s.profession_type, s.specialty].filter(Boolean).join(" · "))}</div></td>
+      <td>${esc(s.job_title || "—")}<div class="cell-sub">${esc(s.facility || "")}</div></td>
+      <td><select class="stage-select" data-sub-status="${s.submission_id}">
+        ${(S.subStatuses || []).map(x => `<option value="${x}"${s.status === x ? " selected" : ""}>${x.replace("_"," ")}</option>`).join("")}
+      </select></td>
+      <td class="rate">${s.bill_rate ? `$${s.bill_rate.toFixed(0)}` : "—"}</td>
+      <td class="rate">${s.pay_rate ? `$${s.pay_rate.toFixed(0)}` : "—"}</td>
+      <td class="rate">${margin}</td>
+      <td>${esc(s.submitted_by || "")}<div class="cell-sub">${esc(shortTime(s.submitted_at))}</div></td>
+      <td class="td-actions"><button class="btn small" data-sub-del="${s.submission_id}"><i class="fas fa-xmark"></i></button></td>
+    </tr>`;
+  }
+  async function loadSubmissions(){
+    const box = $("#subs-body");
+    box.innerHTML = loading("Loading submissions...");
+    try {
+      const d = await get("/api/submissions");
+      S.subStatuses = d.statuses || [];
+      const n = d.items.length;
+      $("#subs-sub").textContent = n
+        ? `${n} submission${n === 1 ? "" : "s"} · ` +
+          Object.entries(d.by_status).map(([s,c]) => `${c} ${s.replace("_"," ")}`).join(" · ")
+          + (d.team_size > 1 ? ` · shared across ${d.team_size} recruiters` : "")
+        : "Candidates put forward to client facilities";
+      box.innerHTML = n ? `<div class="table-wrap"><table class="table">
+          <thead><tr><th>Candidate</th><th>Role</th><th>Status</th><th>Bill</th><th>Pay</th><th>Margin</th><th>Submitted</th><th></th></tr></thead>
+          <tbody>${d.items.map(subRow).join("")}</tbody></table></div>`
+        : `<div class="match-empty"><i class="fas fa-share-from-square"></i><h3>No submissions yet</h3>
+           <p>Submit a candidate from a talent pool to start tracking what you've put to clients.</p></div>`;
+      $$("#subs-body [data-sub-status]").forEach(sel => sel.onchange = async () => {
+        try { await patch(`/api/submissions/${sel.dataset.subStatus}`, {status: sel.value}); loadSubmissions(); }
+        catch(e) { alert(e.message); }
+      });
+      $$("#subs-body [data-sub-del]").forEach(b => b.onclick = async () => {
+        if (!confirm("Remove this submission?")) return;
+        try { await del(`/api/submissions/${b.dataset.subDel}`); loadSubmissions(); }
+        catch(e) { alert(e.message); }
+      });
+    } catch(e) { box.innerHTML = loading("Could not load submissions."); }
+  }
+  async function submitCandidate(profileId){
+    const bill = prompt("Bill rate to the client ($/hr, optional):", "") || "";
+    const pay = prompt("Pay rate to the candidate ($/hr, optional):", "") || "";
+    const facility = prompt("Client facility (optional):", "") || "";
+    const body = {profile_id: profileId};
+    if (bill && !isNaN(Number(bill))) body.bill_rate = Number(bill);
+    if (pay && !isNaN(Number(pay))) body.pay_rate = Number(pay);
+    if (facility.trim()) body.facility = facility.trim();
+    try {
+      await post("/api/submissions", body);
+      alert("Submitted. Track it on the Submissions page.");
+    } catch(e) { alert(e.message); }
+  }
+
+  // --- Privacy (professional) ----------------------------------------------
+  async function loadPrivacy(){
+    const box = $("#profile-privacy");
+    if (!box || isRecruiter()) { if (box) box.innerHTML = ""; return; }
+    try {
+      const p = await get("/api/privacy/me/status");
+      if (!p.has_profile) { box.innerHTML = ""; return; }
+      box.innerHTML = `<div class="privacy-wrap">
+        <h3>Your privacy</h3>
+        <p>Recruiters can search this directory, but your name and contact details
+           stay hidden until one deliberately releases your profile — which is
+           recorded.${p.times_contact_released
+             ? ` Your details have been released <b>${p.times_contact_released}</b> time${p.times_contact_released === 1 ? "" : "s"}.`
+             : " Nobody has released your details yet."}</p>
+        <div class="privacy-actions">
+          <span class="privacy-state ${p.listed ? "on" : "off"}">${p.listed ? "Listed in the directory" : "Not listed"}</span>
+          <span class="spacer"></span>
+          <button class="btn ghost small" id="privacy-export"><i class="fas fa-download"></i>Download my data</button>
+          ${p.listed
+            ? `<button class="btn danger small" id="privacy-delist"><i class="fas fa-eye-slash"></i>Remove me from the directory</button>`
+            : `<button class="btn small" id="privacy-relist"><i class="fas fa-eye"></i>List me again</button>`}
+        </div>
+      </div>`;
+      const ex = $("#privacy-export");
+      if (ex) ex.onclick = exportMyData;
+      const dl = $("#privacy-delist");
+      if (dl) dl.onclick = async () => {
+        if (!confirm("Remove yourself from the recruiter directory?\n\nYour contact details will be erased and recruiters will no longer find you.")) return;
+        try { const r = await post("/api/privacy/me/delist", {}); alert(r.message); loadPrivacy(); loadProfile(); }
+        catch(e) { alert(e.message); }
+      };
+      const rl = $("#privacy-relist");
+      if (rl) rl.onclick = async () => {
+        try { const r = await post("/api/privacy/me/relist", {}); alert(r.message); loadPrivacy(); loadProfile(); }
+        catch(e) { alert(e.message); }
+      };
+    } catch(e) { box.innerHTML = ""; }
+  }
+  async function exportMyData(){
+    try {
+      const data = await get("/api/privacy/me/export");
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "my-healthboard-data.json";
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    } catch(e) { alert(e.message || "Could not export your data."); }
   }
 
   // --- Credits -------------------------------------------------------------
@@ -1928,6 +2124,7 @@
       </td>
       <td class="td-actions">
         <button class="btn small" data-resume="${m.profile_id}" title="View résumé"><i class="fas fa-file-lines"></i></button>
+        <button class="btn small" data-submit="${m.profile_id}" title="Submit to a client"><i class="fas fa-share-from-square"></i></button>
         <button class="btn small" data-pool-remove="${m.profile_id}" title="Remove from pool"><i class="fas fa-xmark"></i></button>
       </td>
     </tr>`;

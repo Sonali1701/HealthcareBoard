@@ -41,9 +41,11 @@ from .routers import (
     notifications,
     outreach,
     pools,
+    privacy,
     profiles,
     saved_searches,
     social,
+    submissions,
     uploads,
 )
 from .web.core import RedirectException, _user_from_request, templates
@@ -130,7 +132,7 @@ for module in (
     auth, profiles, employers, jobs, applications, social,
     messaging, notifications, matching, gsa, analytics, uploads,
     integrations, admin_import, ingest, extension, pools, saved_searches,
-    duplicates, outreach, credits,
+    duplicates, outreach, credits, privacy, submissions,
 ):
     app.include_router(module.router)
 

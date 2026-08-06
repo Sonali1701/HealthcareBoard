@@ -25,6 +25,9 @@ class SavedSearch(Base):
     search_id: Mapped[str] = uuid_pk()
     owner_user_id: Mapped[str] = uuid_fk("users.user_id")
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    # "providers" = a recruiter searching candidates; "jobs" = a professional
+    # watching for roles. Same alerting mechanism, opposite sides.
+    kind: Mapped[str] = mapped_column(String(20), default="providers", index=True)
     # The directory filter set, stored exactly as the API accepts it.
     params: Mapped[dict] = mapped_column(JSON, default=dict)
     notify: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

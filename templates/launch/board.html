@@ -75,10 +75,12 @@
       <button class="nav-item recruiter-only" data-page="providers"><i class="fas fa-user-doctor"></i>Providers</button>
       <button class="nav-item recruiter-only" data-page="pools"><i class="fas fa-layer-group"></i>Talent Pools</button>
       <button class="nav-item recruiter-only" data-page="outreach"><i class="fas fa-paper-plane"></i>Outreach</button>
+      <button class="nav-item recruiter-only" data-page="submissions"><i class="fas fa-share-from-square"></i>Submissions</button>
       <div class="nav-label">Workspace</div>
       <button class="nav-item" data-page="profile"><i class="fas fa-id-card"></i>My Profile</button>
       <button class="nav-item" data-page="messages"><i class="fas fa-comment-dots"></i>Messages<span class="nav-badge hidden" id="nav-unread"></span></button>
       <button class="nav-item" data-page="notifications"><i class="fas fa-bell"></i>Notifications<span class="nav-badge hidden" id="nav-notif"></span></button>
+      <button class="nav-item seeker-only" data-page="applications"><i class="fas fa-list-check"></i>My Applications</button>
       <button class="nav-item" data-page="resume"><i class="fas fa-file-lines"></i>Resume</button>
       <div class="nav-label recruiter-only">Recruiter</div>
       <button class="nav-item recruiter-only" data-page="extension"><i class="fas fa-puzzle-piece"></i>Get Extension</button>
@@ -223,6 +225,7 @@
       <div id="profile-progress"></div>
       <div id="profile-card" class="profile-panel"></div>
       <div id="profile-credentials"></div>
+      <div id="profile-privacy"></div>
       <form id="profile-form" class="profile-form hidden">
         <div class="pf-grid">
           <label>First name<input class="input" name="first_name"></label>
@@ -321,6 +324,22 @@
     <section id="page-analytics" class="page">
       <div class="section-head"><div><h1>Analytics</h1><p id="analytics-sub">Your sourcing activity</p></div></div>
       <div id="analytics-panel"></div>
+    </section>
+
+    <section id="page-applications" class="page">
+      <div class="section-head">
+        <div><h1>My Applications</h1><p id="apps-sub">Where each application stands</p></div>
+        <button class="btn ghost" id="alert-new"><i class="fas fa-bell"></i>New job alert</button>
+      </div>
+      <div id="alerts-strip"></div>
+      <div id="apps-body"></div>
+    </section>
+
+    <section id="page-submissions" class="page">
+      <div class="section-head">
+        <div><h1>Submissions</h1><p id="subs-sub">Candidates put forward to client facilities</p></div>
+      </div>
+      <div id="subs-body"></div>
     </section>
 
     <section id="page-credits" class="page">

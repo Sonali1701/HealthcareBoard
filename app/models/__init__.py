@@ -66,6 +66,7 @@ from .outreach import (
 )
 from .pools import POOL_STAGES, TalentPool, TalentPoolMember
 from .saved_search import SavedSearch
+from .submissions import SUBMISSION_STATUSES, Submission
 from .profile import Certification, License, Profile, ProfileSkill, WorkHistory
 from .social import Connection, Post, PostComment, PostLike
 
@@ -84,6 +85,8 @@ __all__ = [
     "TalentPool", "TalentPoolMember", "POOL_STAGES",
     # saved searches
     "SavedSearch",
+    # submissions
+    "Submission", "SUBMISSION_STATUSES",
     # credits
     "CreditAccount", "CreditTransaction", "DEFAULT_COSTS",
     "COST_REVEAL_CONTACT",

@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import defer
 
 from ..database import utcnow
@@ -35,6 +35,7 @@ class PoolCreate(BaseModel):
     description: Optional[str] = None
     job_id: Optional[str] = None
     color: str = "blue"
+    visibility: str = "private"      # "private" | "team"
 
 
 class PoolUpdate(BaseModel):
@@ -42,6 +43,7 @@ class PoolUpdate(BaseModel):
     description: Optional[str] = None
     job_id: Optional[str] = None
     color: Optional[str] = None
+    visibility: Optional[str] = None
 
 
 class MemberAdd(BaseModel):
@@ -58,13 +60,38 @@ class MemberUpdate(BaseModel):
 
 # --- Helpers ---------------------------------------------------------------
 
+def _teammates(db: DbSession, user: CurrentUser) -> list[str]:
+    """Everyone at the same agency, so a shared pool is genuinely shared."""
+    from ..models import Employer, EmployerMember
+
+    employer_ids = list({
+        *db.scalars(select(Employer.employer_id)
+                    .where(Employer.owner_user_id == user.user_id)).all(),
+        *db.scalars(select(EmployerMember.employer_id)
+                    .where(EmployerMember.user_id == user.user_id)).all(),
+    })
+    if not employer_ids:
+        return [user.user_id]
+    mates = {
+        *db.scalars(select(Employer.owner_user_id)
+                    .where(Employer.employer_id.in_(employer_ids))).all(),
+        *db.scalars(select(EmployerMember.user_id)
+                    .where(EmployerMember.employer_id.in_(employer_ids))).all(),
+        user.user_id,
+    }
+    return [m for m in mates if m]
+
+
 def _pool_or_404(db: DbSession, pool_id: str, user: CurrentUser) -> TalentPool:
     pool = db.get(TalentPool, pool_id)
     if not pool:
         raise HTTPException(status_code=404, detail="Pool not found")
-    if pool.owner_user_id != user.user_id and user.role.value != "admin":
-        raise HTTPException(status_code=403, detail="This pool belongs to another recruiter")
-    return pool
+    if pool.owner_user_id == user.user_id or user.role.value == "admin":
+        return pool
+    # A pool shared with the agency is workable by the whole desk.
+    if pool.visibility == "team" and pool.owner_user_id in _teammates(db, user):
+        return pool
+    raise HTTPException(status_code=403, detail="This pool belongs to another recruiter")
 
 
 def _check_stage(stage: str) -> str:
@@ -97,6 +124,8 @@ def _pool_json(pool: TalentPool, counts: dict) -> dict:
         "description": pool.description,
         "job_id": pool.job_id,
         "color": pool.color,
+        "visibility": pool.visibility,
+        "owner_user_id": pool.owner_user_id,
         "member_count": c["total"],
         "stages": c["stages"],
         "created_at": pool.created_at,
@@ -109,8 +138,12 @@ def _pool_json(pool: TalentPool, counts: dict) -> dict:
 @router.get("")
 def list_pools(user: CurrentUser, db: DbSession):
     _require_provider_directory_access(user)
+    team = _teammates(db, user)
     pools = db.scalars(
-        select(TalentPool).where(TalentPool.owner_user_id == user.user_id)
+        select(TalentPool).where(
+            or_(TalentPool.owner_user_id == user.user_id,
+                and_(TalentPool.visibility == "team",
+                     TalentPool.owner_user_id.in_(team))))
         .order_by(TalentPool.updated_at.desc())
     ).all()
     counts = _counts(db, [p.pool_id for p in pools])
@@ -129,7 +162,8 @@ def create_pool(body: PoolCreate, user: CurrentUser, db: DbSession):
         raise HTTPException(status_code=409, detail="You already have a pool with that name")
     pool = TalentPool(owner_user_id=user.user_id, name=name,
                       description=body.description, job_id=body.job_id,
-                      color=body.color or "blue")
+                      color=body.color or "blue",
+                      visibility="team" if body.visibility == "team" else "private")
     db.add(pool)
     db.commit()
     db.refresh(pool)
@@ -147,6 +181,8 @@ def update_pool(pool_id: str, body: PoolUpdate, user: CurrentUser, db: DbSession
         pool.job_id = body.job_id or None
     if body.color is not None:
         pool.color = body.color
+    if body.visibility is not None:
+        pool.visibility = "team" if body.visibility == "team" else "private"
     pool.updated_at = utcnow()
     db.commit()
     db.refresh(pool)

@@ -34,6 +34,10 @@ class TalentPool(Base):
         ForeignKey("job_postings.job_id", ondelete="SET NULL"), index=True
     )
     color: Mapped[str] = mapped_column(String(16), default="blue")
+    # "private" to its owner, or "team" so everyone at the agency can work it.
+    visibility: Mapped[str] = mapped_column(String(12), default="private", index=True)
+    employer_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("employers.employer_id", ondelete="SET NULL"), index=True)
     created_at: Mapped[datetime] = created_col()
     updated_at: Mapped[datetime] = updated_col()
 
