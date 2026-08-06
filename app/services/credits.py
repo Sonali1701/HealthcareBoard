@@ -156,10 +156,13 @@ def grant(db: Session, user_id: str, amount: int, *, reason: str = "grant",
 def refund(db: Session, user_id: str, amount: int, *, action: str | None = None,
            entity_id: str | None = None, note: str | None = None) -> dict:
     account = get_account(db, user_id)
+    # CASE rather than GREATEST: the app supports SQLite as well as Postgres,
+    # and GREATEST does not exist there.
     db.execute(
         text("UPDATE credit_accounts SET balance = balance + :n, "
-             "lifetime_spent = GREATEST(lifetime_spent - :n, 0), updated_at = :now "
-             "WHERE user_id = :uid"),
+             "lifetime_spent = CASE WHEN lifetime_spent - :n < 0 THEN 0 "
+             "                      ELSE lifetime_spent - :n END, "
+             "updated_at = :now WHERE user_id = :uid"),
         {"n": amount, "uid": user_id, "now": utcnow()})
     db.refresh(account)
     db.add(CreditTransaction(
