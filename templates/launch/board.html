@@ -114,7 +114,7 @@
         <div class="metric"><span id="metric-saved">0</span><small>Saved jobs</small></div>
         <div class="metric"><span id="metric-profile">0%</span><small>Profile</small></div>
       </div>
-      <div class="section-head"><div><h2>Recommended Jobs</h2><p>Live roles from the job board</p></div></div>
+      <div class="section-head"><div><h2>Recommended Jobs</h2><p id="rec-sub">Live roles from the job board</p></div></div>
       <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Role</th><th>Type</th><th>Specialty</th><th>Pay</th><th class="th-actions"></th></tr></thead>
@@ -216,8 +216,35 @@
     </section>
 
     <section id="page-profile" class="page">
-      <div class="section-head"><div><h1>My Profile</h1><p id="profile-sub">Live profile data</p></div></div>
+      <div class="section-head">
+        <div><h1>My Profile</h1><p id="profile-sub">Live profile data</p></div>
+        <button class="btn primary" id="profile-edit"><i class="fas fa-pen"></i>Edit profile</button>
+      </div>
+      <div id="profile-progress"></div>
       <div id="profile-card" class="profile-panel"></div>
+      <div id="profile-credentials"></div>
+      <form id="profile-form" class="profile-form hidden">
+        <div class="pf-grid">
+          <label>First name<input class="input" name="first_name"></label>
+          <label>Last name<input class="input" name="last_name"></label>
+          <label>Licence / title<input class="input" name="profession_type" placeholder="RN, LPN, MD, PT…"></label>
+          <label>Specialty<input class="input" name="specialty" placeholder="ICU, ER, Med-Surg…"></label>
+          <label>Years of experience<input class="input" name="years_experience" type="number" min="0" max="60"></label>
+          <label>Phone<input class="input" name="phone"></label>
+          <label>City<input class="input" name="city"></label>
+          <label>State<input class="input" name="state_code" maxlength="2" placeholder="TX"></label>
+          <label>Desired hourly rate<input class="input" name="pay_min_hourly" type="number" min="0" step="1"></label>
+          <label>Available from<input class="input" name="available_date" type="date"></label>
+          <label class="pf-wide">Headline<input class="input" name="headline" placeholder="ICU Registered Nurse · 8 years"></label>
+          <label class="pf-wide">About you<textarea class="input" name="bio" rows="3"></textarea></label>
+          <label class="pf-check"><input type="checkbox" name="open_to_work"> I'm open to new roles</label>
+        </div>
+        <div class="pf-actions">
+          <button type="submit" class="btn primary"><i class="fas fa-check"></i>Save profile</button>
+          <button type="button" class="btn ghost" id="profile-cancel">Cancel</button>
+          <span class="pf-msg" id="profile-msg"></span>
+        </div>
+      </form>
     </section>
 
     <section id="page-resume" class="page">

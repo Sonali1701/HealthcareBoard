@@ -6,8 +6,10 @@ real, so these sit in the directory as "Others" with no profession, polluting
 search results, match runs and pools.
 
 This reads each suspect résumé from storage and scores it on healthcare signal.
-No LLM: clinical vocabulary is distinctive enough that keyword evidence beats a
-model here, and it is deterministic, free, and explainable.
+Clinical vocabulary is distinctive enough that keyword evidence settles most
+cases for free, deterministically and explainably. `--use-llm` adds a model
+call for the narrow uncertain band only (0-1 clinical terms), where keywords
+genuinely cannot tell a nurse from a hospital front-desk clerk.
 
 Design rules:
   * Conservative — a profile is hidden only when healthcare evidence is
@@ -20,7 +22,8 @@ Design rules:
 
 Run:
     python -m app.screen_directory --dry-run --limit 300
-    python -m app.screen_directory --workers 8
+    python -m app.screen_directory --scope clinical --workers 6
+    python -m app.screen_directory --scope clinical --use-llm   # arbitrate the grey area
     python -m app.screen_directory --restore        # undo every hide this made
 """
 from __future__ import annotations
@@ -42,6 +45,8 @@ MANIFEST = "screen_manifest.jsonl"
 SCREEN_REASON_NOT_HEALTHCARE = "not_healthcare"
 SCREEN_REASON_EMPTY = "empty_resume"
 SCREEN_REASON_KEPT = "healthcare_ok"
+SCREEN_REASON_LLM_KEPT = "healthcare_llm"       # keyword screen said no, model said yes
+SCREEN_REASON_LLM_REJECTED = "not_healthcare_llm"  # both agreed it is not clinical
 
 # Distinctive clinical vocabulary. Deliberately excludes ambiguous words like
 # "care", "support" or "assistant" that appear in plenty of IT résumés.
@@ -94,6 +99,31 @@ def _load_done(path: Path) -> set[str]:
 def _append(path: Path, row: dict) -> None:
     with _lock, path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row) + "\n")
+
+
+def adjudicate(txt: str) -> bool | None:
+    """Ask the LLM whether a résumé is a clinical healthcare worker.
+
+    Only used for the narrow band the keyword screen cannot settle. Keywords
+    handle the clear cases for free and deterministically; spending a model
+    call on "Registered Nurse, ICU, ACLS" would be waste. Returns None when the
+    model is unavailable or unclear, so the caller keeps its own verdict.
+    """
+    from .clean_names_llm import _llm
+
+    out = _llm(
+        (txt or "")[:4000],
+        system="You classify résumés for a healthcare staffing directory. Reply ONLY with JSON.",
+        instr=('Return {"healthcare": true|false, "role": "<short role title>"}. '
+               '"healthcare" is true ONLY for people who deliver clinical care to '
+               'patients (nurses, physicians, therapists, technologists, aides, '
+               'paramedics). It is false for IT, finance, admin, retail, '
+               'engineering and other non-clinical work, even at a hospital.'),
+        retries=2, timeout=30,
+    )
+    if not isinstance(out, dict) or "healthcare" not in out:
+        return None
+    return bool(out["healthcare"])
 
 
 def classify(txt: str, strict: bool = False) -> tuple[bool, str, int]:
@@ -162,7 +192,8 @@ def _suspects(db, limit: int | None, done: set[str],
 
 
 def run(limit: int | None = None, workers: int = 6, dry_run: bool = False,
-        manifest: str = MANIFEST, scope: str = "others") -> None:
+        manifest: str = MANIFEST, scope: str = "others",
+        use_llm: bool = False) -> None:
     from .services import storage
     from .importers.parsing import extract_text_from_bytes
 
@@ -179,7 +210,8 @@ def run(limit: int | None = None, workers: int = 6, dry_run: bool = False,
     if not targets:
         return
 
-    stats = {"kept": 0, "not_healthcare": 0, "empty_resume": 0, "error": 0}
+    stats = {"kept": 0, "not_healthcare": 0, "empty_resume": 0,
+             SCREEN_REASON_LLM_REJECTED: 0, "error": 0}
 
     def _persist(pid: str, reason: str, hits: int, keep: bool) -> bool:
         """Write one verdict, retrying transient drops.
@@ -214,6 +246,18 @@ def run(limit: int | None = None, workers: int = 6, dry_run: bool = False,
             key, _ = storage.key_from_url(url)
             txt = extract_text_from_bytes(storage.download_bytes(key), key) or ""
             keep, reason, hits = classify(txt, strict=strict)
+            # Only the uncertain band goes to the model — 0 or 1 clinical terms,
+            # with enough text to judge. It arbitrates in BOTH directions: the
+            # costly error is a hospital front-desk clerk kept on the word
+            # "patients", not just a nurse wrongly hidden. Anything with real
+            # clinical vocabulary, or no text at all, is settled for free.
+            if use_llm and hits <= 1 and reason != SCREEN_REASON_EMPTY \
+                    and len(txt.strip()) >= 200:
+                verdict = adjudicate(txt)
+                if verdict is True:
+                    keep, reason = True, SCREEN_REASON_LLM_KEPT
+                elif verdict is False:
+                    keep, reason = False, SCREEN_REASON_LLM_REJECTED
         except Exception as exc:                       # unreadable file: leave it alone
             with _lock:
                 stats["error"] += 1
@@ -229,7 +273,8 @@ def run(limit: int | None = None, workers: int = 6, dry_run: bool = False,
             return
 
         with _lock:
-            stats["kept" if keep else reason] += 1
+            key = "kept" if keep else reason
+            stats[key] = stats.get(key, 0) + 1
         _append(path, {"profile_id": pid, "reason": reason, "hits": hits, "keep": keep})
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -272,6 +317,9 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--restore", action="store_true")
     ap.add_argument("--manifest", default=MANIFEST)
+    ap.add_argument("--use-llm", action="store_true",
+                    help="Let the model adjudicate résumés the keyword screen "
+                         "cannot settle (needs an LLM key configured)")
     ap.add_argument("--scope", choices=("others", "clinical"), default="others",
                     help="'others' = no role signal; 'clinical' = weak-evidence "
                          "profiles already sitting in a clinical category")
@@ -280,4 +328,4 @@ if __name__ == "__main__":
         restore(a.manifest)
     else:
         run(limit=a.limit, workers=a.workers, dry_run=a.dry_run,
-            manifest=a.manifest, scope=a.scope)
+            manifest=a.manifest, scope=a.scope, use_llm=a.use_llm)

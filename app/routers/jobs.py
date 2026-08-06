@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import Integer, and_, func, select
 
 from ..deps import CurrentUser, DbSession
 from ..models import (
@@ -168,6 +168,58 @@ def create_job(employer_id: str, body: JobCreate, user: CurrentUser, db: DbSessi
     db.commit()
     db.refresh(job)
     return job
+
+
+@router.get("/recommended", response_model=Page[JobOut])
+def recommended_jobs(user: CurrentUser, db: DbSession,
+                     limit: int = Query(20, ge=1, le=50)):
+    """Roles that fit the signed-in professional's own profile.
+
+    The platform already scores candidates against a job for recruiters; this
+    runs the same comparison from the other side. It is deliberately ordered
+    rather than filtered — a nurse with an unusual specialty should still see
+    the closest roles instead of an empty page.
+    """
+    from ..models import Profile
+
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.user_id))
+    stmt = select(JobPosting).where(JobPosting.status == JobStatus.active)
+
+    if not profile or not (profile.profession_type or profile.specialty
+                           or profile.state_code):
+        # Nothing to match on yet — show the newest roles rather than nothing,
+        # and let the profile-completion prompt do the rest.
+        rows = db.scalars(stmt.order_by(JobPosting.created_at.desc()).limit(limit)).all()
+        return Page(items=rows, total=len(rows), limit=limit, offset=0)
+
+    # Rank by how much of the profile a role matches, strongest signal first:
+    # the licence has to line up for the job to be doable at all, specialty
+    # decides whether they are competitive, and location decides whether they
+    # would take it.
+    score = (
+        func.coalesce(
+            (JobPosting.profession_type == profile.profession_type).cast(Integer) * 4, 0)
+        + func.coalesce(
+            (JobPosting.specialty == profile.specialty).cast(Integer) * 3, 0)
+        + func.coalesce(
+            (JobPosting.state_code == profile.state_code).cast(Integer) * 2, 0)
+        + func.coalesce(
+            (func.lower(JobPosting.city) == func.lower(profile.city)).cast(Integer), 0)
+    ).label("fit")
+
+    rows = db.execute(
+        select(JobPosting, score)
+        .where(JobPosting.status == JobStatus.active)
+        .order_by(score.desc(), JobPosting.is_featured.desc(),
+                  JobPosting.created_at.desc())
+        .limit(limit)
+    ).all()
+    items = []
+    for job, fit in rows:
+        out = JobOut.model_validate(job)
+        out.fit_score = int(fit or 0)
+        items.append(out)
+    return Page(items=items, total=len(items), limit=limit, offset=0)
 
 
 @router.get("/{job_id}", response_model=JobOut)

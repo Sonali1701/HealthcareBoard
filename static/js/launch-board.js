@@ -179,7 +179,7 @@
 
   function showPage(id){
     if ((id === "providers" || id === "ai" || id === "extension" || id === "pools"
-         || id === "matching" || id === "outreach") && !isRecruiter()) id = "dashboard";
+         || id === "matching" || id === "outreach" || id === "credits") && !isRecruiter()) id = "dashboard";
     if (id !== "messages") stopMessagePolling();
     try { localStorage.setItem("hb_page", id); } catch(e) {}   // restored on refresh
     $$(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + id));
@@ -205,10 +205,11 @@
     const pay = j.pay_rate_max ? `$${Math.round(j.pay_rate_max)}${j.pay_unit === "hourly" ? "/hr" : ""}` : "";
     // Agencies file one req per seat; the list is grouped, so say how many.
     const seats = (j.openings || 1) > 1 ? `<span class="badge accent openings">${j.openings} openings</span>` : "";
+    const fit = j.fit_score > 0 ? `<span class="fit-badge">match</span>` : "";
     const sub = [j.facility, loc].filter(Boolean).join(" · ");
     return `<tr>
       <td>
-        <div class="cell-name">${esc(j.title)}${j.is_urgent ? `<span class="badge coral">Urgent</span>` : ""}${seats}</div>
+        <div class="cell-name">${esc(j.title)}${j.is_urgent ? `<span class="badge coral">Urgent</span>` : ""}${seats}${fit}</div>
         <div class="cell-sub">${esc(sub)}</div>
       </td>
       <td>${j.job_type ? `<span class="badge accent">${esc(j.job_type)}</span>` : `<span class="cell-none">—</span>`}</td>
@@ -223,7 +224,15 @@
   async function loadDashboard(){
     $("#dashboard-jobs").innerHTML = loadingRow(JOB_COLS, "Loading jobs...");
     try {
-      const jobs = await get("/api/jobs?limit=4");
+      // A professional sees roles ranked against their own profile; a
+      // recruiter just sees what is live on the board.
+      const jobs = await get(isRecruiter() ? "/api/jobs?limit=4"
+                                           : "/api/jobs/recommended?limit=4");
+      const sub = $("#rec-sub");
+      if (sub && !isRecruiter())
+        sub.textContent = (jobs.items || []).some(j => j.fit_score > 0)
+          ? "Matched to your licence, specialty and location"
+          : "Complete your profile to get roles matched to you";
       $("#metric-jobs").textContent = jobs.total || 0;
       $("#dashboard-jobs").innerHTML = jobs.items.length ? jobs.items.map(jobRow).join("") : loadingRow(JOB_COLS, "No open roles yet.");
     } catch(e) { $("#dashboard-jobs").innerHTML = loadingRow(JOB_COLS, "Could not load jobs."); }
@@ -504,18 +513,145 @@
     } catch(e) {}
   }
 
+  function fieldRow(label, value, hint){
+    return `<div><div class="muted">${esc(label)}</div><strong>${
+      value ? esc(value) : `<span class="cell-none">${esc(hint || "Not provided")}</span>`}</strong></div>`;
+  }
   async function loadProfile(){
     if (!S.profile) { $("#profile-card").innerHTML = loading("No profile found."); return; }
     const p = S.profile;
     $("#profile-sub").textContent = `${p.completion_score || 0}% complete`;
     $("#profile-card").innerHTML = `<div class="profile-grid">
-      <div><div class="muted">Name</div><strong>${esc(p.first_name)} ${esc(p.last_name)}</strong></div>
-      <div><div class="muted">Role</div><strong>${esc(p.headline || p.profession_type || "Healthcare Pro")}</strong></div>
-      <div><div class="muted">Email</div><strong>${esc(p.email || S.user.email)}</strong></div>
-      <div><div class="muted">Phone</div><strong>${esc(p.phone || "Not provided")}</strong></div>
-      <div><div class="muted">Location</div><strong>${esc([p.city,p.state_code].filter(Boolean).join(", ") || "Not provided")}</strong></div>
-      <div><div class="muted">Resume</div><strong>${p.resume_url ? "On file" : "Missing"}</strong></div>
+      ${fieldRow("Name", `${p.first_name || ""} ${p.last_name || ""}`.trim())}
+      ${fieldRow("Licence / title", p.profession_type, "Add your licence")}
+      ${fieldRow("Specialty", p.specialty, "Add your specialty")}
+      ${fieldRow("Experience", p.years_experience ? `${p.years_experience} years` : "", "Add your experience")}
+      ${fieldRow("Email", p.email || (S.user && S.user.email))}
+      ${fieldRow("Phone", p.phone)}
+      ${fieldRow("Location", [p.city, p.state_code].filter(Boolean).join(", "))}
+      ${fieldRow("Desired rate", p.pay_min_hourly ? `$${p.pay_min_hourly}/hr` : "")}
+      ${fieldRow("Open to work", p.open_to_work ? "Yes" : "Not set")}
+      ${fieldRow("Résumé", p.resume_url ? "On file" : "", "Upload one")}
     </div>`;
+    loadCompletion();
+    loadCredentials();
+  }
+  // Tells a professional exactly what is still missing. An incomplete profile
+  // is not a cosmetic problem here: the matching engine ranks on licence,
+  // specialty, experience and location, so a blank profile is unfindable.
+  async function loadCompletion(){
+    const box = $("#profile-progress");
+    if (!box) return;
+    try {
+      const c = await get("/api/profiles/me/completion");
+      const pct = Math.max(0, Math.min(100, c.score || 0));
+      box.innerHTML = `<div class="pc-wrap">
+        <div class="pc-head"><b>${pct}%</b><span>${c.complete
+          ? "Your profile is complete — recruiters can find you."
+          : "Complete your profile so recruiters can find you"}</span></div>
+        <div class="pc-bar"><i class="${c.complete ? "done" : ""}" style="width:${pct}%"></i></div>
+        ${c.missing.length ? `<div class="pc-missing">${
+          c.missing.map(m => `<span class="pc-chip">${esc(m)}</span>`).join("")}</div>` : ""}
+        ${c.missing.length ? `<p class="pc-note">Recruiters search by licence, specialty, experience and location —
+          without them your profile will not appear in their results.</p>` : ""}
+      </div>`;
+    } catch(e) { box.innerHTML = ""; }
+  }
+  // --- Credentials (the professional's own licences) -----------------------
+  async function loadCredentials(){
+    const box = $("#profile-credentials");
+    if (!box || isRecruiter()) { if (box) box.innerHTML = ""; return; }
+    try {
+      const c = await get("/api/profiles/me/credentials");
+      const row = (label, sub, status, days, id) => `<div class="cred-row">
+        <b>${esc(label)}</b><span class="muted">${esc(sub || "")}</span>
+        <span class="spacer"></span>
+        <span class="cred-pill ${status}">${status === "expiring" ? `${days}d left`
+          : status === "expired" ? "expired" : status === "valid" ? "valid" : "no expiry"}</span>
+        ${id ? `<button class="cred-del" data-cred-del="${id}" title="Remove"><i class="fas fa-xmark"></i></button>` : ""}
+      </div>`;
+      box.innerHTML = `<div class="cred-wrap">
+        <div class="cred-head"><h3>Licences &amp; certifications</h3>
+          <button class="btn small primary" id="cred-add"><i class="fas fa-plus"></i>Add licence</button></div>
+        ${c.alerts.length ? `<div class="cred-alert"><i class="fas fa-triangle-exclamation"></i>
+           ${c.alerts.map(a => `${esc(a.label)} ${a.status === "expired" ? "has expired"
+             : `expires in ${a.days_left} days`}`).join(" · ")}</div>` : ""}
+        ${c.licenses.map(l => row(`${l.license_type} — ${l.state_code}`,
+            [l.license_number, l.is_compact ? "compact" : ""].filter(Boolean).join(" · "),
+            l.status, l.days_left, l.license_id)).join("")}
+        ${c.certifications.map(x => row(x.cert_name, "", x.status, x.days_left, null)).join("")}
+        ${(!c.licenses.length && !c.certifications.length)
+          ? `<p class="muted" style="font-size:12.5px">No licences on file. Recruiters filter by
+             licence and state — adding yours makes you findable.</p>` : ""}
+        ${c.compact_eligible ? `<p class="pc-note"><i class="fas fa-shield-halved"></i>
+           You hold a compact licence — eligible to practise in around 40 states.</p>` : ""}
+      </div>`;
+      const add = $("#cred-add");
+      if (add) add.onclick = addCredential;
+      $$("#profile-credentials [data-cred-del]").forEach(b => b.onclick = async () => {
+        try { await del(`/api/profiles/me/licenses/${b.dataset.credDel}`); loadCredentials(); }
+        catch(e) { alert(e.message); }
+      });
+    } catch(e) { box.innerHTML = ""; }
+  }
+  async function addCredential(){
+    const type = prompt("Licence type (RN, LPN, MD, PT…):", "");
+    if (!type || !type.trim()) return;
+    const st = prompt("Issuing state (2 letters, e.g. TX):", "");
+    if (!st || !st.trim()) return;
+    const num = prompt("Licence number (optional):", "") || "";
+    const exp = prompt("Expiry date (YYYY-MM-DD, optional):", "") || null;
+    try {
+      await post("/api/profiles/me/licenses", {
+        license_type: type.trim().toUpperCase(), state_code: st.trim().toUpperCase(),
+        license_number: num.trim(), expiry_date: exp || null});
+      loadCredentials();
+    } catch(e) { alert(e.message); }
+  }
+
+  function openProfileForm(){
+    const p = S.profile || {}, f = $("#profile-form");
+    f.classList.remove("hidden");
+    $("#profile-card").classList.add("hidden");
+    $("#profile-edit").classList.add("hidden");
+    ["first_name","last_name","profession_type","specialty","years_experience","phone",
+     "city","state_code","pay_min_hourly","headline","bio"].forEach(k => {
+      const el = f.elements[k];
+      if (el) el.value = p[k] == null ? "" : p[k];
+    });
+    if (f.elements.available_date)
+      f.elements.available_date.value = p.available_date ? String(p.available_date).slice(0,10) : "";
+    if (f.elements.open_to_work) f.elements.open_to_work.checked = !!p.open_to_work;
+    $("#profile-msg").textContent = "";
+  }
+  function closeProfileForm(){
+    $("#profile-form").classList.add("hidden");
+    $("#profile-card").classList.remove("hidden");
+    $("#profile-edit").classList.remove("hidden");
+  }
+  async function saveProfile(e){
+    e.preventDefault();
+    const f = $("#profile-form"), msg = $("#profile-msg");
+    const body = {};
+    ["first_name","last_name","profession_type","specialty","phone","city",
+     "headline","bio"].forEach(k => { const v = (f.elements[k].value || "").trim(); if (v) body[k] = v; });
+    const st = (f.elements.state_code.value || "").trim().toUpperCase();
+    if (st) body.state_code = st;
+    ["years_experience","pay_min_hourly"].forEach(k => {
+      const v = f.elements[k].value;
+      if (v !== "" && !isNaN(Number(v))) body[k] = Number(v);
+    });
+    if (f.elements.available_date.value) body.available_date = f.elements.available_date.value;
+    body.open_to_work = !!f.elements.open_to_work.checked;
+    msg.className = "pf-msg"; msg.textContent = "Saving…";
+    try {
+      S.profile = await patch("/api/profiles/me", body);
+      msg.className = "pf-msg ok"; msg.textContent = "Saved.";
+      loadProfile();
+      setTimeout(closeProfileForm, 700);
+    } catch(err) {
+      msg.className = "pf-msg err"; msg.textContent = err.message || "Could not save.";
+    }
   }
 
   async function loadFeed(){
@@ -604,7 +740,15 @@
     try {
       const res = await fetch("/api/uploads/resume", {method:"POST", headers:{Authorization:"Bearer " + token()}, body:fd});
       if (!res.ok) throw new Error(await res.text());
-      await loadMe(); $("#resume-drop span").textContent = "Resume uploaded.";
+      const out = await res.json();
+      await loadMe();
+      // The upload also parses the résumé and fills blank profile fields. Say
+      // which ones, so the person can see the work it saved them.
+      const filled = Object.keys(out.contact_updated || {});
+      $("#resume-drop span").textContent = filled.length
+        ? `Uploaded — filled in ${filled.join(", ").replace(/_/g, " ")} from your résumé.`
+        : "Résumé uploaded.";
+      if ($("#page-profile").classList.contains("active")) loadProfile();
     } catch(e) { alert("Upload failed."); }
   }
   function renderResume(r){
@@ -1034,6 +1178,12 @@
     if (bulkPool) bulkPool.onclick = bulkAddToPool;
     const bulkClear = $("#bulk-clear");
     if (bulkClear) bulkClear.onclick = clearSelection;
+    const pfEdit = $("#profile-edit");
+    if (pfEdit) pfEdit.onclick = openProfileForm;
+    const pfCancel = $("#profile-cancel");
+    if (pfCancel) pfCancel.onclick = closeProfileForm;
+    const pfForm = $("#profile-form");
+    if (pfForm) pfForm.addEventListener("submit", saveProfile);
     const searchSave = $("#search-save");
     if (searchSave) searchSave.onclick = saveCurrentSearch;
     const jobNew = $("#job-new");
@@ -1258,6 +1408,13 @@
   const ACTION_LABELS = {reveal_contact:"Reveal a candidate's contact"};
   async function refreshCredits(){
     if (!token()) return;
+    // Credits pay for revealing candidate contacts — a recruiter-only action.
+    // A healthcare professional has no use for a balance, so hide it entirely.
+    if (!isRecruiter()){
+      const chip = $("#credit-chip");
+      if (chip) chip.classList.add("hidden");
+      return;
+    }
     try {
       const c = await get("/api/credits");
       S.credits = c;

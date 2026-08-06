@@ -125,6 +125,8 @@ class JobOut(ORMModel, JobBase):
     req_code: Optional[str] = None
     # Seats open for this same role/facility, when the list is grouped.
     openings: int = 1
+    # How well the role matches the signed-in professional (recommendations only).
+    fit_score: int = 0
     created_at: datetime
     updated_at: datetime
 

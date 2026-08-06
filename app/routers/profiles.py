@@ -17,7 +17,12 @@ from sqlalchemy.orm import selectinload
 from ..config import settings
 from ..database import utcnow
 from ..deps import CurrentUser, DbSession
-from ..importers.parsing import NAME_PLACEHOLDERS, SECTION_HEADERS, is_real_name
+from ..importers.parsing import (
+    NAME_PLACEHOLDERS,
+    SECTION_HEADERS,
+    classify_provider,
+    is_real_name,
+)
 from ..services import storage
 from ..models import (
     AuditLog,
@@ -1331,6 +1336,154 @@ def my_profile(user: CurrentUser, db: DbSession):
     if not profile:
         raise HTTPException(status_code=404, detail="No profile for this account")
     return profile
+
+
+@router.patch("/me", response_model=ProfileDetail)
+def update_my_profile(body: ProfileUpdate, user: CurrentUser, db: DbSession):
+    """Let a healthcare professional maintain their own profile.
+
+    Until this existed a self-registered nurse could apply for jobs but never
+    say what they do, so they carried no specialty, licence or experience and
+    were invisible to the matching engine — able to apply, impossible to find.
+
+    Creates the profile on first save, so a new account does not have to call
+    POST first.
+    """
+    profile = db.scalar(
+        select(Profile)
+        .options(selectinload(Profile.licenses), selectinload(Profile.certifications),
+                 selectinload(Profile.work_history), selectinload(Profile.skills))
+        .where(Profile.user_id == user.user_id)
+    )
+    changes = body.model_dump(exclude_unset=True)
+    # These are set by the platform, never by the person being described.
+    for locked in ("is_listable", "screen_reason", "merged_into", "completion_score"):
+        changes.pop(locked, None)
+
+    if not profile:
+        profile = Profile(user_id=user.user_id, **changes)
+        db.add(profile)
+    else:
+        for field, value in changes.items():
+            setattr(profile, field, value)
+
+    # A professional maintaining their own profile is asserting they are a
+    # provider, so classify them the same way the importer would.
+    if profile.profession_type or profile.specialty:
+        profile.provider_category = classify_provider(
+            profile.profession_type, profile.specialty, profile.headline)
+    profile.rebuild_search_text()
+    profile.completion_score = _compute_completion(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@router.get("/me/completion")
+def my_profile_completion(user: CurrentUser, db: DbSession):
+    """What is still missing, so the UI can tell them what to fill in next."""
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.user_id))
+    if not profile:
+        return {"score": 0, "missing": ["profile"], "complete": False}
+    wanted = {
+        "profession_type": "Your licence or title (RN, LPN, MD…)",
+        "specialty": "Your specialty",
+        "years_experience": "Years of experience",
+        "city": "City",
+        "state_code": "State",
+        "phone": "Phone number",
+        "headline": "A short headline",
+        "resume_url": "Your résumé",
+    }
+    missing = [label for field, label in wanted.items() if not getattr(profile, field, None)]
+    return {"score": profile.completion_score or 0, "missing": missing,
+            "complete": not missing}
+
+
+@router.get("/me/credentials")
+def my_credentials(user: CurrentUser, db: DbSession, expiring_days: int = 90):
+    """A professional's licences and certifications, with expiry status.
+
+    Keeping a licence current is the one piece of admin every clinician has to
+    do, and an expired one makes them unplaceable. Surfacing the dates is the
+    reason a healthcare professional would come back to this platform rather
+    than only visiting when job-hunting.
+    """
+    from datetime import date as _date, timedelta
+
+    profile = db.scalar(
+        select(Profile)
+        .options(selectinload(Profile.licenses), selectinload(Profile.certifications))
+        .where(Profile.user_id == user.user_id)
+    )
+    if not profile:
+        return {"licenses": [], "certifications": [], "alerts": []}
+
+    today = _date.today()
+    soon = today + timedelta(days=max(1, expiring_days))
+
+    def state(expiry):
+        if not expiry:
+            return "unknown"
+        if expiry < today:
+            return "expired"
+        return "expiring" if expiry <= soon else "valid"
+
+    licenses = [{
+        "license_id": lic.license_id,
+        "license_type": lic.license_type,
+        "state_code": lic.state_code,
+        "license_number": lic.license_number,
+        "expiry_date": lic.expiry_date,
+        "is_compact": bool(lic.is_compact),
+        "status": state(lic.expiry_date),
+        "days_left": (lic.expiry_date - today).days if lic.expiry_date else None,
+    } for lic in profile.licenses]
+
+    certs = [{
+        "cert_id": c.cert_id,
+        "cert_name": c.cert_name,
+        "expiry_date": c.expiry_date,
+        "status": state(c.expiry_date),
+        "days_left": (c.expiry_date - today).days if c.expiry_date else None,
+    } for c in profile.certifications]
+
+    alerts = [
+        {"kind": "license" if "license_id" in item else "certification",
+         "label": item.get("license_type") or item.get("cert_name"),
+         "status": item["status"], "days_left": item["days_left"]}
+        for item in licenses + certs if item["status"] in {"expired", "expiring"}
+    ]
+    return {"licenses": licenses, "certifications": certs, "alerts": alerts,
+            "compact_eligible": any(lic["is_compact"] for lic in licenses)}
+
+
+@router.post("/me/licenses", response_model=LicenseOut, status_code=201)
+def add_my_license(body: LicenseCreate, user: CurrentUser, db: DbSession):
+    """Add a licence to your own profile without needing your profile id."""
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.user_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="Create your profile first")
+    lic = License(profile_id=profile.profile_id, **body.model_dump())
+    # A compact licence is what makes a nurse placeable across state lines, so
+    # derive it rather than relying on the person to know the term.
+    if lic.state_code and lic.license_type:
+        lic.is_compact = bool(lic.is_compact) or (
+            lic.state_code.upper() in _COMPACT_STATES
+            and lic.license_type.upper() in {"RN", "LPN", "LVN"})
+    db.add(lic)
+    db.commit()
+    db.refresh(lic)
+    return lic
+
+
+@router.delete("/me/licenses/{license_id}", status_code=204)
+def delete_my_license(license_id: str, user: CurrentUser, db: DbSession):
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.user_id))
+    lic = db.get(License, license_id)
+    if profile and lic and lic.profile_id == profile.profile_id:
+        db.delete(lic)
+        db.commit()
 
 
 @router.post("", response_model=ProfileOut, status_code=status.HTTP_201_CREATED)

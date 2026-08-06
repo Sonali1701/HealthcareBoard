@@ -727,3 +727,54 @@ tr.is-selected{background:var(--accent-soft)}
 .price-free{color:#047857;font-weight:600}
 .txn-delta.neg{color:var(--rose);font-weight:600}
 .txn-delta.pos{color:#047857;font-weight:600}
+
+/* --- Professional profile editing ---------------------------------------- */
+.profile-form{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:20px 22px;box-shadow:var(--shadow);margin-top:14px}
+.pf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.pf-grid label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted);font-weight:500}
+.pf-grid .input{width:100%}
+.pf-wide{grid-column:1/-1}
+.pf-check{flex-direction:row!important;align-items:center;gap:8px;grid-column:1/-1;font-size:13px}
+.pf-check input{width:15px;height:15px;accent-color:var(--accent)}
+.pf-actions{display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.pf-msg{font-size:12.5px;color:var(--faint)}
+.pf-msg.ok{color:#047857;font-weight:600}
+.pf-msg.err{color:var(--rose)}
+
+/* Completion meter — tells a professional what is still missing. */
+.pc-wrap{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:15px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+.pc-head{display:flex;align-items:baseline;gap:10px;margin-bottom:9px}
+.pc-head b{font-size:20px;color:var(--accent-strong)}
+.pc-head span{font-size:12.5px;color:var(--faint)}
+.pc-bar{height:8px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden}
+.pc-bar i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .3s}
+.pc-bar i.done{background:#059669}
+.pc-missing{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pc-chip{font-size:11.5px;padding:3px 9px;border-radius:999px;background:#fffbeb;
+  border:1px solid #fde68a;color:#92400e}
+.pc-note{font-size:12px;color:var(--faint);margin-top:9px}
+
+/* --- Credentials (professional view) ------------------------------------- */
+.cred-wrap{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:16px 18px;box-shadow:var(--shadow);margin-top:14px}
+.cred-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.cred-head h3{margin:0;font-size:14px}
+.cred-head .btn{margin-left:auto}
+.cred-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);
+  border-radius:var(--radius);padding:9px 12px;margin-bottom:8px;font-size:13px}
+.cred-row .spacer{margin-left:auto}
+.cred-row b{font-weight:600}
+.cred-row .muted{font-size:12px}
+.cred-pill{font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px}
+.cred-pill.valid{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
+.cred-pill.expiring{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+.cred-pill.expired{background:#fff1f4;color:var(--rose);border:1px solid #fecdd3}
+.cred-pill.unknown{background:var(--soft);color:var(--faint);border:1px solid var(--line)}
+.cred-alert{background:#fffbeb;border:1px solid #fde68a;border-radius:var(--radius);
+  padding:10px 13px;margin-bottom:12px;font-size:12.5px;color:#92400e}
+.cred-del{border:0;background:none;color:var(--dim);cursor:pointer;padding:3px 6px;border-radius:5px}
+.cred-del:hover{color:var(--rose);background:#fff1f4}
+.fit-badge{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;
+  background:var(--accent-soft);color:var(--accent-strong);margin-left:6px}

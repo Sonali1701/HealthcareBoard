@@ -434,47 +434,21 @@ def _title_words(value: str | None) -> str | None:
     return " ".join(part[:1].upper() + part[1:].lower() for part in text.split())
 
 
-# Words that appear in a bad "name" but never in a real person's name. We detect
-# junk by STRUCTURE (role/résumé word, run-on, or digit), not by listing names.
-JUNK_NAME_WORDS = {
-    "unknown", "candidate", "provider", "providers", "resume", "cv", "n/a", "na",
-    "none", "member", "applicant", "profile", "portfolio",
-    "registered", "certified", "licensed", "nurse", "nursing", "physician",
-    "surgeon", "doctor", "technician", "technologist", "practitioner",
-    "assistant", "associate", "professional", "administrator", "administrative",
-    "coordinator", "specialist", "therapist", "pharmacist", "director", "manager",
-    "management", "supervisor", "consultant", "clinician", "caregiver", "aide",
-    "worker", "staff", "curriculum", "vitae", "objective", "summary", "references",
-    "reference", "experience", "experienced", "qualifications", "education",
-    "skills", "skill", "certifications", "licensure", "employment", "history",
-    "healthcare", "medical", "clinical", "hospital", "university", "college",
-    "career", "seeking", "dedicated", "motivated", "organized", "acquired",
-    "regional", "center", "travel", "staffing", "solutions", "services",
-    "department", "unit", "team", "group",
-    "adn", "bsn", "msn", "dnp", "aprn", "faan", "mba", "mph", "phd",
-}
+# The junk-name vocabulary lives in the app so the uploader and the running
+# platform screen names identically. It used to be copied here, and the copy
+# went stale: words added to the app ("found", "expertise", "developer") never
+# reached the importer, so "Not Found" and "Java Developer" profiles kept being
+# created. Import it instead.
+from app.importers.parsing import JUNK_NAME_WORDS, is_real_name  # noqa: E402
+from app.screen_directory import classify as _classify_healthcare  # noqa: E402
+
 NAME_PLACEHOLDERS = JUNK_NAME_WORDS   # back-compat alias
 _JUNK_SUBSTRINGS = tuple(w for w in JUNK_NAME_WORDS if len(w) >= 6)
 
 
 def _bad_name(first: str | None, last: str | None) -> bool:
-    """Structural junk-name test (mirrors app.importers.parsing.is_real_name)."""
-    f = _clean_text(first).lower().strip(".")
-    if not f or not any(ch.isalpha() for ch in f):
-        return True
-    full = f"{f} {_clean_text(last).lower().strip('.')}".strip()
-    if any(ch.isdigit() for ch in full):
-        return True
-    for w in re.split(r"[\s\-]+", full):
-        w = w.strip(".")
-        if not w:
-            continue
-        if w in JUNK_NAME_WORDS or len(w) >= 16:
-            return True
-        if len(w) >= 12 and any(sub in w for sub in _JUNK_SUBSTRINGS):
-            return True
-    return False
-
+    """Structural junk-name test — delegates to the app's single implementation."""
+    return not is_real_name(first, last)
 
 def _title_city(value: str | None) -> str | None:
     city = _clean_text(value)
@@ -1206,9 +1180,19 @@ def _search_text(fields: dict) -> str:
     return " ".join(str(p) for p in parts if p).lower()
 
 
-def _insert_profile(conn, path: Path, key: str, resume_url: str, fields: dict) -> str:
+def _insert_profile(conn, path: Path, key: str, resume_url: str, fields: dict,
+                    resume_text: str = "") -> str:
     profile_id = str(uuid.uuid4())
     now = _utcnow()
+    # Screen on CONTENT as well as name. The import previously only asked
+    # whether the name looked real, which let tens of thousands of IT and
+    # admin résumés into a healthcare directory — including some tagged RN or
+    # MD. The text is already parsed here, so this costs nothing.
+    real_name = not _bad_name(fields.get("first_name"), fields.get("last_name"))
+    is_health, screen_reason, screen_score = _classify_healthcare(resume_text or "")
+    listable = real_name and is_health
+    if not real_name:
+        screen_reason = "junk_name"
     params = {
         "profile_id": profile_id,
         "first_name": fields["first_name"],
@@ -1232,8 +1216,11 @@ def _insert_profile(conn, path: Path, key: str, resume_url: str, fields: dict) -
         "updated_at": now,
         "job_type_prefs": json.dumps([]),
         "source": "resume_parse",
-        # Hide parser-junk names from the directory at insert time.
-        "is_listable": not _bad_name(fields.get("first_name"), fields.get("last_name")),
+        # Hide junk names AND non-healthcare résumés at insert time.
+        "is_listable": listable,
+        "screen_reason": None if listable else screen_reason,
+        "screen_score": screen_score,
+        "screened_at": now,
     }
     conn.execute(_text("""
         INSERT INTO profiles (
@@ -1242,7 +1229,8 @@ def _insert_profile(conn, path: Path, key: str, resume_url: str, fields: dict) -
             years_experience, city, state_code, lat, lng, open_to_work,
             job_type_prefs, pay_min_hourly, available_date, npi_number,
             profile_photo_url, resume_url, completion_score, source, search_text,
-            is_listable, created_at, updated_at
+            is_listable, screen_reason, screen_score, screened_at,
+            created_at, updated_at
         )
         VALUES (
             :profile_id, NULL, :first_name, :last_name, :headline, :bio, :phone, :email,
@@ -1250,7 +1238,8 @@ def _insert_profile(conn, path: Path, key: str, resume_url: str, fields: dict) -
             :years_experience, :city, :state_code, NULL, NULL, TRUE,
             CAST(:job_type_prefs AS JSON), NULL, NULL, :npi_number,
             NULL, :resume_url, :completion_score, CAST(:source AS profilesource), :search_text,
-            :is_listable, :created_at, :updated_at
+            :is_listable, :screen_reason, :screen_score, :screened_at,
+            :created_at, :updated_at
         )
     """), params)
 
@@ -1445,7 +1434,7 @@ def import_folder(args: argparse.Namespace) -> dict:
                     stats["skipped"] += 1
                     print(f"[{i}/{len(files)}] SKIP existing {path.name} -> {existing_id}")
                     continue
-                profile_id = _insert_profile(conn, path, key, resume_url, fields)
+                profile_id = _insert_profile(conn, path, key, resume_url, fields, text)
 
             _identity_remember(seen_identity, fields)
             stats["created"] += 1
