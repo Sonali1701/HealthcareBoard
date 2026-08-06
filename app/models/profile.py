@@ -44,12 +44,12 @@ class Profile(Base):
     american_board: Mapped[Optional[str]] = mapped_column(String(150), index=True)
     # False = parser produced junk (placeholder name); hidden from the directory.
     is_listable: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    # Why the directory screen hid (or kept) this profile, so the decision is
-    # auditable and reversible rather than an unexplained flipped bit.
     # Set when this row was folded into another as a duplicate. The row is
     # hidden rather than deleted, so the merge stays reversible.
     merged_into: Mapped[Optional[str]] = mapped_column(String(36), index=True)
     merged_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
+    # Why the directory screen hid (or kept) this profile, so the decision is
+    # auditable and reversible rather than an unexplained flipped bit.
     screen_reason: Mapped[Optional[str]] = mapped_column(String(60), index=True)
     screen_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
     screened_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
@@ -134,6 +134,12 @@ class License(Base):
     expiry_date: Mapped[Optional[date]] = mapped_column(Date, index=True)
     verified_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
     verification_source: Mapped[Optional[str]] = mapped_column(String(100))
+    # What the issuing board actually said. A licence nobody checked is
+    # "unverified", which must never render the same as "active".
+    verification_status: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    verification_detail: Mapped[Optional[str]] = mapped_column(String(300))
+    verified_by_user_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("users.user_id", ondelete="SET NULL"))
     is_compact: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = created_col()
 

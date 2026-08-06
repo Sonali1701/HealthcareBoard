@@ -32,6 +32,7 @@ from ..models import (
     ProfileSkill,
     WorkHistory,
 )
+from ..models.enums import LicenseStatus
 from ..schemas.common import Page
 from ..schemas.profile import (
     CertificationCreate,
@@ -1422,7 +1423,15 @@ def my_credentials(user: CurrentUser, db: DbSession, expiring_days: int = 90):
     today = _date.today()
     soon = today + timedelta(days=max(1, expiring_days))
 
-    def state(expiry):
+    def state(expiry, verified_status=None):
+        """A board's verdict outranks the printed date.
+
+        A licence whose expiry has not yet passed can still be expired,
+        suspended or absent from the register — showing "valid" because the
+        date looks fine is exactly the optimism this feature exists to stop.
+        """
+        if verified_status in {"expired", "disciplined", "not_found"}:
+            return "expired"
         if not expiry:
             return "unknown"
         if expiry < today:
@@ -1436,8 +1445,13 @@ def my_credentials(user: CurrentUser, db: DbSession, expiring_days: int = 90):
         "license_number": lic.license_number,
         "expiry_date": lic.expiry_date,
         "is_compact": bool(lic.is_compact),
-        "status": state(lic.expiry_date),
+        "status": state(lic.expiry_date, lic.verification_status),
         "days_left": (lic.expiry_date - today).days if lic.expiry_date else None,
+        # A claim until a source says otherwise — surfaced so it is never
+        # mistaken for a checked fact.
+        "verification_status": lic.verification_status or "never_checked",
+        "verified": lic.verification_status in {"active", "expired",
+                                                "disciplined", "not_found"},
     } for lic in profile.licenses]
 
     certs = [{
@@ -1484,6 +1498,94 @@ def delete_my_license(license_id: str, user: CurrentUser, db: DbSession):
     if profile and lic and lic.profile_id == profile.profile_id:
         db.delete(lic)
         db.commit()
+
+
+@router.post("/licenses/{license_id}/verify")
+def verify_license(license_id: str, user: CurrentUser, db: DbSession,
+                   body: dict | None = None):
+    """Check a licence against its issuing board and record what came back.
+
+    A licence a candidate typed in is a claim; this is what turns it into
+    evidence. With no source configured the answer is an honest "unverified" —
+    never a pass on no evidence — and a recruiter can instead record that they
+    checked the board themselves, which at least makes the check attributable.
+    """
+    from ..services import license_verify as lv
+
+    lic = db.get(License, license_id)
+    if not lic:
+        raise HTTPException(status_code=404, detail="Licence not found")
+    profile = db.get(Profile, lic.profile_id)
+    owns = profile and profile.user_id == user.user_id
+    if not owns and not _is_recruiter_or_admin(user):
+        raise HTTPException(status_code=403, detail="Not your licence")
+
+    body = body or {}
+    extra = {}
+    if body.get("provider") == "manual" or body.get("manual"):
+        extra = {"status": body.get("status", lv.STATUS_ACTIVE),
+                 "checked_by": user.email}
+        if body.get("expiry_date"):
+            from datetime import date as _d
+            try:
+                extra["expiry_date"] = _d.fromisoformat(str(body["expiry_date"])[:10])
+            except ValueError:
+                pass
+
+    result = lv.verify(
+        license_type=lic.license_type, state_code=lic.state_code,
+        license_number=lic.license_number,
+        first_name=profile.first_name if profile else "",
+        last_name=profile.last_name if profile else "",
+        provider="manual" if extra else None, **extra)
+
+    lic.verification_status = result.status
+    lic.verification_source = result.source
+    lic.verification_detail = result.detail
+    if result.is_verified:
+        lic.verified_at = utcnow()
+        lic.verified_by_user_id = user.user_id
+        if result.expiry_date:
+            lic.expiry_date = result.expiry_date
+        if result.is_compact is not None:
+            lic.is_compact = result.is_compact
+        # A board saying "expired" or "disciplined" must move the licence out
+        # of active, or a recruiter could still submit on it.
+        if result.status != lv.STATUS_ACTIVE:
+            lic.status = LicenseStatus.expired
+    db.commit()
+    return {
+        "license_id": lic.license_id,
+        "status": result.status,
+        "verified": result.is_verified,
+        "placeable": result.is_placeable,
+        "source": result.source,
+        "detail": result.detail,
+        "expiry_date": lic.expiry_date,
+    }
+
+
+@router.get("/licenses/verification-status")
+def verification_coverage(user: CurrentUser, db: DbSession):
+    """How much of the directory rests on checked licences rather than claims."""
+    _require_provider_directory_access(user)
+    from ..services import license_verify as lv
+
+    total = db.scalar(select(func.count()).select_from(License)) or 0
+    rows = dict(db.execute(
+        select(License.verification_status, func.count())
+        .group_by(License.verification_status)).all())
+    verified = sum(n for s, n in rows.items() if s in lv.VERIFIED_STATUSES)
+    return {
+        "provider": lv.get_provider().name,
+        "licenses_total": total,
+        "verified": verified,
+        "unverified": total - verified,
+        "by_status": {(s or "never_checked"): n for s, n in rows.items()},
+        "note": ("No verification source is configured, so licences are "
+                 "candidate claims rather than checked facts."
+                 if lv.get_provider().name == "unavailable" else None),
+    }
 
 
 @router.post("", response_model=ProfileOut, status_code=status.HTTP_201_CREATED)

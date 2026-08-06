@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     credit_signup_bonus: int = 25          # starting balance for a new recruiter
     credit_cost_reveal_contact: int = 1
 
+    # --- Licence verification ---
+    # "unavailable" (default) reports honestly that nothing checked the licence.
+    # "manual" records a recruiter's own check against the board. A real source
+    # (Nursys, a state board) plugs in via services.license_verify.register().
+    license_verify_provider: str = "unavailable"
+    license_verify_api_key: str = ""
+
     # --- Email (SendGrid) ---
     # When email_enabled is False, reset/verification tokens are returned in the
     # API response (dev convenience) instead of being emailed.
