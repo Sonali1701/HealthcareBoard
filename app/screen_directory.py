@@ -164,11 +164,25 @@ def _suspects(db, limit: int | None, done: set[str],
                          out to be IT/admin résumés miscategorised at import,
                          and they do the most damage because recruiters filter
                          straight to these categories.
+    scope="all"        — every unscreened profile, including those the two
+                         scopes above skip because the parser found a specialty
+                         or skills.
+
+                         That exclusion turned out not to hold. Screening a
+                         random 200 of the "has a specialty" population
+                         rejected 11%: a Salesforce consultant and an SAP ABAP
+                         consultant both carried specialty "ICU", and one row
+                         was a data-governance policy document rather than a
+                         résumé at all. A parsed specialty is a guess by the
+                         importer, not evidence, so it cannot exempt a row from
+                         being read.
     """
     base = [Profile.is_listable.is_(True),
             Profile.resume_url.isnot(None),
             Profile.screen_reason.is_(None)]
-    if scope == "clinical":
+    if scope == "all":
+        conds = base
+    elif scope == "clinical":
         from .models import ProfileSkill
         conds = base + [
             Profile.provider_category.in_(_CLINICAL_CATEGORIES),
@@ -261,7 +275,8 @@ def run(limit: int | None = None, workers: int = 6, dry_run: bool = False,
         except Exception as exc:                       # unreadable file: leave it alone
             with _lock:
                 stats["error"] += 1
-            _append(path, {"profile_id": pid, "reason": "error", "error": str(exc)[:120]})
+            if not dry_run:
+                _append(path, {"profile_id": pid, "reason": "error", "error": str(exc)[:120]})
             return
 
         # Persist BEFORE logging: the manifest must only ever record work that
@@ -275,7 +290,137 @@ def run(limit: int | None = None, workers: int = 6, dry_run: bool = False,
         with _lock:
             key = "kept" if keep else reason
             stats[key] = stats.get(key, 0) + 1
-        _append(path, {"profile_id": pid, "reason": reason, "hits": hits, "keep": keep})
+        # A dry run must not touch the manifest. It writes no screen_reason, so
+        # the manifest is the only thing that would stop a later real run from
+        # picking the profile up — recording it here silently skipped 300
+        # profiles that had never actually been screened.
+        if not dry_run:
+            _append(path, {"profile_id": pid, "reason": reason, "hits": hits, "keep": keep})
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, _ in enumerate(pool.map(work, targets), 1):
+            if i % 250 == 0:
+                print(f"  {i:,}/{len(targets):,}  {stats}", flush=True)
+
+    print(f"\n{'DRY RUN - nothing written' if dry_run else 'done'}: {stats}")
+    if not dry_run:
+        db = SessionLocal()
+        try:
+            listable = db.scalar(select(func.count()).select_from(Profile)
+                                 .where(Profile.is_listable.is_(True)))
+            print(f"directory now lists {listable:,} profiles")
+        finally:
+            db.close()
+
+
+RESCUE_MANIFEST = "screen_rescue_manifest.jsonl"
+
+
+def rescue(limit: int | None = None, workers: int = 6, dry_run: bool = False,
+           manifest: str = RESCUE_MANIFEST) -> None:
+    """Re-read the profiles the keyword pass rejected, and ask the model.
+
+    Running the LLM over every row costs about six times what the keyword pass
+    costs and mostly re-confirms decisions keywords already made confidently.
+    The rejections are where it earns its keep: on the earlier clinical sweep
+    the model overturned roughly one keyword rejection in five. This targets
+    only ``not_healthcare``, so the expensive judgement is spent where a wrong
+    answer removes a real candidate from the directory.
+
+    A rescued profile is relisted and marked ``healthcare_llm``, so the change
+    stays as auditable and reversible as the original hide.
+    """
+    from .services import storage
+    from .importers.parsing import extract_text_from_bytes
+
+    path = Path(manifest)
+    done = _load_done(path)
+    db = SessionLocal()
+    try:
+        stmt = (select(Profile.profile_id, Profile.resume_url)
+                .where(Profile.screen_reason == SCREEN_REASON_NOT_HEALTHCARE,
+                       Profile.resume_url.isnot(None))
+                .order_by(Profile.profile_id))
+        if limit:
+            stmt = stmt.limit(limit + len(done) + 200)
+        targets = [(p, u) for p, u in db.execute(stmt).all() if p not in done]
+    finally:
+        db.close()
+    if limit:
+        targets = targets[:limit]
+    print(f"{len(targets):,} rejected profiles to re-check "
+          f"({len(done):,} already in {manifest})")
+    if not targets:
+        return
+
+    stats = {"rescued": 0, "upheld": 0, "unclear": 0, "error": 0}
+
+    def _relist(pid: str) -> bool:
+        for attempt in range(4):
+            s = SessionLocal()
+            try:
+                p = s.get(Profile, pid)
+                if p:
+                    p.is_listable = True
+                    p.screen_reason = SCREEN_REASON_LLM_KEPT
+                    p.screened_at = utcnow()
+                    s.commit()
+                return True
+            except Exception:
+                s.rollback()
+                if attempt == 3:
+                    return False
+                time.sleep(1.5 * (attempt + 1))
+            finally:
+                s.close()
+        return False
+
+    def work(item: tuple[str, str]) -> None:
+        pid, url = item
+        try:
+            key, _ = storage.key_from_url(url)
+            txt = extract_text_from_bytes(storage.download_bytes(key), key) or ""
+        except Exception as exc:                       # noqa: BLE001
+            with _lock:
+                stats["error"] += 1
+            if not dry_run:
+                _append(path, {"profile_id": pid, "reason": "error",
+                               "error": str(exc)[:120]})
+            return
+        if len(txt.strip()) < 200:
+            with _lock:
+                stats["upheld"] += 1
+            if not dry_run:
+                _append(path, {"profile_id": pid, "reason": "upheld_too_short"})
+            return
+
+        verdict = adjudicate(txt)
+        if verdict is None:
+            with _lock:
+                stats["unclear"] += 1
+            # No answer is not a verdict: leave the hide in place, but keep the
+            # row retryable rather than recording it as settled.
+            if not dry_run:
+                _append(path, {"profile_id": pid, "reason": "error",
+                               "error": "model unavailable"})
+            return
+        if verdict is False:
+            with _lock:
+                stats["upheld"] += 1
+            if not dry_run:
+                _append(path, {"profile_id": pid, "reason": "upheld"})
+            return
+
+        if not dry_run and not _relist(pid):
+            with _lock:
+                stats["error"] += 1
+            _append(path, {"profile_id": pid, "reason": "error",
+                           "error": "db write failed"})
+            return
+        with _lock:
+            stats["rescued"] += 1
+        if not dry_run:
+            _append(path, {"profile_id": pid, "reason": "rescued"})
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for i, _ in enumerate(pool.map(work, targets), 1):
@@ -320,12 +465,20 @@ if __name__ == "__main__":
     ap.add_argument("--use-llm", action="store_true",
                     help="Let the model adjudicate résumés the keyword screen "
                          "cannot settle (needs an LLM key configured)")
-    ap.add_argument("--scope", choices=("others", "clinical"), default="others",
+    ap.add_argument("--scope", choices=("others", "clinical", "all"), default="others",
                     help="'others' = no role signal; 'clinical' = weak-evidence "
-                         "profiles already sitting in a clinical category")
+                         "profiles already sitting in a clinical category; "
+                         "'all' = every unscreened profile, including ones a "
+                         "parsed specialty would otherwise exempt")
+    ap.add_argument("--rescue", action="store_true",
+                    help="Re-check only the profiles the keyword pass rejected, "
+                         "asking the model, and relist the ones it overturns")
     a = ap.parse_args()
     if a.restore:
         restore(a.manifest)
+    elif a.rescue:
+        rescue(limit=a.limit, workers=a.workers, dry_run=a.dry_run,
+               manifest=(a.manifest if a.manifest != MANIFEST else RESCUE_MANIFEST))
     else:
         run(limit=a.limit, workers=a.workers, dry_run=a.dry_run,
             manifest=a.manifest, scope=a.scope, use_llm=a.use_llm)
