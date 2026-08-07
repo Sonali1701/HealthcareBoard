@@ -59,6 +59,11 @@ h2{font-size:16px;font-weight:600}
 .metric{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow)}
 .metric span{display:block;font-size:30px;font-weight:600;color:var(--ink);letter-spacing:-.02em;line-height:1.2}
 .metric small{color:var(--muted);font-size:14px}
+/* A figure you can act on: the tile takes you to the page behind it. */
+.metric.is-link{cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
+.metric.is-link:hover{border-color:var(--accent);transform:translateY(-1px);
+  box-shadow:0 10px 20px -12px rgba(13,37,69,.28)}
+.metric.is-link:hover small{color:var(--accent-strong)}
 
 /* --- Tables ------------------------------------------------------------ */
 .table-wrap{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow);overflow-x:auto}
@@ -163,6 +168,14 @@ h2{font-size:16px;font-weight:600}
 .loading-state{grid-column:1/-1;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);text-align:center;font-size:14px}
 .spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* Finished states share the loading block's geometry but swap the spinner for
+   an icon, so "nothing here" and "still working" never look alike. */
+.loading-state.is-empty,.loading-state.is-error{gap:9px}
+.loading-state.is-empty>i,.loading-state.is-error>i{font-size:26px;line-height:1}
+.loading-state.is-empty>i{color:var(--dim)}
+.loading-state.is-error>i{color:var(--amber,#d97706)}
+.loading-state.is-empty>strong,.loading-state.is-error>strong{color:var(--ink);font-size:15px;font-weight:600}
+.state-hint{color:var(--faint);font-size:13px;max-width:340px;line-height:1.5}
 
 /* --- Boot splash ------------------------------------------------------- */
 .boot-splash{position:fixed;inset:0;z-index:2000;background:var(--white);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--ink)}

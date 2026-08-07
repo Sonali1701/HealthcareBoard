@@ -129,15 +129,13 @@
     <section id="page-dashboard" class="page active">
       <div class="hero-band">
         <div><h1>Dashboard</h1><p id="dash-sub">Loading your workspace...</p></div>
-        <button class="btn primary" data-page="jobs"><i class="fas fa-briefcase"></i>Find Jobs</button>
+        <button class="btn primary" id="dash-cta" data-page="jobs"><i class="fas fa-briefcase"></i>Find Jobs</button>
       </div>
-      <div class="metrics">
-        <div class="metric"><span id="metric-jobs">0</span><small>Open jobs</small></div>
-        <div class="metric"><span id="metric-apps">0</span><small>Applications</small></div>
-        <div class="metric"><span id="metric-saved">0</span><small>Saved jobs</small></div>
-        <div class="metric"><span id="metric-profile">0%</span><small>Profile</small></div>
-      </div>
-      <div class="section-head"><div><h2>Recommended Jobs</h2><p id="rec-sub">Live roles from the job board</p></div></div>
+      <!-- Tiles are written by loadDashboard(): a recruiter and a professional
+           measure completely different things, so the same four boxes cannot
+           serve both. -->
+      <div class="metrics" id="dash-metrics"></div>
+      <div class="section-head"><div><h2 id="rec-title">Recommended Jobs</h2><p id="rec-sub">Live roles from the job board</p></div></div>
       <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Role</th><th>Type</th><th>Specialty</th><th>Pay</th><th class="th-actions"></th></tr></thead>

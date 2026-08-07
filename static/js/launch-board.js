@@ -50,10 +50,23 @@
     return (isRevealed(p.profile_id) && full) ? full : (p.masked_name || "—");
   };
   const loading = text => `<div class="loading-state"><span class="spinner"></span><strong>${esc(text)}</strong></div>`;
-  // Same state block, but legal inside a <tbody>. Column counts must match the
+  // Finished states, with no spinner. These used to reuse loading(), which left
+  // a spinner turning under "No notifications" and under every error — a page
+  // that has given up must not look like a page still working.
+  const stateBlock = (icon, text, hint, cls) =>
+    `<div class="loading-state ${cls}"><i class="fas ${icon}"></i><strong>${esc(text)}</strong>${
+      hint ? `<span class="state-hint">${esc(hint)}</span>` : ""}</div>`;
+  const emptyState = (text, hint = "", icon = "fa-inbox") =>
+    stateBlock(icon, text, hint, "is-empty");
+  const errorState = (text, hint = "That is usually temporary — try again in a moment.") =>
+    stateBlock("fa-triangle-exclamation", text, hint, "is-error");
+  // Same state blocks, but legal inside a <tbody>. Column counts must match the
   // <thead> in board.html so the state spans the full table width.
   const JOB_COLS = 5, PROVIDER_COLS = 8;   // 8 = checkbox + 7 data columns
-  const loadingRow = (cols, text) => `<tr class="row-state"><td colspan="${cols}">${loading(text)}</td></tr>`;
+  const stateRow = (cols, html) => `<tr class="row-state"><td colspan="${cols}">${html}</td></tr>`;
+  const loadingRow = (cols, text) => stateRow(cols, loading(text));
+  const emptyRow = (cols, text, hint, icon) => stateRow(cols, emptyState(text, hint, icon));
+  const errorRow = (cols, text) => stateRow(cols, errorState(text));
   const clean = value => (value == null ? "" : String(value)).replace(/\s+/g, " ").trim();
   const short = (value, limit=64) => {
     const text = clean(value);
@@ -225,29 +238,84 @@
     </tr>`;
   }
 
+  // One tile. `to` makes the whole tile a link to the page that explains it,
+  // because a number you cannot act on is decoration.
+  function metricTile(value, label, to){
+    return `<div class="metric${to ? " is-link" : ""}"${to ? ` data-page="${to}"` : ""}>
+      <span>${esc(String(value))}</span><small>${esc(label)}</small></div>`;
+  }
+
   async function loadDashboard(){
+    const rec = isRecruiter();
     $("#dashboard-jobs").innerHTML = loadingRow(JOB_COLS, "Loading jobs...");
+    $("#dash-metrics").innerHTML = "";
+
+    // The header and call to action belong to whoever is looking. A recruiter
+    // being told to "Find Jobs" is the wrong job entirely.
+    const cta = $("#dash-cta");
+    if (cta){
+      cta.innerHTML = rec ? '<i class="fas fa-user-doctor"></i>Search providers'
+                          : '<i class="fas fa-briefcase"></i>Find Jobs';
+      cta.dataset.page = rec ? "providers" : "jobs";
+    }
+    const title = $("#rec-title");
+    if (title) title.textContent = rec ? "Live roles" : "Recommended Jobs";
+
+    let total = 0;
     try {
       // A professional sees roles ranked against their own profile; a
       // recruiter just sees what is live on the board.
-      const jobs = await get(isRecruiter() ? "/api/jobs?limit=4"
-                                           : "/api/jobs/recommended?limit=4");
+      const jobs = await get(rec ? "/api/jobs?limit=4"
+                                 : "/api/jobs/recommended?limit=4");
       const sub = $("#rec-sub");
-      if (sub && !isRecruiter())
-        sub.textContent = (jobs.items || []).some(j => j.fit_score > 0)
-          ? "Matched to your licence, specialty and location"
-          : "Complete your profile to get roles matched to you";
-      $("#metric-jobs").textContent = jobs.total || 0;
-      $("#dashboard-jobs").innerHTML = jobs.items.length ? jobs.items.map(jobRow).join("") : loadingRow(JOB_COLS, "No open roles yet.");
-    } catch(e) { $("#dashboard-jobs").innerHTML = loadingRow(JOB_COLS, "Could not load jobs."); }
-    if (S.profile) {
-      $("#dash-sub").textContent = `Welcome back, ${S.profile.first_name}.`;
-      $("#metric-profile").textContent = `${S.profile.completion_score || 0}%`;
-      try { $("#metric-apps").textContent = (await get("/api/applications/mine")).length; } catch(e) {}
-      try { $("#metric-saved").textContent = (await get("/api/applications/saved")).length; } catch(e) {}
-    } else {
-      $("#dash-sub").textContent = isRecruiter() ? "Recruiter workspace" : "Complete your profile to get matched.";
+      if (sub) sub.textContent = rec
+        ? "Pick a role to source ranked candidates against it"
+        : ((jobs.items || []).some(j => j.fit_score > 0)
+            ? "Matched to your licence, specialty and location"
+            : "Complete your profile to get roles matched to you");
+      total = jobs.total || 0;
+      $("#dashboard-jobs").innerHTML = jobs.items.length ? jobs.items.map(jobRow).join("") : emptyRow(JOB_COLS, "No open roles yet",
+               "New roles appear here as they are posted.", "fa-briefcase");
+    } catch(e) { $("#dashboard-jobs").innerHTML = errorRow(JOB_COLS, "Could not load jobs"); }
+
+    $("#dash-sub").textContent = S.profile
+      ? `Welcome back, ${S.profile.first_name}.`
+      : (rec ? "Recruiter workspace" : "Complete your profile to get matched.");
+
+    if (rec) {
+      // Everything a recruiter is measured on comes back in one call.
+      $("#dash-metrics").innerHTML =
+        metricTile(total.toLocaleString(), "Open roles", "jobs")
+        + metricTile("—", "Contacts revealed", "credits")
+        + metricTile("—", "Shortlisted", "pools")
+        + metricTile("—", "In submission", "submissions");
+      try {
+        const a = await get("/api/analytics/sourcing?days=30");
+        $("#dash-metrics").innerHTML =
+          metricTile(total.toLocaleString(), "Open roles", "jobs")
+          + metricTile(a.contacts.released_total, "Contacts revealed", "credits")
+          + metricTile(a.pools.shortlisted, "Shortlisted", "pools")
+          + metricTile(a.pools.worked, "In submission", "submissions");
+      } catch(e) { /* the tiles keep their placeholders */ }
+      return;
     }
+
+    const pct = `${(S.profile && S.profile.completion_score) || 0}%`;
+    const seekerTiles = (open, apps, saved) =>
+      metricTile(open, "Open roles", "jobs")
+      + metricTile(apps, "Applications", "applications")
+      + metricTile(saved, "Saved jobs", "applications")
+      + metricTile(pct, "Profile", "profile");
+    $("#dash-metrics").innerHTML = seekerTiles("—", "—", "—");
+    if (!S.profile) return;
+    // /api/jobs/recommended reports total = the page it returned, so the real
+    // board count has to come from the unfiltered list.
+    const [open, apps, saved] = await Promise.all([
+      get("/api/jobs?limit=1").then(r => (r.total || 0).toLocaleString()).catch(() => "—"),
+      get("/api/applications/mine").then(r => r.length).catch(() => "—"),
+      get("/api/applications/saved").then(r => r.length).catch(() => "—"),
+    ]);
+    $("#dash-metrics").innerHTML = seekerTiles(open, apps, saved);
   }
 
   async function loadJobs(){
@@ -262,8 +330,9 @@
       $("#jobs-count").textContent = `${data.total} role${data.total === 1 ? "" : "s"}`
         + (seats > data.items.length ? ` · ${seats} openings on this page` : "");
       data.items.forEach(j => S.jobsById.set(j.job_id, j));   // for the sourcing header
-      $("#jobs-list").innerHTML = data.items.length ? data.items.map(jobRow).join("") : loadingRow(JOB_COLS, "No jobs match this search.");
-    } catch(e) { $("#jobs-list").innerHTML = loadingRow(JOB_COLS, "Could not load jobs."); }
+      $("#jobs-list").innerHTML = data.items.length ? data.items.map(jobRow).join("") : emptyRow(JOB_COLS, "No jobs match this search",
+               "Try a broader title, or clear the state filter.", "fa-briefcase");
+    } catch(e) { $("#jobs-list").innerHTML = errorRow(JOB_COLS, "Could not load jobs"); }
   }
 
   // Built to scale to millions of rows: server-side filtering + paging. We never
@@ -373,7 +442,8 @@
       }
     });
     $("#providers-count").textContent = providerCountLabel();
-    $("#providers-grid").innerHTML = items.length ? items.map(providerRow).join("") : loadingRow(PROVIDER_COLS, "No providers match these filters.");
+    $("#providers-grid").innerHTML = items.length ? items.map(providerRow).join("") : emptyRow(PROVIDER_COLS, "No providers match these filters",
+               "Widen the radius, or drop a credential filter.", "fa-user-doctor");
     refreshPoolMembership(items.map(p => p.profile_id));
     renderBulkBar();
   }
@@ -522,7 +592,7 @@
       value ? esc(value) : `<span class="cell-none">${esc(hint || "Not provided")}</span>`}</strong></div>`;
   }
   async function loadProfile(){
-    if (!S.profile) { $("#profile-card").innerHTML = loading("No profile found."); return; }
+    if (!S.profile) { $("#profile-card").innerHTML = emptyState("No profile yet", "Add your details to appear in search.", "fa-id-card"); return; }
     const p = S.profile;
     $("#profile-sub").textContent = `${p.completion_score || 0}% complete`;
     $("#profile-card").innerHTML = `<div class="profile-grid">
@@ -673,15 +743,17 @@
     $("#feed-list").innerHTML = loading("Loading feed...");
     try {
       const data = await get("/api/social/posts?limit=20");
-      $("#feed-list").innerHTML = (data.items || data || []).map(p => `<div class="list-row"><div><strong>${esc(p.author_name || "HealthBoard")}</strong><div class="muted">${esc(p.body || "")}</div></div></div>`).join("") || loading("No posts yet.");
-    } catch(e) { $("#feed-list").innerHTML = loading("Could not load feed."); }
+      $("#feed-list").innerHTML = (data.items || data || []).map(p => `<div class="list-row"><div><strong>${esc(p.author_name || "HealthBoard")}</strong><div class="muted">${esc(p.body || "")}</div></div></div>`).join("") || emptyState("Nothing posted yet", "This is where updates from the "
+                 + "community will appear.", "fa-comments");
+    } catch(e) { $("#feed-list").innerHTML = errorState("Could not load the feed"); }
   }
   async function loadNotifications(){
     $("#notifications-list").innerHTML = loading("Loading notifications...");
     try {
       const data = await get("/api/notifications");
-      $("#notifications-list").innerHTML = (data || []).map(n => `<div class="list-row"><div><strong>${esc(n.title)}</strong><div class="muted">${esc(n.body || "")}</div></div></div>`).join("") || loading("No notifications.");
-    } catch(e) { $("#notifications-list").innerHTML = loading("Could not load notifications."); }
+      $("#notifications-list").innerHTML = (data || []).map(n => `<div class="list-row"><div><strong>${esc(n.title)}</strong><div class="muted">${esc(n.body || "")}</div></div></div>`).join("") || emptyState("You are all caught up",
+                 "Replies, matches and licence reminders land here.", "fa-bell");
+    } catch(e) { $("#notifications-list").innerHTML = errorState("Could not load notifications"); }
   }
   async function loadEmployer(){
     $("#employer-panel").innerHTML = loading("Loading recruiter dashboard...");
@@ -697,7 +769,7 @@
       const oc = $("#org-create");
       if (oc) oc.onclick = createOrg;
       loadEmployerJobs();
-    } catch(e) { $("#employer-panel").innerHTML = loading("Could not load employer dashboard."); }
+    } catch(e) { $("#employer-panel").innerHTML = errorState("Could not load the employer dashboard"); }
   }
   async function createOrg(){
     const v = await formDialog({
@@ -733,7 +805,7 @@
                 <td class="td-actions"><button class="btn small primary" data-source="${j.job_id}"><i class="fas fa-bolt"></i>Source</button></td>
               </tr>`).join("")}</tbody></table></div>`
           : `<p class="muted" style="font-size:13px">No jobs posted yet.</p>`}</div>`;
-    } catch(e) { box.innerHTML = loading("Could not load your jobs."); }
+    } catch(e) { box.innerHTML = errorState("Could not load your jobs"); }
   }
   async function postJob(){
     if (!S.employer) return toast("Create an organization first.", {kind:"err"});
@@ -1181,6 +1253,13 @@
     const pwt = $("#auth-pw-toggle");
     if (pwt) pwt.onclick = () => { const i = $("#auth-password"); const show = i.type === "password"; i.type = show ? "text" : "password"; pwt.innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>'; };
     $$(".nav-item,.top-user,.top-actions .icon-btn,.credit-chip,.hero-band .btn,.logo").forEach(el => el.addEventListener("click", e => { const page = el.dataset.page; if (page) { e.preventDefault(); showPage(page); } }));
+    // The dashboard tiles are rewritten per role after this runs, so they are
+    // delegated rather than bound directly.
+    const metrics = $("#dash-metrics");
+    if (metrics) metrics.addEventListener("click", e => {
+      const tile = e.target.closest(".metric[data-page]");
+      if (tile) showPage(tile.dataset.page);
+    });
     $("#logout-btn").onclick = () => { setToken(""); setRefresh(""); location.reload(); };
     ["job-q","job-type","job-state"].forEach(id => { const el = $("#" + id); el.addEventListener(id === "job-q" ? "input" : "change", debounce(loadJobs, 250)); });
     $("#provider-q").addEventListener("input", debounce(() => { S.provider.q = $("#provider-q").value.trim(); providerFilterChanged(); }, 300));
@@ -1509,7 +1588,7 @@
         : "Conversations";
       refreshUnreadBadge();
     } catch(e) {
-      if (box) box.innerHTML = loading("Could not load conversations.");
+      if (box) box.innerHTML = errorState("Could not load conversations");
     }
   }
 
@@ -1619,7 +1698,7 @@
       // Opening marks inbound messages read, so refresh the list + badge.
       await loadThreads({quiet:true});
     } catch(e) {
-      $("#msg-bubbles").innerHTML = loading("Could not load this conversation.");
+      $("#msg-bubbles").innerHTML = errorState("Could not load this conversation");
     }
   }
 
@@ -1735,7 +1814,7 @@
         try { await post(`/api/applications/${b.dataset.withdraw}/withdraw`, {}); loadApplications(); }
         catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
-    } catch(e) { box.innerHTML = loading("Could not load your applications."); }
+    } catch(e) { box.innerHTML = errorState("Could not load your applications"); }
   }
 
   // --- Job alerts (professional saved searches) ----------------------------
@@ -1833,7 +1912,7 @@
         try { await del(`/api/submissions/${b.dataset.subDel}`); loadSubmissions(); }
         catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
-    } catch(e) { box.innerHTML = loading("Could not load submissions."); }
+    } catch(e) { box.innerHTML = errorState("Could not load submissions"); }
   }
   async function submitCandidate(profileId){
     const v = await formDialog({
@@ -1979,7 +2058,7 @@
               <td>${t.balance_after}</td></tr>`).join("")}</tbody></table></div>`
             : `<p class="muted" style="font-size:13px">No transactions yet.</p>`}
         </div>`;
-    } catch(e) { box.innerHTML = loading("Could not load credits."); }
+    } catch(e) { box.innerHTML = errorState("Could not load credits"); }
   }
 
   // --- Outreach ------------------------------------------------------------
@@ -2035,7 +2114,7 @@
         catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
       $$("#outreach-body .camp-card").forEach(c => c.onclick = () => openCampaign(c.dataset.camp));
-    } catch(e) { box.innerHTML = loading("Could not load outreach."); }
+    } catch(e) { box.innerHTML = errorState("Could not load outreach"); }
   }
   async function newTemplate(){
     const DEFAULT_BODY = ["Hi {{first_name}},", "",
@@ -2169,7 +2248,7 @@
           ${stat(d.notifications, "Notifications")}
         </div></div>`;
       $("#analytics-sub").textContent = `Last ${d.window_days} days · ${dir.listable.toLocaleString()} providers listed`;
-    } catch(e) { box.innerHTML = loading("Could not load analytics."); }
+    } catch(e) { box.innerHTML = errorState("Could not load analytics"); }
   }
 
   // --- Saved searches ------------------------------------------------------
@@ -2476,7 +2555,7 @@
         try { await del(`/api/pools/${b.dataset.poolDel}`); loadPools(); }
         catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
-    } catch(e) { box.innerHTML = loading("Could not load talent pools."); }
+    } catch(e) { box.innerHTML = errorState("Could not load talent pools"); }
   }
 
   function poolMemberRow(m){
@@ -2563,7 +2642,7 @@
       // [data-resume] is handled by the global click listener in wire().
     } catch(e) {
       console.error("openPool failed", e);
-      box.innerHTML = loading("Could not load this pool.");
+      box.innerHTML = errorState("Could not load this pool");
     }
   }
 
