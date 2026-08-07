@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HealthBoard</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <meta name="description" content="A screened directory of healthcare professionals, live roles from real facilities, and credentials you can actually check.">
+  <meta name="theme-color" content="#0d2545">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -19,17 +22,32 @@
 
 <div id="auth-gate" class="auth-gate hidden">
   <div class="auth-brand">
-    <div class="brand-row"><span class="brand-mark">H</span><span>HealthBoard</span></div>
-    <h1>The staffing network for healthcare professionals</h1>
-    <p>Browse live jobs, manage credentials and connect with recruiters — all in one place.</p>
-    <ul class="auth-points">
-      <li><i class="fas fa-circle-check"></i> Verified provider directory</li>
-      <li><i class="fas fa-circle-check"></i> Live roles from the job board</li>
-      <li><i class="fas fa-circle-check"></i> Secure, private candidate data</li>
-    </ul>
+    <div class="auth-brand-inner">
+      <div class="brand-row"><span class="brand-mark">H</span><span>HealthBoard</span></div>
+      <h1>Where healthcare teams<br>find each other</h1>
+      <p>A screened directory of healthcare professionals, live roles from real
+         facilities, and credentials you can actually check.</p>
+      <div class="auth-stats" id="auth-stats">
+        <div class="auth-stat"><b id="stat-providers">—</b><span>screened professionals</span></div>
+        <div class="auth-stat"><b id="stat-jobs">—</b><span>open roles</span></div>
+        <div class="auth-stat"><b id="stat-states">—</b><span>states covered</span></div>
+      </div>
+      <ul class="auth-points">
+        <li><i class="fas fa-user-shield"></i>
+          <span><b>Your details stay yours.</b> Contact information is hidden until
+          you choose to share it, and every reveal is logged.</span></li>
+        <li><i class="fas fa-id-card-clip"></i>
+          <span><b>Credentials, tracked.</b> Licence expiry and compact eligibility
+          in one place, so nothing lapses quietly.</span></li>
+        <li><i class="fas fa-wand-magic-sparkles"></i>
+          <span><b>Matched, not listed.</b> Roles ranked against your licence,
+          specialty and location — with the reasoning shown.</span></li>
+      </ul>
+    </div>
   </div>
   <div class="auth-panel">
     <div class="auth-panel-inner">
+      <div class="auth-mini-brand"><span class="brand-mark">H</span><span>HealthBoard</span></div>
       <div class="auth-tabs">
         <button class="auth-tab active" data-auth-mode="login">Sign in</button>
         <button class="auth-tab" data-auth-mode="signup">Create account</button>
@@ -52,7 +70,10 @@
         <input id="auth-password" class="input" type="password" placeholder="Password" autocomplete="current-password">
         <button type="button" id="auth-pw-toggle" class="pw-toggle" tabindex="-1" aria-label="Show password"><i class="fas fa-eye"></i></button>
       </div>
-      <div id="auth-hint" class="auth-hint">At least 8 characters.</div>
+      <div class="auth-row">
+        <span id="auth-hint" class="auth-hint">At least 8 characters.</span>
+        <button type="button" class="auth-link" id="auth-forgot">Forgot password?</button>
+      </div>
       <div id="auth-error" class="form-error"></div>
       <button id="auth-submit" class="btn primary full">Sign in</button>
       <div class="auth-foot">Protected workspace · your data stays private</div>

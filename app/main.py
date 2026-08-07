@@ -138,6 +138,37 @@ for module in (
 
 # --- Meta -----------------------------------------------------------------
 
+@app.get("/api/public/stats", tags=["meta"])
+def public_stats():
+    """Headline figures for the signed-out page.
+
+    Deliberately counts only what a visitor could verify by signing up: the
+    screened, listable directory rather than every row ever imported.
+    """
+    from sqlalchemy import text as _t
+
+    db = SessionLocal()
+    try:
+        providers = db.execute(_t(
+            "SELECT count(*) FROM profiles WHERE is_listable IS TRUE")).scalar() or 0
+        jobs = db.execute(_t(
+            "SELECT count(*) FROM job_postings WHERE status = 'active'")).scalar() or 0
+        # Constrained to real US state codes: the imported data carries junk
+        # values, and a distinct count reported 61 "states".
+        states = db.execute(_t(
+            "SELECT count(DISTINCT upper(state_code)) FROM profiles "
+            "WHERE is_listable IS TRUE AND upper(state_code) IN "
+            "('AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL',"
+            "'IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT',"
+            "'NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI',"
+            "'SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC')")).scalar() or 0
+    except Exception:
+        return {"providers": None, "jobs": None, "states": None}
+    finally:
+        db.close()
+    return {"providers": providers, "jobs": jobs, "states": states}
+
+
 @app.get("/api/health", tags=["meta"])
 def health():
     return {"status": "ok", "version": __version__, "env": settings.environment}
@@ -216,3 +247,11 @@ for module in (web_public, web_auth, web_seeker, web_recruiter,
 # mockups' hb-api.js + local upload fallback at /static/uploads).
 app.mount("/assets", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="assets")
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT)), name="static")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Browsers and link unfurlers ask for /favicon.ico regardless of the
+    <link rel="icon"> tag; without this every page load logged a 404."""
+    return FileResponse(PROJECT_ROOT / "static" / "favicon.svg",
+                        media_type="image/svg+xml")

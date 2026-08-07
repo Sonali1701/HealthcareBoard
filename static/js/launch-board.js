@@ -595,7 +595,7 @@
       if (add) add.onclick = addCredential;
       $$("#profile-credentials [data-cred-del]").forEach(b => b.onclick = async () => {
         try { await del(`/api/profiles/me/licenses/${b.dataset.credDel}`); loadCredentials(); }
-        catch(e) { alert(e.message); }
+        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
     } catch(e) { box.innerHTML = ""; }
   }
@@ -796,7 +796,8 @@
         ? `Uploaded — filled in ${filled.join(", ").replace(/_/g, " ")} from your résumé.`
         : "Résumé uploaded.";
       if ($("#page-profile").classList.contains("active")) loadProfile();
-    } catch(e) { alert("Upload failed."); }
+    } catch(e) { toast(e.message || "The file could not be uploaded.",
+                       {title:"Upload failed", kind:"err"}); }
   }
   function renderResume(r){
     const sec = r.sections || {};
@@ -963,10 +964,11 @@
       }
       // 402 means the balance ran out — say so plainly rather than "failed".
       if (e.status === 402){
-        alert(e.message);
+        toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"});
         refreshCredits();
       } else {
-        alert(e.message || "Could not release contact.");
+        toast(e.message || "The contact details were not released.",
+              {title:"Reveal failed", kind:"err"});
       }
       return null;
     }
@@ -1138,9 +1140,14 @@
       $("#ext-token-reveal").innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
     };
     $("#ext-token-regen").onclick = async () => {
-      if (!confirm("Regenerate your capture token? The current one will stop working.")) return;
+      if (!await confirmDialog({
+        title: "Regenerate capture token",
+        body: "Your current token stops working immediately. Any browser "
+            + "extension still using it will need the new one pasted in.",
+        confirm: "Regenerate", danger: true})) return;
       try { const r = await post("/api/extension/token", {}); $("#ext-token").value = r.capture_token; }
-      catch(e) { alert("Could not regenerate the token."); }
+      catch(e) { toast(e.message || "The token was not changed.",
+                       {title:"Could not regenerate", kind:"err"}); }
     };
     $$("#page-extension [data-copy]").forEach(b => b.onclick = () => {
       const el = $("#" + b.dataset.copy); if (!el) return;
@@ -1155,6 +1162,22 @@
     $("#auth-submit").onclick = submitAuth;
     $("#auth-password").addEventListener("keydown", e => { if (e.key === "Enter") submitAuth(); });
     $("#auth-email").addEventListener("keydown", e => { if (e.key === "Enter") $("#auth-password").focus(); });
+    const forgot = $("#auth-forgot");
+    if (forgot) forgot.onclick = async () => {
+      const v = await formDialog({
+        title: "Reset your password",
+        intro: "We'll email you a link if that address has an account.",
+        submit: "Send reset link",
+        fields: [{name:"email", label:"Email address", type:"email", required:true,
+                  wide:true, value:($("#auth-email").value || "").trim()}],
+      });
+      if (!v) return;
+      try {
+        await post("/api/auth/password-reset/request", {email: v.email});
+      } catch(e) { /* never reveal whether the address exists */ }
+      toast("If that address has an account, a reset link is on its way.",
+            {title:"Check your email", ms:6000});
+    };
     const pwt = $("#auth-pw-toggle");
     if (pwt) pwt.onclick = () => { const i = $("#auth-password"); const show = i.type === "password"; i.type = show ? "text" : "password"; pwt.innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>'; };
     $$(".nav-item,.top-user,.top-actions .icon-btn,.credit-chip,.hero-band .btn,.logo").forEach(el => el.addEventListener("click", e => { const page = el.dataset.page; if (page) { e.preventDefault(); showPage(page); } }));
@@ -1332,6 +1355,72 @@
     });
   }
 
+  // Destructive actions get the same styled dialog as everything else, and say
+  // what will actually happen rather than "Are you sure?". `danger` colours the
+  // confirm button red so an erase never looks like an ordinary save.
+  function confirmDialog({title, body = "", confirm: label = "Confirm", danger = false}){
+    return new Promise(resolve => {
+      $("#modal-root").innerHTML = `
+        <div class="modal"><div class="modal-card confirm-card">
+          <div class="modal-head"><strong>${esc(title)}</strong>
+            <button class="icon-btn" data-dlg-x><i class="fas fa-xmark"></i></button></div>
+          <div class="dlg-body"><p class="dlg-intro">${esc(body)}</p></div>
+          <div class="dlg-foot"><span class="spacer"></span>
+            <button type="button" class="btn ghost" data-dlg-x>Cancel</button>
+            <button type="button" class="btn ${danger ? "danger" : "primary"}"
+                    id="dlg-ok">${esc(label)}</button>
+          </div>
+        </div></div>`;
+      let settled = false;
+      const finish = v => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener("keydown", onKey);
+        $("#modal-root").innerHTML = "";
+        resolve(v);
+      };
+      const onKey = e => { if (e.key === "Escape") finish(false); };
+      document.addEventListener("keydown", onKey);
+      $$("#modal-root [data-dlg-x]").forEach(b => b.onclick = () => finish(false));
+      $("#modal-root .modal").addEventListener("click", e => {
+        if (e.target.classList.contains("modal")) finish(false);
+      });
+      $("#dlg-ok").onclick = () => finish(true);
+      setTimeout(() => { const b = $("#dlg-ok"); if (b) b.focus(); }, 40);
+    });
+  }
+
+  // A read-only record: figures you want to sit and look at, rather than a
+  // toast that disappears while you are still reading it.
+  function infoDialog(title, rows){
+    return new Promise(resolve => {
+      $("#modal-root").innerHTML = `
+        <div class="modal"><div class="modal-card confirm-card">
+          <div class="modal-head"><strong>${esc(title)}</strong>
+            <button class="icon-btn" data-dlg-x><i class="fas fa-xmark"></i></button></div>
+          <div class="dlg-body"><dl class="dlg-facts">${rows.map(([k, v]) =>
+            `<dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "—" : String(v))}</dd>`
+          ).join("")}</dl></div>
+          <div class="dlg-foot"><span class="spacer"></span>
+            <button type="button" class="btn primary" data-dlg-x>Close</button></div>
+        </div></div>`;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener("keydown", onKey);
+        $("#modal-root").innerHTML = "";
+        resolve();
+      };
+      const onKey = e => { if (e.key === "Escape") finish(); };
+      document.addEventListener("keydown", onKey);
+      $$("#modal-root [data-dlg-x]").forEach(b => b.onclick = finish);
+      $("#modal-root .modal").addEventListener("click", e => {
+        if (e.target.classList.contains("modal")) finish();
+      });
+    });
+  }
+
   function debounce(fn, ms){ let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; }
 
   // --- Messaging -----------------------------------------------------------
@@ -1483,8 +1572,6 @@
     } catch(e) { toast(e.message || "Could not start a conversation.", {kind:"err"}); }
   }
   // Small shim so this works before the toast system lands in the polish pass.
-  function toastOrAlert(msg){ alert(msg); }
-
   async function loadOlderMessages(beforeId){
     if (!S.activeThread || !beforeId) return;
     const box = $("#msg-bubbles");
@@ -1559,7 +1646,8 @@
       await openThread(threadId, {quiet:true});
     } catch(e) {
       input.value = body;   // don't lose what they typed
-      alert(e.message || "Could not send the message.");
+      toast(e.message || "The message was not sent.",
+            {title:"Send failed", kind:"err"});
     }
   }
 
@@ -1600,7 +1688,7 @@
     if (stage) stage.onchange = async () => {
       if (!S.activeThread) return;
       try { await patch(`/api/messages/threads/${S.activeThread}/ats`, {ats_stage: stage.value}); }
-      catch(e) { alert(e.message); }
+      catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
     };
   }
 
@@ -1639,9 +1727,13 @@
         : `<div class="match-empty"><i class="fas fa-list-check"></i><h3>No applications yet</h3>
            <p>Roles you apply to appear here, with where each one stands.</p></div>`;
       $$("#apps-body [data-withdraw]").forEach(b => b.onclick = async () => {
-        if (!confirm("Withdraw this application?")) return;
+        if (!await confirmDialog({
+          title: "Withdraw application",
+          body: "The employer will see this application as withdrawn. You "
+              + "can apply again while the role is open.",
+          confirm: "Withdraw", danger: true})) return;
         try { await post(`/api/applications/${b.dataset.withdraw}/withdraw`, {}); loadApplications(); }
-        catch(e) { alert(e.message); }
+        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
     } catch(e) { box.innerHTML = loading("Could not load your applications."); }
   }
@@ -1660,7 +1752,7 @@
         </span>`).join("")}</div>` : "";
       $$("#alerts-strip [data-alert-del]").forEach(b => b.onclick = async () => {
         try { await del(`/api/saved-searches/${b.dataset.alertDel}`); loadJobAlerts(); }
-        catch(e) { alert(e.message); }
+        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
     } catch(e) { box.innerHTML = ""; }
   }
@@ -1685,10 +1777,12 @@
     const name = v.name;
     try {
       const r = await post("/api/saved-searches", {name:name.trim(), kind:"jobs", params, notify:true});
-      alert(`Alert saved — ${r.matches} role${r.matches === 1 ? "" : "s"} match right now.\n`
-            + `We'll tell you when new ones appear.`);
+      toast(`${r.matches} role${r.matches === 1 ? "" : "s"} match right now. `
+            + `We'll tell you when new ones appear.`, {title:"Alert saved"});
       loadJobAlerts();
-    } catch(e) { alert(e.status === 409 ? "You already have an alert with that name." : e.message); }
+    } catch(e) { toast(e.status === 409 ? "You already have an alert with that name. Pick another."
+                                        : (e.message || "The alert was not saved."),
+                       {title:"Could not save alert", kind:"err"}); }
   }
 
   // --- Submissions (recruiter) ---------------------------------------------
@@ -1728,12 +1822,16 @@
            <p>Submit a candidate from a talent pool to start tracking what you've put to clients.</p></div>`;
       $$("#subs-body [data-sub-status]").forEach(sel => sel.onchange = async () => {
         try { await patch(`/api/submissions/${sel.dataset.subStatus}`, {status: sel.value}); loadSubmissions(); }
-        catch(e) { alert(e.message); }
+        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
       $$("#subs-body [data-sub-del]").forEach(b => b.onclick = async () => {
-        if (!confirm("Remove this submission?")) return;
+        if (!await confirmDialog({
+          title: "Remove submission",
+          body: "This drops the candidate from the client submission list. "
+              + "Their profile and your notes stay in the directory.",
+          confirm: "Remove", danger: true})) return;
         try { await del(`/api/submissions/${b.dataset.subDel}`); loadSubmissions(); }
-        catch(e) { alert(e.message); }
+        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
     } catch(e) { box.innerHTML = loading("Could not load submissions."); }
   }
@@ -1759,8 +1857,8 @@
     if (v.note) body.note = v.note;
     try {
       await post("/api/submissions", body);
-      alert("Submitted. Track it on the Submissions page.");
-    } catch(e) { alert(e.message); }
+      toast("Track it on the Submissions page.", {title:"Candidate submitted"});
+    } catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
   }
 
   // --- Privacy (professional) ----------------------------------------------
@@ -1790,14 +1888,23 @@
       if (ex) ex.onclick = exportMyData;
       const dl = $("#privacy-delist");
       if (dl) dl.onclick = async () => {
-        if (!confirm("Remove yourself from the recruiter directory?\n\nYour contact details will be erased and recruiters will no longer find you.")) return;
-        try { const r = await post("/api/privacy/me/delist", {}); alert(r.message); loadPrivacy(); loadProfile(); }
-        catch(e) { alert(e.message); }
+        if (!await confirmDialog({
+          title: "Remove yourself from the directory",
+          body: "Your email, phone and r\u00e9sum\u00e9 are erased and "
+              + "recruiters stop seeing you in search. This cannot be undone "
+              + "from here — you would have to sign up again.",
+          confirm: "Erase my details", danger: true})) return;
+        try { const r = await post("/api/privacy/me/delist", {});
+              toast(r.message, {title:"Removed from the directory", ms:7000});
+              loadPrivacy(); loadProfile(); }
+        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       };
       const rl = $("#privacy-relist");
       if (rl) rl.onclick = async () => {
-        try { const r = await post("/api/privacy/me/relist", {}); alert(r.message); loadPrivacy(); loadProfile(); }
-        catch(e) { alert(e.message); }
+        try { const r = await post("/api/privacy/me/relist", {});
+              toast(r.message, {title:"Back in the directory", ms:7000});
+              loadPrivacy(); loadProfile(); }
+        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       };
     } catch(e) { box.innerHTML = ""; }
   }
@@ -1810,7 +1917,8 @@
       a.download = "my-healthboard-data.json";
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
-    } catch(e) { alert(e.message || "Could not export your data."); }
+    } catch(e) { toast(e.message || "The export did not run.",
+                       {title:"Export failed", kind:"err"}); }
   }
 
   // --- Credits -------------------------------------------------------------
@@ -1924,7 +2032,7 @@
       $$("#outreach-body [data-tmpl-del]").forEach(b => b.onclick = async e => {
         e.stopPropagation();
         try { await del(`/api/outreach/templates/${b.dataset.tmplDel}`); loadOutreach(); }
-        catch(err) { alert(err.message); }
+        catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
       $$("#outreach-body .camp-card").forEach(c => c.onclick = () => openCampaign(c.dataset.camp));
     } catch(e) { box.innerHTML = loading("Could not load outreach."); }
@@ -1989,23 +2097,32 @@
     } catch(e) { toast(e.message, {title:"Could not build campaign", kind:"err"}); }
   }
   async function sendCampaign(id){
-    if (!confirm("Send this campaign now?")) return;
+    if (!await confirmDialog({
+      title: "Send campaign",
+      body: "Emails go out immediately to everyone on the list who has not "
+          + "opted out. Sending cannot be recalled.",
+      confirm: "Send now"})) return;
     try {
       const r = await post(`/api/outreach/campaigns/${id}/send`, {});
-      alert(`Sent ${r.sent}, skipped ${r.skipped}, failed ${r.failed}.`
-            + (r.note ? `\n\n${r.note}` : ""));
+      toast(`Sent ${r.sent}, skipped ${r.skipped}, failed ${r.failed}.`
+            + (r.note ? ` ${r.note}` : ""), {title:"Campaign sent", ms:7000});
       loadOutreach();
-    } catch(e) { alert(e.message); }
+    } catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
   }
   async function openCampaign(id){
     try {
       const d = await get(`/api/outreach/campaigns/${id}`);
       const reasons = Object.entries(d.skip_reasons || {})
         .map(([r,n]) => `${n} ${r}`).join(" · ") || "none";
-      alert(`${d.name}\n\nSubject: ${d.subject}\n\n`
-            + `${d.total} recipients · ${d.sent} sent · ${d.opened} opened · ${d.replied} replied\n`
-            + `Skipped: ${reasons}`);
-    } catch(e) { alert(e.message); }
+      await infoDialog(d.name, [
+        ["Subject", d.subject],
+        ["Recipients", `${d.total}`],
+        ["Sent", `${d.sent}`],
+        ["Opened", `${d.opened}`],
+        ["Replied", `${d.replied}`],
+        ["Skipped", reasons],
+      ]);
+    } catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
   }
 
   // --- Analytics -----------------------------------------------------------
@@ -2084,7 +2201,7 @@
     $$("#saved-chips [data-search-del]").forEach(b => b.onclick = async e => {
       e.stopPropagation();
       try { await del(`/api/saved-searches/${b.dataset.searchDel}`); loadSavedSearches(); }
-      catch(err) { alert(err.message); }
+      catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
     });
   }
   async function loadSavedSearches(){
@@ -2123,7 +2240,9 @@
     try {
       await post("/api/saved-searches", {name: name.trim(), params: currentSearchParams(), notify: true});
       loadSavedSearches();
-    } catch(e) { alert(e.status === 409 ? "You already have a search with that name." : e.message); }
+    } catch(e) { toast(e.status === 409 ? "You already have a search with that name. Pick another."
+                                        : (e.message || "The search was not saved."),
+                       {title:"Could not save search", kind:"err"}); }
   }
   // Re-count every saved search; growth since the last check becomes a
   // notification. This is what finally makes the Notifications page live.
@@ -2349,9 +2468,13 @@
       $$("#pools-body [data-pool-del]").forEach(b => b.onclick = async e => {
         e.stopPropagation();
         const pool = S.pools.find(p => p.pool_id === b.dataset.poolDel);
-        if (!confirm(`Delete "${pool ? pool.name : "this pool"}"? The candidates stay in the directory.`)) return;
+        if (!await confirmDialog({
+          title: `Delete ${pool ? pool.name : "this pool"}`,
+          body: "The list and its notes are deleted. The candidates "
+              + "themselves stay in the directory.",
+          confirm: "Delete pool", danger: true})) return;
         try { await del(`/api/pools/${b.dataset.poolDel}`); loadPools(); }
-        catch(err) { alert(err.message); }
+        catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
     } catch(e) { box.innerHTML = loading("Could not load talent pools."); }
   }
@@ -2418,7 +2541,7 @@
       $$("#pools-body [data-pstage]").forEach(b => b.onclick = () => openPool(poolId, b.dataset.pstage));
       $$("#pools-body [data-stage-for]").forEach(sel => sel.onchange = async () => {
         try { await patch(`/api/pools/${poolId}/members/${sel.dataset.stageFor}`, {stage: sel.value}); openPool(poolId, S.poolStage); }
-        catch(err) { alert(err.message); }
+        catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
       $$("#pools-body [data-note-for]").forEach(b => b.onclick = async () => {
         const row = (d.items || []).find(x => x.profile_id === b.dataset.noteFor);
@@ -2431,11 +2554,11 @@
         if (!v) return;
         const note = v.note;
         try { await patch(`/api/pools/${poolId}/members/${b.dataset.noteFor}`, {note}); openPool(poolId, S.poolStage); }
-        catch(err) { alert(err.message); }
+        catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
       $$("#pools-body [data-pool-remove]").forEach(b => b.onclick = async () => {
         try { await del(`/api/pools/${poolId}/members/${b.dataset.poolRemove}`); openPool(poolId, S.poolStage); }
-        catch(err) { alert(err.message); }
+        catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
       // [data-resume] is handled by the global click listener in wire().
     } catch(e) {
@@ -2456,7 +2579,8 @@
       a.download = `${(pool ? pool.name : "pool").replace(/[^\w-]+/g,"-")}.csv`;
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
-    } catch(e) { alert("Could not export this pool."); }
+    } catch(e) { toast(e.message || "The export did not run.",
+                       {title:"Export failed", kind:"err"}); }
   }
 
   async function createPool(){
@@ -2478,7 +2602,9 @@
                                 visibility:v.visibility, color:"blue"});
       toast("Save candidates to it from the directory.", {title:v.name});
       loadPools();
-    } catch(e) { alert(e.status === 409 ? "You already have a pool with that name." : e.message); }
+    } catch(e) { toast(e.status === 409 ? "You already have a pool with that name. Pick another."
+                            : (e.message || "The pool was not saved."),
+            {title:"Could not save pool", kind:"err"}); }
   }
 
   // Repaint the Save/Saved pills from local state — no network, so an
@@ -2541,7 +2667,7 @@
       } catch(e) {
         S.poolMembership.set(profileId, before);   // roll back the optimistic paint
         paintPoolButtons();
-        alert(e.message);
+        toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"});
       }
     });
     menu.querySelector("[data-new-pool]").onclick = async () => {
@@ -2564,8 +2690,25 @@
         paintPoolButtons();
         await post(`/api/pools/${pool.pool_id}/members`, {profile_id: profileId});
         pool.member_count = (pool.member_count || 0) + 1;   // keep the card count honest
-      } catch(e) { alert(e.status === 409 ? "You already have a pool with that name." : e.message); }
+      } catch(e) { toast(e.status === 409 ? "You already have a pool with that name. Pick another."
+                            : (e.message || "The pool was not saved."),
+            {title:"Could not save pool", kind:"err"}); }
     };
+  }
+
+  // Real figures on the signed-out page. Fails quietly: a marketing number is
+  // never worth blocking the login form for.
+  async function loadPublicStats(){
+    const fmt = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n);
+    try {
+      const res = await fetch("/api/public/stats", {cache:"no-store"});
+      if (!res.ok) return;
+      const d = await res.json();
+      const set = (id, v) => { const el = $(id); if (el && v != null) el.textContent = fmt(v); };
+      set("#stat-providers", d.providers);
+      set("#stat-jobs", d.jobs);
+      set("#stat-states", d.states);
+    } catch(e) { /* leave the placeholders */ }
   }
 
   async function startApp(){
@@ -2593,6 +2736,7 @@
     // No token (or it was rejected): show the login form.
     $("#boot-splash").classList.add("hidden");
     $("#auth-gate").classList.remove("hidden");
+    loadPublicStats();
   }
   wire();
   startApp();
