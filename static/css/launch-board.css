@@ -295,6 +295,27 @@ h2{font-size:16px;font-weight:600}
 
 .lp-band{border-bottom:1px solid var(--lp-line);background:var(--lp-surface)}
 .lp-band p{max-width:820px;margin:0 auto;padding:34px 28px;text-align:center;font-size:18px;line-height:1.55;color:var(--lp-ink);font-weight:300}
+/* Two-lane split: clinicians vs agencies */
+.lp-lanes{padding:64px 0;background:var(--lp-paper)}
+.lp-lane-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.lp-lane{background:var(--lp-surface);border:1px solid var(--lp-line);border-radius:16px;padding:32px 30px;display:flex;flex-direction:column}
+.lp-lane-agency{background:var(--lp-ink);border-color:var(--lp-ink)}
+.lp-lane-tag{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--lp-accent);background:var(--lp-accent-soft);border-radius:999px;padding:5px 13px;align-self:flex-start;margin-bottom:16px}
+.lp-lane-agency .lp-lane-tag{color:#dbe7ff;background:rgba(255,255,255,.09)}
+.lp-lane h2{font-size:23px;letter-spacing:-.02em;font-weight:600;margin:0 0 18px;color:var(--lp-ink)}
+.lp-lane-agency h2{color:#fff}
+.lp-lane-list{list-style:none;margin:0 0 24px;padding:0;flex:1}
+.lp-lane-list li{display:flex;gap:12px;align-items:flex-start;padding:12px 0;font-size:14.5px;line-height:1.5;color:var(--lp-muted);border-top:1px solid var(--lp-line)}
+.lp-lane-list li:first-child{border-top:0;padding-top:2px}
+.lp-lane-agency .lp-lane-list li{color:#aeb9cc;border-color:rgba(255,255,255,.1)}
+.lp-lane-list li>i{color:var(--lp-accent);margin-top:3px;font-size:14px;flex:0 0 auto;width:18px;text-align:center}
+.lp-lane-agency .lp-lane-list li>i{color:#7fb0ff}
+.lp-lane-list b{color:var(--lp-ink);font-weight:600}
+.lp-lane-agency .lp-lane-list b{color:#fff}
+.lp-lane .btn{align-self:flex-start}
+.lp-lane-agency .btn.primary{background:#fff;color:var(--lp-ink)}
+.lp-lane-agency .btn.primary:hover{background:var(--lp-accent-soft)}
+@media(max-width:760px){.lp-lane-grid{grid-template-columns:1fr}}
 
 .lp-section{padding:84px 0}
 .lp-eyebrow{display:block;font-size:12px;color:var(--lp-accent);margin-bottom:14px}
