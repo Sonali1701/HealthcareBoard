@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     # frontend never exposes it. If empty, GSA proxy serves fallback rates.
     gsa_api_key: str = ""
     gsa_base_url: str = "https://api.gsa.gov/travel/perdiem/v2"
-    gsa_fiscal_year: int = 2025
+    # Keep the deployment override in sync when GSA publishes a new fiscal year.
+    gsa_fiscal_year: int = 2026
 
     # --- Credits ---
     # One credit per candidate, spent when their contact is revealed. Nothing
@@ -63,6 +64,29 @@ class Settings(BaseSettings):
     email_from_name: str = "HealthBoard"
     # Base URL the frontend is served from — used to build reset/verify links.
     frontend_base_url: str = "http://127.0.0.1:8000"
+
+    # --- Nexus / LaborEdge job feed ---
+    # Pulls open reqs from the agency's LaborEdge (Nexus) ATS into our job
+    # board. LaborEdge issues the credentials — drop them into the environment
+    # to switch the sync on; with nexus_enabled False the sync is a no-op.
+    # The Basic-auth value is the fixed client credential from the API docs.
+    nexus_enabled: bool = False
+    nexus_token_url: str = "https://api-nexus.laboredge.com/auth/oauth2/token"
+    nexus_base_url: str = "https://api-nexus.laboredge.com:9000"
+    nexus_basic_auth: str = "bmV4dXM6NXM6Nn5EcEhaelcmVFoj"  # "basic <this>"
+    nexus_username: str = ""
+    nexus_password: str = ""
+    nexus_org_code: str = ""          # e.g. "FSM"
+    nexus_grant_type: str = "password"
+
+    # --- Payments (Stripe) ---
+    # When payments_enabled is False (or no key), credit purchases are turned
+    # off and the buy button explains that to the recruiter. Set the keys from
+    # the Stripe dashboard to switch it on. The webhook secret verifies that a
+    # completion callback genuinely came from Stripe before granting credits.
+    payments_enabled: bool = False
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
 
     # --- Object storage (S3-compatible: Vultr / AWS S3 / Cloudflare R2) ---
     # When storage_enabled is False, uploads fall back to ./uploads served at /static.
@@ -155,6 +179,23 @@ class Settings(BaseSettings):
         if self.cors_origins.strip() == "*":
             return ["*"]
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        """True for production-like environments (robust to 'prod'/'release')."""
+        return self.environment.strip().lower() in {"production", "prod", "release"}
+
+    @model_validator(mode="after")
+    def _guard_production(self):
+        """Refuse to boot in production with insecure defaults, rather than
+        silently shipping a forgeable JWT secret or an ephemeral SQLite file."""
+        if self.is_production:
+            if self.jwt_secret == "dev-only-insecure-secret-change-me":
+                raise ValueError("Set a strong JWT_SECRET in production")
+            if self.database_url.startswith("sqlite"):
+                raise ValueError(
+                    "Set a PostgreSQL DATABASE_URL in production (SQLite is not supported)")
+        return self
 
     @property
     def storage_public_base(self) -> str:

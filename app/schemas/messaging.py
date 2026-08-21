@@ -6,6 +6,13 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+
+class EmailOutreachIn(BaseModel):
+    """A recruiter's cold email to an off-platform candidate."""
+    profile_id: str
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=5000)
+
 from ..models.enums import (
     InterviewStatus,
     MessageKind,

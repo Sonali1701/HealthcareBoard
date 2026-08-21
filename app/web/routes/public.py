@@ -16,10 +16,21 @@ from ...models import (
     Profile,
     SavedJob,
 )
-from ..core import current_user, render
+from ..core import RedirectException, current_user, render
 
 router = APIRouter(tags=["web-public"])
 DbDep = Annotated[Session, Depends(get_db)]
+
+
+def _require_recruiter_or_redirect(user) -> None:
+    """The candidate directory is recruiter-only and never anonymous.
+
+    These legacy pages previously rendered every profile — full name, résumé
+    link, licence numbers — to anyone, bypassing the paywall, the masking and
+    the opt-out. Send anyone who isn't a signed-in recruiter to the real app.
+    """
+    if not user or user.role.value not in {"recruiter", "employer", "admin"}:
+        raise RedirectException("/")
 
 SPECIALTIES = ["Allergy & Immunology", "ICU", "ER", "OR", "Labor & Delivery",
                "Med-Surg", "Telemetry", "Oncology", "Pediatrics", "Anesthesia"]
@@ -109,7 +120,8 @@ def job_detail(request: Request, job_id: str, db: DbDep, user=Depends(current_us
 def talent_page(request: Request, db: DbDep, user=Depends(current_user),
                 q: Optional[str] = None, specialty: Optional[str] = None,
                 profession: Optional[str] = None, state: Optional[str] = None):
-    stmt = select(Profile)
+    _require_recruiter_or_redirect(user)
+    stmt = select(Profile).where(Profile.is_listable.is_(True))
     if q:
         stmt = stmt.where(Profile.search_text.like(f"%{q.lower()}%"))
     if specialty:
@@ -131,11 +143,12 @@ def talent_page(request: Request, db: DbDep, user=Depends(current_user),
 
 @router.get("/talent/{profile_id}")
 def talent_detail(request: Request, profile_id: str, db: DbDep, user=Depends(current_user)):
+    _require_recruiter_or_redirect(user)
     profile = db.scalar(
         select(Profile).options(
             selectinload(Profile.licenses), selectinload(Profile.certifications),
             selectinload(Profile.work_history), selectinload(Profile.skills),
-        ).where(Profile.profile_id == profile_id)
+        ).where(Profile.profile_id == profile_id, Profile.is_listable.is_(True))
     )
     if not profile:
         return render(request, "public/not_found.html", {"what": "profile"}, status_code=404)

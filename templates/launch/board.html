@@ -8,7 +8,8 @@
   <meta name="description" content="A screened directory of healthcare professionals, live roles from real facilities, and credentials you can actually check.">
   <meta name="theme-color" content="#0d2545">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/launch-board.css">
 </head>
@@ -20,40 +21,148 @@
   <div class="boot-text">Loading your workspace…</div>
 </div>
 
-<div id="auth-gate" class="auth-gate hidden">
-  <div class="auth-brand">
-    <div class="auth-brand-inner">
-      <div class="brand-row"><span class="brand-mark">H</span><span>HealthBoard</span></div>
-      <h1>Where healthcare teams<br>find each other</h1>
-      <p>A screened directory of healthcare professionals, live roles from real
-         facilities, and credentials you can actually check.</p>
-      <div class="auth-stats" id="auth-stats">
-        <div class="auth-stat"><b id="stat-providers">—</b><span>screened professionals</span></div>
-        <div class="auth-stat"><b id="stat-jobs">—</b><span>open roles</span></div>
-        <div class="auth-stat"><b id="stat-states">—</b><span>states covered</span></div>
-      </div>
-      <ul class="auth-points">
-        <li><i class="fas fa-user-shield"></i>
-          <span><b>Your details stay yours.</b> Contact information is hidden until
-          you choose to share it, and every reveal is logged.</span></li>
-        <li><i class="fas fa-id-card-clip"></i>
-          <span><b>Credentials, tracked.</b> Licence expiry and compact eligibility
-          in one place, so nothing lapses quietly.</span></li>
-        <li><i class="fas fa-wand-magic-sparkles"></i>
-          <span><b>Matched, not listed.</b> Roles ranked against your licence,
-          specialty and location — with the reasoning shown.</span></li>
-      </ul>
+<!-- Public marketing home — shown first; customers never hit a raw login wall. -->
+<div id="landing" class="landing hidden">
+  <header class="lp-nav">
+    <div class="lp-nav-inner">
+      <a class="lp-logo" href="#top"><span class="lp-mark"><i class="fas fa-heart-pulse"></i></span>HealthBoard</a>
+      <nav class="lp-links">
+        <a href="#platform">Platform</a>
+        <a href="#pipeline">How it works</a>
+        <button class="lp-signin" data-auth-open="login">Sign in</button>
+        <button class="btn primary" data-auth-open="signup">Get started</button>
+      </nav>
     </div>
-  </div>
-  <div class="auth-panel">
-    <div class="auth-panel-inner">
-      <div class="auth-mini-brand"><span class="brand-mark">H</span><span>HealthBoard</span></div>
+  </header>
+
+  <section class="lp-hero" id="top">
+    <div class="lp-hero-inner">
+      <div class="lp-hero-copy">
+        <span class="lp-kicker">Healthcare staffing, run from one desk</span>
+        <h1>The system of record for <em>healthcare staffing agencies.</em></h1>
+        <p>Search a screened directory of clinicians, unlock contacts on demand, submit to your client facilities, and track every placement’s margin — without stitching five tools together.</p>
+        <div class="lp-cta-row">
+          <button class="btn primary lg" data-auth-open="signup">Start sourcing</button>
+          <a class="lp-secondary" href="#pipeline">See the workflow <i class="fas fa-arrow-right"></i></a>
+        </div>
+        <dl class="lp-stats">
+          <div><dt id="stat-providers">—</dt><dd>screened clinicians</dd></div>
+          <div><dt id="stat-states">—</dt><dd>states covered</dd></div>
+          <div><dt id="stat-jobs">—</dt><dd>open roles</dd></div>
+        </dl>
+      </div>
+
+      <div class="lp-hero-stage">
+        <div class="lp-console">
+          <div class="lp-console-top"><span class="lp-tab active">Directory</span><span class="lp-tab">Pools</span><span class="lp-tab">Submissions</span><span class="lp-conn">● live</span></div>
+          <div class="lp-query"><i class="fas fa-magnifying-glass"></i><span>icu nurses in texas · 10+ yrs · compact</span></div>
+          <div class="lp-rows">
+            <div class="lp-row"><span class="lp-mono-av">TH</span><div class="lp-rmeta"><b>ICU Registered Nurse</b><span>Austin, TX · 8 yrs · Compact</span></div><span class="lp-reveal">Reveal · 1 cr</span></div>
+            <div class="lp-row"><span class="lp-mono-av">MR</span><div class="lp-rmeta"><b>ER Nurse Practitioner</b><span>Dallas, TX · 12 yrs · Travel</span></div><span class="lp-reveal">Reveal · 1 cr</span></div>
+            <div class="lp-row"><span class="lp-mono-av">SK</span><div class="lp-rmeta"><b>Physical Therapist</b><span>Houston, TX · 6 yrs</span></div><span class="lp-reveal">Reveal · 1 cr</span></div>
+          </div>
+          <div class="lp-console-foot"><i class="fas fa-lock"></i>Identity masked until you reveal · every reveal logged</div>
+        </div>
+        <div class="lp-placement">
+          <div class="lp-placement-l"><span class="lp-placed">PLACED</span><b>Nadia N. → St David’s Medical Center</b></div>
+          <div class="lp-margin"><span>margin</span><b>+$28<i>/hr</i></b></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-band">
+    <div class="lp-inner"><p>Purpose-built for the way staffing desks actually work — source, reveal, submit and place, with the money math attached to every deal.</p></div>
+  </section>
+
+  <section class="lp-section" id="platform">
+    <div class="lp-inner">
+      <span class="lp-eyebrow">// The platform</span>
+      <h2 class="lp-h2">One workspace, the whole desk.</h2>
+      <div class="lp-bento">
+        <div class="lp-cell lp-cell-lg">
+          <div class="lp-cell-head"><h3>A directory built for staffing</h3>
+            <p>Search clinicians by licence, specialty, location and radius — pre-screened, deduplicated, and continuously maintained.</p></div>
+          <div class="lp-minitable">
+            <div class="lp-mt-row"><span>RN · ICU</span><span>Austin, TX</span><span class="lp-mt-yr">8 yrs</span></div>
+            <div class="lp-mt-row"><span>NP · ER</span><span>Dallas, TX</span><span class="lp-mt-yr">12 yrs</span></div>
+            <div class="lp-mt-row"><span>PT</span><span>Houston, TX</span><span class="lp-mt-yr">6 yrs</span></div>
+            <div class="lp-mt-row"><span>RN · L&amp;D</span><span>San Antonio</span><span class="lp-mt-yr">9 yrs</span></div>
+          </div>
+        </div>
+        <div class="lp-cell">
+          <h3>AI candidate search</h3>
+          <p>Describe who you need in plain language.</p>
+          <code class="lp-code">“ICU nurses in California, 10+ years, compact licence”</code>
+        </div>
+        <div class="lp-cell">
+          <h3>Contacts on demand</h3>
+          <p>Unlock a candidate’s details for one credit. Re-viewing, emailing and résumés stay free.</p>
+        </div>
+        <div class="lp-cell">
+          <h3>Pools &amp; outreach</h3>
+          <p>Shortlist into pools tied to a job order, then run compliant email campaigns with open and reply tracking.</p>
+        </div>
+        <div class="lp-cell lp-cell-money">
+          <h3>Submit, place &amp; bill</h3>
+          <p>Put candidates to client facilities and track each to placement.</p>
+          <div class="lp-money-row"><span>realized margin</span><b>bill − pay</b></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section lp-pipeline-sec" id="pipeline">
+    <div class="lp-inner">
+      <span class="lp-eyebrow">// The workflow</span>
+      <h2 class="lp-h2">From first search to booked margin.</h2>
+      <div class="lp-pipeline">
+        <div class="lp-stage"><span class="lp-stage-n">01</span><h3>Search</h3><p>Find matching clinicians in the screened directory or with AI search.</p></div>
+        <div class="lp-stage"><span class="lp-stage-n">02</span><h3>Reveal</h3><p>Unlock contact details for the candidates you want to work.</p></div>
+        <div class="lp-stage"><span class="lp-stage-n">03</span><h3>Submit</h3><p>Put them forward to your client facilities and track the response.</p></div>
+        <div class="lp-stage lp-stage-end"><span class="lp-stage-n">04</span><h3>Place</h3><p>Close the deal — the bill-vs-pay margin is booked automatically.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-final">
+    <div class="lp-inner">
+      <h2>Fill more roles, with less busywork.</h2>
+      <p>Get your desk onto HealthBoard.</p>
+      <div class="lp-final-cta">
+        <button class="btn lg lp-final-btn" data-auth-open="signup">Get started</button>
+        <button class="lp-final-signin" data-auth-open="login">or sign in</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-inner lp-footer-inner">
+      <a class="lp-logo" href="#top"><span class="lp-mark"><i class="fas fa-heart-pulse"></i></span>HealthBoard</a>
+      <nav class="lp-foot-links">
+        <a href="#platform">Platform</a>
+        <a href="#pipeline">How it works</a>
+        <button class="lp-textlink" data-auth-open="login">Sign in</button>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+      </nav>
+      <span class="lp-copy">© 2026 HealthBoard</span>
+    </div>
+  </footer>
+</div>
+
+<!-- Enterprise sign-in — reached from the landing, never shown as a raw wall. -->
+<div id="auth-gate" class="auth-gate hidden">
+  <div class="auth-shell">
+    <button class="auth-back" id="auth-back"><i class="fas fa-arrow-left"></i>Back to home</button>
+    <div class="auth-card">
+      <div class="auth-brand-row"><span class="lp-mark"><i class="fas fa-heart-pulse"></i></span>HealthBoard</div>
       <div class="auth-tabs">
         <button class="auth-tab active" data-auth-mode="login">Sign in</button>
         <button class="auth-tab" data-auth-mode="signup">Create account</button>
       </div>
       <div id="auth-title" class="auth-title">Welcome back</div>
-      <div id="auth-subtitle" class="auth-subtitle">Sign in to access your workspace.</div>
+      <div id="auth-subtitle" class="auth-subtitle">Sign in to your workspace.</div>
       <div id="signup-fields" class="signup-fields">
         <div class="field-label">I am a…</div>
         <div class="role-pills">
@@ -65,7 +174,7 @@
           <input id="auth-last" class="input" placeholder="Last name" autocomplete="family-name">
         </div>
       </div>
-      <input id="auth-email" class="input" type="email" placeholder="Email address" autocomplete="email">
+      <input id="auth-email" class="input" type="email" placeholder="Work email" autocomplete="email">
       <div class="pw-wrap">
         <input id="auth-password" class="input" type="password" placeholder="Password" autocomplete="current-password">
         <button type="button" id="auth-pw-toggle" class="pw-toggle" tabindex="-1" aria-label="Show password"><i class="fas fa-eye"></i></button>
@@ -76,8 +185,23 @@
       </div>
       <div id="auth-error" class="form-error"></div>
       <button id="auth-submit" class="btn primary full">Sign in</button>
-      <div class="auth-foot">Protected workspace · your data stays private</div>
+      <div class="auth-foot"><i class="fas fa-lock"></i>Protected workspace · your data stays private</div>
     </div>
+  </div>
+</div>
+
+<div id="verify-gate" class="verify-gate hidden">
+  <div class="verify-card">
+    <div class="verify-mark"><i class="fas fa-envelope-circle-check"></i></div>
+    <h1>Confirm your email</h1>
+    <p>We sent a verification link to <strong id="verify-email">your email</strong>.
+       Click it to activate your account, then come back here.</p>
+    <div id="verify-msg" class="verify-msg"></div>
+    <div class="verify-actions">
+      <button class="btn primary" id="verify-continue"><i class="fas fa-rotate-right"></i>I've verified — continue</button>
+      <button class="btn ghost" id="verify-resend">Resend email</button>
+    </div>
+    <button class="auth-link" id="verify-signout">Sign out</button>
   </div>
 </div>
 
@@ -90,22 +214,32 @@
     <nav class="nav">
       <div class="nav-label">Main</div>
       <button class="nav-item active" data-page="dashboard"><i class="fas fa-table-cells-large"></i>Dashboard</button>
-      <button class="nav-item" data-page="jobs"><i class="fas fa-search"></i>Find Jobs</button>
+      <button class="nav-item seeker-only" data-page="jobs"><i class="fas fa-search"></i>Find Jobs</button>
+      <button class="nav-item seeker-only" data-page="paytools"><i class="fas fa-money-bill-trend-up"></i>Pay Tools</button>
+      <!-- Community Feed hidden pre-launch: it is read-only with seeded demo
+           content. The page markup, social.py API and loadFeed() are kept; to
+           restore, un-comment this button and drop the "community" line in
+           showPage().
       <button class="nav-item" data-page="community"><i class="fas fa-stream"></i>Community Feed</button>
+      -->
       <button class="nav-item recruiter-only" data-page="ai"><i class="fas fa-wand-magic-sparkles"></i>AI Search</button>
       <button class="nav-item recruiter-only" data-page="providers"><i class="fas fa-user-doctor"></i>Providers</button>
       <button class="nav-item recruiter-only" data-page="pools"><i class="fas fa-layer-group"></i>Talent Pools</button>
       <button class="nav-item recruiter-only" data-page="outreach"><i class="fas fa-paper-plane"></i>Outreach</button>
       <button class="nav-item recruiter-only" data-page="submissions"><i class="fas fa-share-from-square"></i>Submissions</button>
+      <button class="nav-item recruiter-only" data-page="clients"><i class="fas fa-hospital"></i>Clients</button>
+      <button class="nav-item recruiter-only" data-page="placements"><i class="fas fa-user-check"></i>Placements</button>
       <div class="nav-label">Workspace</div>
       <button class="nav-item" data-page="profile"><i class="fas fa-id-card"></i>My Profile</button>
       <button class="nav-item" data-page="messages"><i class="fas fa-comment-dots"></i>Messages<span class="nav-badge hidden" id="nav-unread"></span></button>
       <button class="nav-item" data-page="notifications"><i class="fas fa-bell"></i>Notifications<span class="nav-badge hidden" id="nav-notif"></span></button>
       <button class="nav-item seeker-only" data-page="applications"><i class="fas fa-list-check"></i>My Applications</button>
-      <button class="nav-item" data-page="resume"><i class="fas fa-file-lines"></i>Resume</button>
+      <button class="nav-item seeker-only" data-page="resume"><i class="fas fa-file-lines"></i>Resume</button>
+      <button class="nav-item seeker-only" data-page="credentials"><i class="fas fa-id-badge"></i>Credentials</button>
       <div class="nav-label recruiter-only">Recruiter</div>
       <button class="nav-item recruiter-only" data-page="extension"><i class="fas fa-puzzle-piece"></i>Get Extension</button>
-      <button class="nav-item recruiter-only" data-page="employer"><i class="fas fa-building"></i>Employer Portal</button>
+      <button class="nav-item recruiter-only" data-page="employer"><i class="fas fa-clipboard-list"></i>Job Orders</button>
+      <button class="nav-item recruiter-only" data-page="calculator"><i class="fas fa-calculator"></i>Pay Calculator</button>
       <button class="nav-item recruiter-only" data-page="analytics"><i class="fas fa-chart-line"></i>Analytics</button>
     </nav>
     <div class="user-mini">
@@ -162,20 +296,21 @@
     <section id="page-ai" class="page ai-page">
       <div class="ai-stage" id="ai-stage">
         <div class="ai-hero">
-          <h1>Describe the candidate you're looking for</h1>
-          <p>Use natural language — no Boolean or filters required</p>
+          <div class="ai-hero-badge"><i class="fas fa-wand-magic-sparkles"></i>AI Search</div>
+          <h1>Who are you trying to hire?</h1>
+          <p>Describe the clinician in plain English — specialty, license, state, years on the job. It reads your request and searches your talent pool on the spot. No filters, no Boolean, no forms to fill.</p>
         </div>
         <form class="ai-search" id="ai-form">
           <i class="fas fa-wand-magic-sparkles ai-search-icon"></i>
-          <input id="ai-input" autocomplete="off" placeholder="e.g. ICU nurses in California with 10+ years of experience">
+          <input id="ai-input" autocomplete="off" placeholder="Try: compact-licensed ICU RNs near Dallas with 5+ years">
           <button class="ai-send" id="ai-send" type="submit" aria-label="Search"><i class="fas fa-arrow-up"></i></button>
         </form>
         <button class="ai-new" id="ai-new" type="button" title="Start a fresh search"><i class="fas fa-rotate-left"></i>New search</button>
         <div class="ai-suggestions" id="ai-suggestions">
-          <button class="ai-chip">ICU nurses in California with 5+ years</button>
-          <button class="ai-chip">Registered nurses in Texas</button>
-          <button class="ai-chip">Physical therapists in Florida</button>
-          <button class="ai-chip">MDs in New York with 10+ years</button>
+          <button class="ai-chip">Compact RNs open to travel in the Southeast</button>
+          <button class="ai-chip">PACU nurses within 50 miles of Denver</button>
+          <button class="ai-chip">CRNAs licensed in Florida</button>
+          <button class="ai-chip">Night-shift med-surg RNs, 3+ years</button>
         </div>
       </div>
       <div class="ai-thread" id="ai-thread"></div>
@@ -244,6 +379,7 @@
       <div id="profile-progress"></div>
       <div id="profile-card" class="profile-panel"></div>
       <div id="profile-credentials"></div>
+      <div id="profile-security"></div>
       <div id="profile-privacy"></div>
       <form id="profile-form" class="profile-form hidden">
         <div class="pf-grid">
@@ -279,9 +415,70 @@
       </div>
     </section>
 
+    <section id="page-credentials" class="page">
+      <div class="section-head">
+        <div><h1>Credentials</h1><p>Keep your licences and certifications current — we warn you before anything lapses.</p></div>
+        <div>
+          <button class="btn ghost" id="cred-share"><i class="fas fa-share-nodes"></i>Copy summary</button>
+          <button class="btn ghost" id="wallet-add-cert"><i class="fas fa-plus"></i>Add certification</button>
+          <button class="btn primary" id="wallet-add-lic"><i class="fas fa-plus"></i>Add licence</button>
+        </div>
+      </div>
+      <div id="wallet-body"></div>
+    </section>
+
+    <section id="page-paytools" class="page">
+      <div class="section-head">
+        <div><h1>Pay Tools</h1><p>See the tax-free stipends and estimated take-home on a travel contract, before you sign.</p></div>
+      </div>
+      <div class="calc-layout">
+        <form id="pt-form" class="calc-card calc-form">
+          <div class="calc-card-head">
+            <div><i class="fas fa-sliders"></i><strong>Your offer</strong></div>
+            <span>Enter what the agency quoted</span>
+          </div>
+          <div class="calc-grid">
+            <label class="calc-wide">Assignment city
+              <input class="input" id="pt-city" value="Houston" maxlength="120" required autocomplete="address-level2"></label>
+            <label>State
+              <input class="input" id="pt-state" value="TX" maxlength="2" pattern="[A-Za-z]{2}" required autocomplete="address-level1"></label>
+            <label>Package rate <span>$/hr</span>
+              <input class="input" id="pt-rate" type="number" value="65" min="1" max="1000" step="0.5" required></label>
+            <label>Hours per week
+              <input class="input" id="pt-hours" type="number" value="36" min="1" max="168" step="0.5" required></label>
+            <label>Hours per shift <span>for CA overtime</span>
+              <input class="input" id="pt-shift" type="number" value="12" min="1" max="24" step="0.5"></label>
+            <label>Contract length <span>weeks</span>
+              <input class="input" id="pt-weeks" type="number" value="13" min="1" max="104" step="1" required></label>
+            <label>Est. tax rate <span>%</span>
+              <input class="input" id="pt-tax" type="number" value="22" min="0" max="60" step="0.5" required></label>
+            <label>Start date <span>optional</span>
+              <input class="input" id="pt-start" type="date" autocomplete="off"></label>
+            <label>End date <span>optional</span>
+              <input class="input" id="pt-end" type="date" autocomplete="off"></label>
+          </div>
+          <p class="calc-hint"><i class="fas fa-circle-info"></i>Your <b>package rate</b> is the blended hourly the agency quotes (base pay + stipends), before tax. We split it into taxable pay and the tax-free per-diem you're entitled to. Adding <b>travel dates</b> prices the per-diem at the exact GSA rate for those months.</p>
+          <p id="pt-dates-note" class="calc-dates-note"></p>
+          <div class="calc-form-error" id="pt-error" role="alert"></div>
+          <div class="calc-actions">
+            <button class="btn primary" id="pt-submit" type="submit"><i class="fas fa-calculator"></i>Estimate my take-home</button>
+          </div>
+          <p class="calc-disclaimer"><i class="fas fa-circle-info"></i>Estimates only. The tax-free stipend applies only if you keep a qualifying tax home away from the assignment. Not tax advice.</p>
+        </form>
+        <div id="pt-results" class="calc-results" aria-live="polite">
+          <div class="calc-empty">
+            <i class="fas fa-money-bill-trend-up"></i>
+            <strong>Your take-home estimate appears here</strong>
+            <span>Enter an offer and we'll show the GSA tax-free stipends and compare straight W2 vs a W2 + per-diem package.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="page-community" class="page"><div class="section-head"><div><h1>Community Feed</h1><p>Recent posts</p></div></div><div id="feed-list" class="list"></div></section>
     <section id="page-messages" class="page">
-      <div class="section-head"><div><h1>Messages</h1><p id="messages-sub">Conversations</p></div></div>
+      <div class="section-head"><div><h1>Messages</h1><p id="messages-sub">Conversations</p></div>
+        <button class="btn ghost recruiter-only" id="msg-new"><i class="fas fa-pen"></i>New message</button></div>
       <div class="msg-layout">
         <aside class="msg-list-pane">
           <div class="msg-list-head">
@@ -324,6 +521,14 @@
       <div id="match-body"></div>
     </section>
 
+    <section id="page-applicants" class="page">
+      <div class="section-head">
+        <div><h1 id="applicants-title">Applicants</h1><p id="applicants-sub">People who applied to this role</p></div>
+        <button class="btn ghost" id="applicants-back"><i class="fas fa-arrow-left"></i>Back to portal</button>
+      </div>
+      <div id="applicants-body"></div>
+    </section>
+
     <section id="page-pools" class="page">
       <div class="section-head">
         <div><h1>Talent Pools</h1><p id="pools-sub">Shortlist candidates, track them through your pipeline, and export for outreach.</p></div>
@@ -334,15 +539,114 @@
     <section id="page-notifications" class="page"><div class="section-head"><div><h1>Notifications</h1><p>Account activity</p></div></div><div id="notifications-list" class="list"></div></section>
     <section id="page-employer" class="page">
       <div class="section-head">
-        <div><h1>Employer Portal</h1><p id="employer-sub">Recruiter workspace</p></div>
-        <button class="btn primary" id="job-new"><i class="fas fa-plus"></i>Post a job</button>
+        <div><h1>Job Orders</h1><p id="employer-sub">Roles you're sourcing for</p></div>
+        <button class="btn primary" id="job-new"><i class="fas fa-plus"></i>New job order</button>
       </div>
       <div id="employer-panel" class="profile-panel"></div>
       <div id="employer-jobs"></div>
+      <div id="employer-team"></div>
     </section>
     <section id="page-analytics" class="page">
       <div class="section-head"><div><h1>Analytics</h1><p id="analytics-sub">Your sourcing activity</p></div></div>
       <div id="analytics-panel"></div>
+    </section>
+
+    <section id="page-calculator" class="page">
+      <div class="section-head">
+        <div><h1>Travel Pay Calculator</h1><p>Compare a pure W2 package with a W2 + GSA per-diem package.</p></div>
+      </div>
+      <div class="calc-layout">
+        <form id="pay-calc-form" class="calc-card calc-form">
+          <div class="calc-card-head">
+            <div><i class="fas fa-sliders"></i><strong>Contract assumptions</strong></div>
+            <span>Required fields</span>
+          </div>
+          <div class="calc-grid">
+            <label class="calc-wide">Assignment city
+              <input class="input" id="calc-city" name="city" value="Houston" maxlength="120" required autocomplete="address-level2">
+            </label>
+            <label>State
+              <input class="input" id="calc-state" name="state_code" value="TX" maxlength="2" pattern="[A-Za-z]{2}" required autocomplete="address-level1">
+            </label>
+            <label>Client bill rate <span>$/hr</span>
+              <input class="input" id="calc-bill-rate" name="bill_rate" type="number" value="82" min="1" max="1000" step="0.01" required>
+            </label>
+            <label>Contract length <span>weeks</span>
+              <input class="input" id="calc-weeks" name="contract_weeks" type="number" value="13" min="1" max="104" step="1" required>
+            </label>
+            <label>Regular hours <span>per week</span>
+              <input class="input" id="calc-hours" name="hours_per_week" type="number" value="36" min="1" max="168" step="0.5" required>
+            </label>
+            <label>Overtime hours <span>per week</span>
+              <input class="input" id="calc-ot-hours" name="ot_hours_per_week" type="number" value="0" min="0" max="100" step="0.5" required>
+            </label>
+            <label>Hours per shift <span>for CA overtime</span>
+              <input class="input" id="calc-shift" name="shift_length_hours" type="number" value="12" min="1" max="24" step="0.5">
+            </label>
+            <label>Agency margin <span>%</span>
+              <input class="input" id="calc-margin" name="margin_pct" type="number" value="20" min="0" max="80" step="0.1" required>
+            </label>
+            <label>Travel start <span>optional</span>
+              <input class="input" id="calc-start" name="travel_start" type="date" autocomplete="off">
+            </label>
+            <label>Travel end <span>optional</span>
+              <input class="input" id="calc-end" name="travel_end" type="date" autocomplete="off">
+            </label>
+          </div>
+          <p class="calc-hint"><i class="fas fa-circle-info"></i>Lodging rates are seasonal in some cities. Add <b>travel dates</b> to price the per-diem at the exact rate for those months, not the annual maximum.</p>
+          <p id="calc-dates-note" class="calc-dates-note"></p>
+
+          <details class="calc-advanced">
+            <summary><i class="fas fa-gear"></i>Advanced assumptions</summary>
+            <div class="calc-grid">
+              <label>Payroll burden <span>% of W2 pay</span>
+                <input class="input" id="calc-burden" type="number" value="20" min="0" max="100" step="0.1">
+              </label>
+              <label>Estimated tax rate <span>%</span>
+                <input class="input" id="calc-tax" type="number" value="28" min="0" max="60" step="0.1">
+              </label>
+              <label>Benefits cost <span>$/hr</span>
+                <input class="input" id="calc-benefits" type="number" value="0" min="0" max="100" step="0.01">
+              </label>
+              <label>Completion bonus <span>$ contract</span>
+                <input class="input" id="calc-bonus" type="number" value="0" min="0" step="0.01">
+              </label>
+              <label>Travel allowance <span>$ contract</span>
+                <input class="input" id="calc-travel" type="number" value="0" min="0" step="0.01">
+              </label>
+              <label>Other reimbursements <span>$ contract</span>
+                <input class="input" id="calc-reimbursements" type="number" value="0" min="0" step="0.01">
+              </label>
+              <label>Override lodging <span>$/night</span>
+                <input class="input" id="calc-lodging-override" type="number" min="0" step="0.01" placeholder="Use GSA rate">
+              </label>
+              <label>Override M&amp;IE <span>$/day</span>
+                <input class="input" id="calc-mie-override" type="number" min="0" step="0.01" placeholder="Use GSA rate">
+              </label>
+            </div>
+          </details>
+
+          <div class="calc-form-error" id="calc-form-error" role="alert"></div>
+          <div class="calc-actions">
+            <button class="btn ghost" id="pay-calc-reset" type="reset"><i class="fas fa-rotate-left"></i>Reset</button>
+            <button class="btn primary" id="pay-calc-submit" type="submit"><i class="fas fa-calculator"></i>Calculate package</button>
+          </div>
+          <p class="calc-disclaimer"><i class="fas fa-circle-info"></i>GSA rates are federal travel benchmarks. Tax-free eligibility depends on the clinician's tax home, assignment and duplicated expenses. Estimates are not tax advice.</p>
+        </form>
+
+        <div id="pay-calc-results" class="calc-results" aria-live="polite">
+          <div class="calc-empty">
+            <i class="fas fa-chart-column"></i>
+            <strong>Your package comparison will appear here</strong>
+            <span>Enter the contract terms and calculate to compare weekly and full-contract pay.</span>
+          </div>
+        </div>
+      </div>
+
+      <section class="calc-saved-section">
+        <div class="section-head"><div><h2>Saved comparisons</h2><p>Recent packages saved to your recruiter account</p></div></div>
+        <div id="pay-calc-saved" class="calc-saved-list"></div>
+      </section>
     </section>
 
     <section id="page-applications" class="page">
@@ -352,6 +656,7 @@
       </div>
       <div id="alerts-strip"></div>
       <div id="apps-body"></div>
+      <div id="saved-jobs"></div>
     </section>
 
     <section id="page-submissions" class="page">
@@ -359,6 +664,21 @@
         <div><h1>Submissions</h1><p id="subs-sub">Candidates put forward to client facilities</p></div>
       </div>
       <div id="subs-body"></div>
+    </section>
+
+    <section id="page-clients" class="page">
+      <div class="section-head">
+        <div><h1>Clients</h1><p id="clients-sub">Facilities you place candidates into</p></div>
+        <button class="btn primary" id="client-new"><i class="fas fa-plus"></i>New client</button>
+      </div>
+      <div id="clients-body"></div>
+    </section>
+
+    <section id="page-placements" class="page">
+      <div class="section-head">
+        <div><h1>Placements</h1><p id="placements-sub">Candidates placed with clients</p></div>
+      </div>
+      <div id="placements-body"></div>
     </section>
 
     <section id="page-credits" class="page">

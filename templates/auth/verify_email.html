@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify your email · HealthBoard</title>
+  <meta name="robots" content="noindex">
+  <style>
+    :root{--ink:#0f2f66;--ink-strong:#082452;--muted:#405f8d;--faint:#6682aa;
+      --line:#dce7f7;--soft:#f2f7ff;--accent:#075fe8;--accent-strong:#0049bd;
+      --rose:#e11d48;--ok:#047857}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      background:linear-gradient(160deg,#eef4ff,#f8fbff);color:var(--ink);
+      min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px}
+    .card{background:#fff;border:1px solid var(--line);border-radius:16px;width:min(420px,100%);
+      padding:34px 30px 28px;box-shadow:0 20px 40px -18px rgba(13,37,69,.28);text-align:center}
+    .brand{font-size:19px;font-weight:700;color:var(--accent);margin-bottom:22px}
+    h1{font-size:20px;margin:0 0 8px;color:var(--ink-strong)}
+    p{font-size:13.5px;color:var(--faint);margin:0 0 20px;line-height:1.55}
+    .icon{font-size:38px;margin-bottom:10px;line-height:1}
+    .icon.ok{color:var(--ok)} .icon.err{color:var(--rose)}
+    .spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);
+      border-radius:50%;margin:6px auto 16px;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+    .btn{display:inline-block;padding:12px 22px;border:0;border-radius:9px;background:var(--accent);
+      color:#fff;font-size:14.5px;font-weight:600;cursor:pointer;text-decoration:none}
+    .btn:hover{background:var(--accent-strong)}
+    .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+    .actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">HealthBoard</div>
+    <div id="pending">
+      <div class="spinner"></div>
+      <h1>Verifying your email…</h1>
+      <p>This only takes a moment.</p>
+    </div>
+    <div id="ok" style="display:none">
+      <div class="icon ok">&#10004;</div>
+      <h1>Email verified</h1>
+      <p>Thanks — your email address is confirmed and your account is active.</p>
+      <a class="btn" href="/">Continue to HealthBoard</a>
+    </div>
+    <div id="err" style="display:none">
+      <div class="icon err">&#33;</div>
+      <h1>We couldn't verify this link</h1>
+      <p id="err-text">This verification link is invalid or has expired.</p>
+      <div class="actions">
+        <a class="btn ghost" href="/">Go to sign in</a>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function(){
+      var token = new URLSearchParams(location.search).get("token");
+      function show(id){ ["pending","ok","err"].forEach(function(x){
+        document.getElementById(x).style.display = x === id ? "block" : "none"; }); }
+      if (!token){
+        document.getElementById("err-text").textContent =
+          "This link is missing its verification token.";
+        return show("err");
+      }
+      (async function(){
+        try {
+          var res = await fetch("/api/auth/email/verify?token=" + encodeURIComponent(token),
+                                {method:"POST"});
+          if (res.ok){ show("ok"); return; }
+          var data = null; try { data = await res.json(); } catch(_){}
+          if (data && typeof data.detail === "string")
+            document.getElementById("err-text").textContent =
+              res.status === 400
+                ? "This verification link is invalid or has already been used."
+                : data.detail;
+          show("err");
+        } catch(e){
+          document.getElementById("err-text").textContent =
+            "Could not reach the server. Try the link again in a moment.";
+          show("err");
+        }
+      })();
+    })();
+  </script>
+</body>
+</html>

@@ -18,7 +18,15 @@ from sqlalchemy.orm import defer
 
 from ..database import utcnow
 from ..deps import CurrentUser, DbSession
-from ..models import POOL_STAGES, Profile, TalentPool, TalentPoolMember
+from ..models import (
+    POOL_STAGES,
+    Employer,
+    EmployerMember,
+    Profile,
+    TalentPool,
+    TalentPoolMember,
+    User,
+)
 from .profiles import (
     _profile_card,
     _released_profile_ids,
@@ -56,6 +64,21 @@ class MemberAdd(BaseModel):
 class MemberUpdate(BaseModel):
     stage: Optional[str] = None
     note: Optional[str] = None
+
+
+class PoolEmailIn(BaseModel):
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=5000)
+    stage: Optional[str] = None      # optionally email just one stage of the pool
+
+
+def _recruiter_identity(db: DbSession, user: CurrentUser) -> tuple[str, str]:
+    """(from_label, reply_to) for a recruiter's outreach email."""
+    emp = db.scalar(select(Employer).where(Employer.owner_user_id == user.user_id))
+    if not emp:
+        member = db.scalar(select(EmployerMember).where(EmployerMember.user_id == user.user_id))
+        emp = db.get(Employer, member.employer_id) if member else None
+    return (emp.org_name if emp else "A recruiter on HealthBoard"), user.email
 
 
 # --- Helpers ---------------------------------------------------------------
@@ -116,13 +139,14 @@ def _counts(db: DbSession, pool_ids: list[str]) -> dict[str, dict]:
     return out
 
 
-def _pool_json(pool: TalentPool, counts: dict) -> dict:
+def _pool_json(pool: TalentPool, counts: dict, jobs: dict | None = None) -> dict:
     c = counts.get(pool.pool_id) or {"total": 0, "stages": {}}
     return {
         "pool_id": pool.pool_id,
         "name": pool.name,
         "description": pool.description,
         "job_id": pool.job_id,
+        "job_title": (jobs or {}).get(pool.job_id) if pool.job_id else None,
         "color": pool.color,
         "visibility": pool.visibility,
         "owner_user_id": pool.owner_user_id,
@@ -147,7 +171,11 @@ def list_pools(user: CurrentUser, db: DbSession):
         .order_by(TalentPool.updated_at.desc())
     ).all()
     counts = _counts(db, [p.pool_id for p in pools])
-    return {"items": [_pool_json(p, counts) for p in pools], "stages": list(POOL_STAGES)}
+    from ..models import JobPosting
+    job_ids = [p.job_id for p in pools if p.job_id]
+    jobs = {j.job_id: j.title for j in db.scalars(
+        select(JobPosting).where(JobPosting.job_id.in_(job_ids)))} if job_ids else {}
+    return {"items": [_pool_json(p, counts, jobs) for p in pools], "stages": list(POOL_STAGES)}
 
 
 @router.post("", status_code=201)
@@ -224,6 +252,44 @@ def list_members(pool_id: str, user: CurrentUser, db: DbSession,
         items.append(card)
     return {"pool": _pool_json(pool, _counts(db, [pool.pool_id])),
             "items": items, "stages": list(POOL_STAGES)}
+
+
+@router.post("/{pool_id}/email")
+def email_pool(pool_id: str, body: PoolEmailIn, user: CurrentUser, db: DbSession):
+    """Send one outreach email to every reachable member of a pool.
+
+    Only members whose contact the recruiter has released and who have an email
+    on file are contacted; the rest are counted and skipped. Each candidate's
+    reply routes back to the recruiter's own inbox.
+    """
+    _require_provider_directory_access(user)
+    pool = _pool_or_404(db, pool_id, user)
+    stmt = (select(Profile).join(TalentPoolMember,
+                                 TalentPoolMember.profile_id == Profile.profile_id)
+            .where(TalentPoolMember.pool_id == pool.pool_id))
+    if body.stage:
+        stmt = stmt.where(TalentPoolMember.stage == _check_stage(body.stage))
+    profiles = db.scalars(stmt).all()
+    released = _released_profile_ids(db, user, [p.profile_id for p in profiles])
+    from_label, reply_to = _recruiter_identity(db, user)
+
+    from ..services.email import send_recruiter_message
+    sent = skipped_locked = skipped_no_email = 0
+    for p in profiles:
+        if p.profile_id not in released:
+            skipped_locked += 1
+            continue
+        if not p.email:
+            skipped_no_email += 1
+            continue
+        ok = send_recruiter_message(
+            p.email, candidate_name=(p.first_name or "").strip(),
+            from_label=from_label, reply_to=reply_to,
+            subject=body.subject, message=body.body)
+        sent += 1 if ok else 0
+    return {"total": len(profiles), "sent": sent,
+            "skipped_not_revealed": skipped_locked,
+            "skipped_no_email": skipped_no_email}
 
 
 @router.post("/{pool_id}/members", status_code=201)

@@ -17,6 +17,7 @@ from ..database import utcnow
 from ..deps import CurrentUser, DbSession
 from ..models import (
     SUBMISSION_STATUSES,
+    Client,
     Employer,
     EmployerMember,
     JobPosting,
@@ -33,6 +34,7 @@ class SubmissionIn(BaseModel):
     profile_id: str
     job_id: Optional[str] = None
     pool_id: Optional[str] = None
+    client_id: Optional[str] = None
     facility: Optional[str] = Field(default=None, max_length=200)
     bill_rate: Optional[float] = None
     pay_rate: Optional[float] = None
@@ -93,6 +95,9 @@ def list_submissions(user: CurrentUser, db: DbSession,
     jobs = {j.job_id: j for j in db.scalars(
         select(JobPosting).where(JobPosting.job_id.in_(
             [r.job_id for r in rows if r.job_id])))} if rows else {}
+    clients = {c.client_id: c for c in db.scalars(
+        select(Client).where(Client.client_id.in_(
+            [r.client_id for r in rows if r.client_id])))} if rows else {}
     who = {u.user_id: u.email for u in db.scalars(
         select(User).where(User.user_id.in_(team)))}
     released = _released_profile_ids(db, user, [r.profile_id for r in rows])
@@ -119,7 +124,9 @@ def list_submissions(user: CurrentUser, db: DbSession,
             "specialty": p.specialty if p else None,
             "job_id": r.job_id,
             "job_title": job.title if job else None,
-            "facility": r.facility or (getattr(job, "facility", None) if job else None),
+            "client_id": r.client_id,
+            "facility": (clients[r.client_id].name if r.client_id in clients else None)
+                        or r.facility or (getattr(job, "facility", None) if job else None),
             "status": r.status,
             "bill_rate": float(r.bill_rate) if r.bill_rate is not None else None,
             "pay_rate": float(r.pay_rate) if r.pay_rate is not None else None,
@@ -128,6 +135,7 @@ def list_submissions(user: CurrentUser, db: DbSession,
             "note": r.note,
             "submitted_by": who.get(r.submitted_by_user_id),
             "submitted_at": r.submitted_at,
+            "status_updated_at": r.status_updated_at,
         })
     return {"items": items, "by_status": counts, "statuses": list(SUBMISSION_STATUSES),
             "team_size": len(team)}
@@ -140,13 +148,25 @@ def submit_candidate(body: SubmissionIn, user: CurrentUser, db: DbSession):
     if not profile:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    facility, employer_id = body.facility, None
+    facility, employer_id, bill_rate = body.facility, None, body.bill_rate
     if body.job_id:
         job = db.get(JobPosting, body.job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         facility = facility or getattr(job, "facility", None)
         employer_id = job.employer_id
+
+    # A managed client fills in the facility name and default bill rate.
+    client_id = None
+    if body.client_id:
+        client = db.get(Client, body.client_id)
+        if not client or client.owner_user_id not in _team_user_ids(db, user):
+            raise HTTPException(status_code=404, detail="Client not found")
+        client_id = client.client_id
+        facility = facility or client.name
+        employer_id = employer_id or client.employer_id
+        if bill_rate is None and client.default_bill_rate is not None:
+            bill_rate = float(client.default_bill_rate)
 
     existing = db.scalar(select(Submission).where(
         Submission.profile_id == body.profile_id,
@@ -159,9 +179,9 @@ def submit_candidate(body: SubmissionIn, user: CurrentUser, db: DbSession):
 
     sub = Submission(
         profile_id=body.profile_id, job_id=body.job_id, pool_id=body.pool_id,
-        employer_id=employer_id, facility=facility,
+        client_id=client_id, employer_id=employer_id, facility=facility,
         submitted_by_user_id=user.user_id,
-        bill_rate=body.bill_rate, pay_rate=body.pay_rate, note=body.note)
+        bill_rate=bill_rate, pay_rate=body.pay_rate, note=body.note)
     db.add(sub)
     db.commit()
     db.refresh(sub)

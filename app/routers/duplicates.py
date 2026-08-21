@@ -26,6 +26,14 @@ router = APIRouter(prefix="/api/duplicates", tags=["duplicates"])
 
 MERGE_REASON = "merged_duplicate"
 
+
+def _require_admin(user: CurrentUser) -> None:
+    """Merging and unmerging rewrite the shared directory irreversibly-ish, so
+    they are admin-only — not something every recruiter can do to any profile."""
+    if user.role.value != "admin":
+        raise HTTPException(status_code=403,
+                            detail="Merging profiles is an administrator action")
+
 # Same last-10 phone digits AND the same name. Both, never either.
 _GROUPS_SQL = """
 SELECT right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) AS phone10,
@@ -110,7 +118,7 @@ def list_duplicates(user: CurrentUser, db: DbSession,
 @router.post("/merge")
 def merge_profiles(body: MergeRequest, user: CurrentUser, db: DbSession):
     """Fold duplicates into one surviving profile."""
-    _require_provider_directory_access(user)
+    _require_admin(user)
     keep = db.get(Profile, body.keep_profile_id)
     if not keep:
         raise HTTPException(status_code=404, detail="Profile to keep was not found")
@@ -152,7 +160,7 @@ def merge_profiles(body: MergeRequest, user: CurrentUser, db: DbSession):
 @router.post("/unmerge/{profile_id}")
 def unmerge(profile_id: str, user: CurrentUser, db: DbSession):
     """Undo a merge for one profile."""
-    _require_provider_directory_access(user)
+    _require_admin(user)
     p = db.get(Profile, profile_id)
     if not p or not p.merged_into:
         raise HTTPException(status_code=404, detail="That profile is not merged")

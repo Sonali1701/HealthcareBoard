@@ -14,7 +14,7 @@ from .common import ORMModel
 
 class LicenseBase(BaseModel):
     license_type: str
-    license_number: str
+    license_number: str = ""          # optional — a licence is findable by type + state
     state_code: str = Field(min_length=2, max_length=2)
     status: LicenseStatus = LicenseStatus.active
     issued_date: Optional[date] = None

@@ -6,7 +6,7 @@
   <p class="muted">Compare a pure-W2 package vs. W2 + tax-free GSA per-diem stipends. Rates via the GSA per-diem API (FY{{ result.gsa.fiscal_year if result else '2025' }}).</p>
   <div class="app-grid">
     <aside>
-      <form method="post" action="/tools/pay-calculator" class="panel">
+      <form method="post" action="/app/tools/pay-calculator" class="panel">
         <div class="field"><label class="label">Bill rate ($/hr)</label>
           <input class="input" type="number" step="0.01" name="bill_rate" value="{{ f.bill_rate }}"></div>
         <div class="row" style="gap:8px">
@@ -14,6 +14,8 @@
             <input class="input" type="number" name="contract_weeks" value="{{ f.contract_weeks }}"></div>
           <div class="field" style="flex:1"><label class="label">Hrs/wk</label>
             <input class="input" type="number" name="hours_per_week" value="{{ f.hours_per_week }}"></div>
+          <div class="field" style="flex:1"><label class="label">Hrs/shift</label>
+            <input class="input" type="number" name="shift_length_hours" value="{{ f.shift_length_hours }}"></div>
         </div>
         <div class="field"><label class="label">Agency margin (%)</label>
           <input class="input" type="number" name="margin_pct" value="{{ f.margin_pct }}"></div>
@@ -23,6 +25,13 @@
           <div class="field" style="width:80px"><label class="label">State</label>
             <input class="input" name="state_code" value="{{ f.state_code }}" maxlength="2"></div>
         </div>
+        <div class="row" style="gap:8px">
+          <div class="field" style="flex:1"><label class="label">Start date</label>
+            <input class="input" type="date" name="travel_start" value="{{ f.travel_start }}"></div>
+          <div class="field" style="flex:1"><label class="label">End date</label>
+            <input class="input" type="date" name="travel_end" value="{{ f.travel_end }}"></div>
+        </div>
+        <p class="small muted" style="margin:4px 0 8px">Optional — GSA lodging is seasonal, so dates use the exact per-diem for those months.</p>
         <button class="btn btn-primary btn-block" type="submit">Calculate</button>
       </form>
     </aside>
@@ -33,8 +42,28 @@
         <div class="panel mb row between items-center wrap">
           <div><strong>{{ result.gsa.city }}, {{ result.gsa.state_code }}</strong>
             <span class="badge {{ 'badge-green' if result.gsa.source=='api.gsa.gov' else 'badge-gold' }}">{{ 'GSA live' if result.gsa.source=='api.gsa.gov' else 'GSA offline rates' }}</span></div>
-          <div class="small muted">Lodging ${{ result.gsa.lodging|int }}/night · M&IE ${{ result.gsa.mie|int }}/day · tax-free ${{ result.gsa.weekly_max_tax_free|int }}/wk</div>
+          <div class="small muted">Lodging ${{ (result.breakdown.seasonal_lodging.daily if result.breakdown.seasonal_lodging else result.gsa.lodging)|int }}/night{{ ' · your dates' if result.breakdown.seasonal_lodging else '' }} · M&IE ${{ result.gsa.mie|int }}/day · tax-free ${{ result.breakdown.weekly_tax_free_total|int }}/wk</div>
         </div>
+        {% if result.breakdown.overtime and result.breakdown.overtime.mode == 'california' %}
+        {% set ot = result.breakdown.overtime %}
+        <div class="panel mb small"><i class="fas fa-scale-balanced"></i>
+          California overtime ({{ ot.shift_length }}h shifts): <strong>{{ ot.straight_hours }}h regular{% if ot.ot_hours %} + {{ ot.ot_hours }}h at 1.5×{% endif %}{% if ot.dt_hours %} + {{ ot.dt_hours }}h at 2×{% endif %}</strong> per week — CA pays daily overtime after 8h.</div>
+        {% endif %}
+        {% if result.breakdown.seasonal_lodging %}
+        <div class="panel mb small"><i class="fas fa-calendar-check"></i>
+          Seasonal rate for {{ result.breakdown.seasonal_lodging.start }} → {{ result.breakdown.seasonal_lodging.end }}:
+          <strong>${{ result.breakdown.seasonal_lodging.daily|int }}/night</strong> lodging
+          ({{ result.breakdown.seasonal_lodging.months|join(', ') }}) — used in place of the annual max.</div>
+        {% endif %}
+        {% if result.breakdown.gsa_perdiem %}
+        {% set p = result.breakdown.gsa_perdiem %}
+        <div class="panel mb">
+          <div class="row between items-center"><strong><i class="fas fa-building-columns"></i> Max GSA per-diem · {{ p.start }} to {{ p.end }}</strong>
+            <strong>${{ '%.0f'|format(p.per_diem_total) }}</strong></div>
+          <div class="small muted" style="margin-top:6px">Lodging ({{ p.nights }} nights) ${{ '%.0f'|format(p.lodging_total) }} · M&amp;IE ({{ p.days }} days, first &amp; last at 75%) ${{ '%.0f'|format(p.mie_total) }}</div>
+          <div class="small muted" style="margin-top:4px"><i class="fas fa-circle-check" style="color:#0e9f6e"></i> Matches the official gsa.gov per-diem calculator for these dates.</div>
+        </div>
+        {% endif %}
         <div class="grid cols-2">
           <div class="panel">
             <h3>Option A · Pure W2</h3>

@@ -134,7 +134,8 @@ def _count_matches(db: DbSession, params: dict, kind: str = "providers") -> int:
     return db.scalar(stmt) or 0
 
 
-def _json(s: SavedSearch, matches: Optional[int] = None) -> dict:
+def _json(s: SavedSearch, matches: Optional[int] = None,
+          new: Optional[int] = None) -> dict:
     return {
         "search_id": s.search_id,
         "name": s.name,
@@ -144,6 +145,8 @@ def _json(s: SavedSearch, matches: Optional[int] = None) -> dict:
         "last_count": s.last_count,
         "last_checked_at": s.last_checked_at,
         "matches": matches,
+        # Growth since the alert was last checked, so the UI can show "+N new".
+        "new": new,
         "created_at": s.created_at,
     }
 
@@ -156,7 +159,15 @@ def list_searches(user: CurrentUser, db: DbSession, kind: Optional[str] = None):
     elif not _is_recruiter_or_admin(user):
         stmt = stmt.where(SavedSearch.kind == "jobs")
     rows = db.scalars(stmt.order_by(SavedSearch.updated_at.desc())).all()
-    return {"items": [_json(s) for s in rows]}
+    # Report current matches and the delta against the recorded baseline so the
+    # alert chips can render "+N" without a separate /check round-trip. This does
+    # not disturb the baseline — only POST /check acknowledges growth.
+    items = []
+    for s in rows:
+        current = _count_matches(db, s.params or {}, s.kind)
+        baseline = s.last_count if s.last_count is not None else current
+        items.append(_json(s, matches=current, new=max(0, current - baseline)))
+    return {"items": items}
 
 
 @router.post("", status_code=201)

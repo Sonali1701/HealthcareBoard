@@ -137,7 +137,9 @@ def get_run(run_id: str, user: CurrentUser, db: DbSession):
             state_code=p.state_code if p else None,
             years_experience=p.years_experience if p else 0,
             pay_min=float(p.pay_min_hourly) if p and p.pay_min_hourly is not None else None,
-            pay_max=float(p.pay_min_hourly) + 15 if p and p.pay_min_hourly is not None else None,
+            # A candidate states a desired floor, not a ceiling — don't invent
+            # one. (This used to report pay_min + $15 for everyone.)
+            pay_max=None,
             skills=[s.name for s in p.skills] if p else [],
             certifications=[c.cert_name for c in p.certifications] if p else [],
             completion_score=p.completion_score if p else 0,

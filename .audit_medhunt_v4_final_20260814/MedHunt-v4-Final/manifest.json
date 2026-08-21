@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "MedHunt Enricher",
+  "version": "4.1.0",
+  "description": "Extract candidate data from job boards and enrich with email/phone via PDL",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://api.peopledatalabs.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.indeed.com/*",
+        "*://*.linkedin.com/*",
+        "*://*.ziprecruiter.com/*",
+        "*://*.facebook.com/*",
+        "*://*.vivian.com/*",
+        "*://*.vivian.ai/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MedHunt Enricher"
+  }
+}

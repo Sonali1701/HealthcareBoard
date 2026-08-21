@@ -31,8 +31,11 @@ class Submission(Base):
         ForeignKey("talent_pools.pool_id", ondelete="SET NULL"))
     employer_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("employers.employer_id", ondelete="SET NULL"))
-    # Denormalised from the job so a submission still reads correctly after the
-    # requisition is closed and removed.
+    # The client facility this went to, when it's a managed Client record.
+    client_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("clients.client_id", ondelete="SET NULL"), index=True)
+    # Denormalised from the job/client so a submission still reads correctly
+    # after the requisition is closed or the client record is removed.
     facility: Mapped[Optional[str]] = mapped_column(String(200), index=True)
     submitted_by_user_id: Mapped[str] = uuid_fk("users.user_id")
     status: Mapped[str] = mapped_column(String(24), default="submitted", index=True)

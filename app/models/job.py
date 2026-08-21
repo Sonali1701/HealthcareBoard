@@ -96,6 +96,10 @@ class JobPosting(Base):
     facility: Mapped[Optional[str]] = mapped_column(String(200), index=True)
     agency: Mapped[Optional[str]] = mapped_column(String(150))
     req_code: Mapped[Optional[str]] = mapped_column(String(60), index=True)
+    # Provenance for jobs pulled from an external ATS (e.g. LaborEdge Nexus).
+    # (source, external_id) is the idempotency key the sync upserts against.
+    external_source: Mapped[Optional[str]] = mapped_column(String(30), index=True)
+    external_id: Mapped[Optional[str]] = mapped_column(String(60), index=True)
     description: Mapped[Optional[str]] = mapped_column(Text)
     requirements: Mapped[dict] = mapped_column(JSON, default=dict)
     benefits: Mapped[list] = mapped_column(JSON, default=list)  # health|dental|401k|housing
@@ -122,9 +126,15 @@ class JobPosting(Base):
         parts = [self.title, self.specialty, self.profession_type, self.city,
                  self.state_code, self.description]
         skills = self.required_skills or []
-        self.search_text = " ".join(
-            str(p) for p in [*parts, *skills] if p
-        ).lower()
+        text = " ".join(str(p) for p in [*parts, *skills] if p).lower()
+        # search_text carries a plain btree index, and Postgres caps a btree
+        # entry at ~2704 bytes — some imported job descriptions run past that and
+        # would fail the INSERT. The useful search tokens (title/specialty/city/
+        # state) lead the string, so trimming the tail keeps search working.
+        encoded = text.encode("utf-8")
+        if len(encoded) > 2400:
+            text = encoded[:2400].decode("utf-8", "ignore")
+        self.search_text = text
 
 
 class Application(Base):

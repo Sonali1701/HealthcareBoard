@@ -19,9 +19,12 @@
     selected:new Set(),
     // Saved searches (standing sourcing criteria + their alerts)
     searches:[],
-    // Duplicates review + employer portal
+    // Duplicates review + job orders (the recruiter's org/postings hub)
     dupes:[], employer:null, templates:[], credits:null,
-    jobAlerts:[], subStatuses:[]
+    jobAlerts:[], subStatuses:[],
+    // Travel pay calculator: retain the exact request/result so the comparison
+    // can be saved without recomputing it with different assumptions.
+    payInputs:null, payPackage:null
   };
 
   const $ = (sel, root=document) => root.querySelector(sel);
@@ -138,6 +141,9 @@
     if (!token()) return false;
     try {
       S.user = await get("/api/auth/me");
+      // An unverified account (only possible when email delivery is on) is held
+      // at a verification gate rather than let into the app.
+      if (S.user.status === "pending_verify"){ showVerifyGate(); return "pending"; }
       try { S.profile = await get("/api/profiles/me"); } catch(e) { S.profile = null; }
       applyRole();
       const name = S.profile ? `${S.profile.first_name} ${S.profile.last_name}` : S.user.email.split("@")[0];
@@ -146,11 +152,29 @@
       $("#mini-role").textContent = role;
       const av = S.profile ? initials(S.profile.first_name,S.profile.last_name) : S.user.email[0].toUpperCase();
       $("#mini-avatar").textContent = av; $("#top-avatar").textContent = av;
-      $("#auth-gate").classList.add("hidden"); $("#app-shell").classList.remove("hidden");
+      $("#landing").classList.add("hidden");
+      $("#auth-gate").classList.add("hidden");
+      $("#verify-gate").classList.add("hidden");
+      $("#app-shell").classList.remove("hidden");
       return true;
     } catch(e) {
       setToken(""); setRefresh(""); return false;
     }
+  }
+
+  function showVerifyGate(){
+    $("#boot-splash").classList.add("hidden");
+    $("#auth-gate").classList.add("hidden");
+    $("#app-shell").classList.add("hidden");
+    const g = $("#verify-gate");
+    if (!g) return;
+    g.classList.remove("hidden");
+    const em = $("#verify-email");
+    if (em && S.user) em.textContent = S.user.email;
+  }
+  function verifyMsg(text, kind){
+    const m = $("#verify-msg");
+    if (m){ m.className = "verify-msg" + (kind ? " " + kind : ""); m.textContent = text; }
   }
 
   function showAuthMode(mode){
@@ -193,8 +217,17 @@
   }
 
   function showPage(id){
+    // Community Feed is hidden pre-launch (read-only, seeded demo content). The
+    // page, social.py API and loadFeed() are kept — remove this line and restore
+    // the nav button in board.html to bring it back.
+    if (id === "community") id = "dashboard";
     if ((id === "providers" || id === "ai" || id === "extension" || id === "pools"
-         || id === "matching" || id === "outreach" || id === "credits" || id === "submissions") && !isRecruiter()) id = "dashboard";
+         || id === "matching" || id === "outreach" || id === "credits" || id === "submissions"
+         || id === "applicants" || id === "calculator" || id === "clients"
+         || id === "placements") && !isRecruiter()) id = "dashboard";
+    // Seeker-only pages: a staffing agency sources candidates, it doesn't find
+    // jobs, apply, or keep a résumé.
+    if ((id === "resume" || id === "applications" || id === "jobs") && isRecruiter()) id = "dashboard";
     if (id !== "messages") stopMessagePolling();
     try { localStorage.setItem("hb_page", id); } catch(e) {}   // restored on refresh
     $$(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + id));
@@ -211,22 +244,32 @@
     if (id === "pools") loadPools();
     if (id === "employer") loadEmployer();
     if (id === "analytics") loadAnalytics();
+    if (id === "calculator") loadPayCalculator();
     if (id === "outreach") loadOutreach();
     if (id === "credits") loadCredits();
     if (id === "applications") loadApplications();
     if (id === "submissions") loadSubmissions();
+    if (id === "clients") loadClients();
+    if (id === "placements") loadPlacements();
+    if (id === "credentials") loadWallet();
   }
 
   function jobRow(j){
     const loc = [j.city,j.state_code].filter(Boolean).join(", ") || "Flexible";
-    const pay = j.pay_rate_max ? `$${Math.round(j.pay_rate_max)}${j.pay_unit === "hourly" ? "/hr" : ""}` : "";
+    // Show the real range, not just a ceiling — pay transparency is the hook.
+    const payUnit = j.pay_unit === "hourly" ? "/hr" : "";
+    const pay = j.pay_rate_max
+      ? (j.pay_rate_min && Math.round(j.pay_rate_min) !== Math.round(j.pay_rate_max)
+          ? `$${Math.round(j.pay_rate_min)}–$${Math.round(j.pay_rate_max)}${payUnit}`
+          : `$${Math.round(j.pay_rate_max)}${payUnit}`)
+      : "";
     // Agencies file one req per seat; the list is grouped, so say how many.
     const seats = (j.openings || 1) > 1 ? `<span class="badge accent openings">${j.openings} openings</span>` : "";
     const fit = j.fit_score > 0 ? `<span class="fit-badge">match</span>` : "";
     const sub = [j.facility, loc].filter(Boolean).join(" · ");
     return `<tr>
       <td>
-        <div class="cell-name">${esc(j.title)}${j.is_urgent ? `<span class="badge coral">Urgent</span>` : ""}${seats}${fit}</div>
+        <div class="cell-name"><button class="linklike" data-jobview="${esc(j.job_id)}">${esc(j.title)}</button>${j.is_urgent ? `<span class="badge coral">Urgent</span>` : ""}${seats}${fit}</div>
         <div class="cell-sub">${esc(sub)}</div>
       </td>
       <td>${j.job_type ? `<span class="badge accent">${esc(j.job_type)}</span>` : `<span class="cell-none">—</span>`}</td>
@@ -234,7 +277,7 @@
       <td>${pay ? `<strong>${esc(pay)}</strong>` : `<span class="cell-none">—</span>`}</td>
       <td class="td-actions">${isRecruiter()
         ? `<button class="btn small primary" data-source="${j.job_id}" title="Find matching candidates"><i class="fas fa-bolt"></i>Source</button>`
-        : `<button class="btn small primary" data-apply="${j.job_id}">Apply</button>`}</td>
+        : `<button class="btn small" data-jobview="${j.job_id}">View</button><button class="btn small primary" data-apply="${j.job_id}">Apply</button>`}</td>
     </tr>`;
   }
 
@@ -592,7 +635,15 @@
       value ? esc(value) : `<span class="cell-none">${esc(hint || "Not provided")}</span>`}</strong></div>`;
   }
   async function loadProfile(){
-    if (!S.profile) { $("#profile-card").innerHTML = emptyState("No profile yet", "Add your details to appear in search.", "fa-id-card"); return; }
+    // A recruiter has no candidate profile — this page is their account, not a
+    // "complete your profile to appear in search" flow (which would be wrong,
+    // since recruiters aren't listed in the directory).
+    if (isRecruiter()){ renderAccountView(); return; }
+    if (!S.profile) {
+      $("#profile-card").innerHTML = emptyState("No profile yet", "Add your details to appear in search.", "fa-id-card");
+      loadPrivacy();   // the account-deletion danger zone still applies
+      return;
+    }
     const p = S.profile;
     $("#profile-sub").textContent = `${p.completion_score || 0}% complete`;
     $("#profile-card").innerHTML = `<div class="profile-grid">
@@ -609,7 +660,135 @@
     </div>`;
     loadCompletion();
     loadCredentials();
+    renderSecurity();
     loadPrivacy();
+  }
+  // Recruiters see an Account page here, not a candidate profile: their sign-in
+  // details plus the account-deletion controls (rendered by loadPrivacy).
+  function renderAccountView(){
+    const u = S.user || {};
+    const head = $("#page-profile .section-head h1");
+    if (head) head.textContent = "Account";
+    const sub = $("#profile-sub");
+    if (sub) sub.textContent = "Your sign-in and account settings";
+    const edit = $("#profile-edit");
+    if (edit) edit.classList.add("hidden");     // nothing candidate-shaped to edit
+    const progress = $("#profile-progress");
+    if (progress) progress.innerHTML = "";
+    const creds = $("#profile-credentials");
+    if (creds) creds.innerHTML = "";
+    const since = u.created_at
+      ? new Date(u.created_at).toLocaleDateString([], {year:"numeric", month:"short", day:"numeric"})
+      : "";
+    $("#profile-card").innerHTML = `<div class="profile-grid">
+      ${fieldRow("Email", u.email)}
+      ${fieldRow("Account type", "Recruiter")}
+      ${fieldRow("Email verified", u.email_verified_at ? "Yes" : "Not verified")}
+      ${fieldRow("Member since", since)}
+    </div>`;
+    renderSecurity();  // 2FA + change password
+    loadPrivacy();     // account-deletion danger zone
+  }
+
+  // --- Security (2FA + password), for both roles ---------------------------
+  async function refreshUser(){
+    try { S.user = await get("/api/auth/me"); } catch(e) { /* keep the old copy */ }
+  }
+  function renderSecurity(){
+    const box = $("#profile-security");
+    if (!box) return;
+    const on = !!(S.user && S.user.mfa_enabled);
+    box.innerHTML = `<div class="privacy-wrap">
+      <h3>Security</h3>
+      <div class="sec-row">
+        <div><strong>Two-factor authentication</strong>
+          <div class="muted">${on
+            ? "On — a code from your authenticator app is required when you sign in."
+            : "Add a second step at sign-in using an authenticator app."}</div></div>
+        <span class="spacer"></span>
+        <span class="privacy-state ${on ? "on" : "off"}">${on ? "On" : "Off"}</span>
+        <button class="btn ${on ? "danger" : "primary"} small" id="mfa-toggle">${on ? "Turn off" : "Enable"}</button>
+      </div>
+      <div class="sec-row">
+        <div><strong>Password</strong>
+          <div class="muted">Change the password you sign in with.</div></div>
+        <span class="spacer"></span>
+        <button class="btn small" id="pw-change">Change password</button>
+      </div>
+    </div>`;
+    const mt = $("#mfa-toggle");
+    if (mt) mt.onclick = on ? disableMfa : enableMfa;
+    const pc = $("#pw-change");
+    if (pc) pc.onclick = changePassword;
+  }
+  async function enableMfa(){
+    let enroll;
+    try { enroll = await post("/api/auth/mfa/enroll", {}); }
+    catch(e) { return toast(e.message || "Could not start setup.", {kind:"err"}); }
+    // No QR (the CSP blocks external libraries) — authenticator apps all accept
+    // a setup key typed in by hand, so we show that.
+    const v = await formDialog({
+      title: "Turn on two-factor authentication",
+      intro: "Add this setup key to an authenticator app (Google Authenticator, Authy, "
+           + "1Password…), then enter the 6-digit code it shows. Setup key: " + enroll.secret,
+      submit: "Verify & turn on",
+      fields: [{name:"code", label:"6-digit code", required:true, wide:true,
+                placeholder:"123456", max:6}],
+    });
+    if (!v) return;
+    try {
+      await post("/api/auth/mfa/verify", {code: (v.code || "").trim()});
+      await refreshUser();
+      toast("Two-factor authentication is on.", {title:"2FA enabled"});
+      renderSecurity();
+    } catch(e) {
+      toast(e.status === 400 ? "That code didn't match — use the current one from your app."
+          : (e.message || "That did not work."), {title:"Could not enable 2FA", kind:"err"});
+    }
+  }
+  async function disableMfa(){
+    const v = await formDialog({
+      title: "Turn off two-factor authentication",
+      intro: "Enter a current code from your authenticator app to confirm.",
+      submit: "Turn off 2FA",
+      fields: [{name:"code", label:"6-digit code", required:true, wide:true,
+                placeholder:"123456", max:6}],
+    });
+    if (!v) return;
+    try {
+      await post("/api/auth/mfa/disable", {code: (v.code || "").trim()});
+      await refreshUser();
+      toast("Two-factor authentication is off.", {title:"2FA disabled"});
+      renderSecurity();
+    } catch(e) {
+      toast(e.status === 400 ? "That code didn't match." : (e.message || "That did not work."),
+            {title:"Could not disable 2FA", kind:"err"});
+    }
+  }
+  async function changePassword(){
+    const v = await formDialog({
+      title: "Change your password",
+      submit: "Change password",
+      fields: [
+        {name:"current_password", label:"Current password", type:"password", required:true, wide:true},
+        {name:"new_password", label:"New password", type:"password", required:true, wide:true,
+         placeholder:"At least 8 characters"},
+        {name:"confirm", label:"Confirm new password", type:"password", required:true, wide:true},
+      ],
+    });
+    if (!v) return;
+    if ((v.new_password || "").length < 8)
+      return toast("New password must be at least 8 characters.", {kind:"err"});
+    if (v.new_password !== v.confirm)
+      return toast("The new passwords don't match.", {kind:"err"});
+    try {
+      await post("/api/auth/change-password",
+                 {current_password: v.current_password, new_password: v.new_password});
+      toast("Your password has been changed.", {title:"Password updated"});
+    } catch(e) {
+      toast(e.status === 400 ? "Your current password is incorrect."
+          : (e.message || "That did not work."), {title:"Could not change password", kind:"err"});
+    }
   }
   // Tells a professional exactly what is still missing. An incomplete profile
   // is not a cosmetic problem here: the matching engine ranks on licence,
@@ -690,8 +869,128 @@
         license_number: v.license_number || "",
         expiry_date: v.expiry_date || null});
       toast("Added to your profile.", {title:"Licence saved"});
-      loadCredentials();
+      loadCredentials(); loadWallet();
     } catch(e) { toast(e.message, {title:"Could not add licence", kind:"err"}); }
+  }
+
+  // --- Credential Wallet (seeker) ------------------------------------------
+  function walletStat(n, label, cls){
+    return `<div class="wallet-stat ${cls || ""}"><b>${n}</b><span>${esc(label)}</span></div>`;
+  }
+  function expiryPill(status, days){
+    const label = status === "expired" ? "Expired"
+      : status === "expiring" ? `${days}d left`
+      : status === "valid" ? "Valid" : "No expiry";
+    return `<span class="cred-pill ${status}">${esc(label)}</span>`;
+  }
+  function licCard(l){
+    const verif = l.verified
+      ? `<span class="wallet-badge ok"><i class="fas fa-circle-check"></i>${esc((l.verification_status || "").replace(/_/g, " "))}</span>`
+      : `<span class="wallet-badge">Unverified</span>`;
+    return `<div class="wallet-card">
+      <div class="wallet-main">
+        <div class="wallet-title"><b>${esc(l.license_type)}</b><span class="wallet-state">${esc(l.state_code)}</span>
+          ${l.is_compact ? `<span class="wallet-badge compact"><i class="fas fa-shield-halved"></i>Compact</span>` : ""}</div>
+        <div class="wallet-sub">${esc(l.license_number || "No number on file")}${l.expiry_date ? ` · expires ${esc(String(l.expiry_date).slice(0,10))}` : ""}</div>
+        <div class="wallet-badges">${verif}</div>
+      </div>
+      <div class="wallet-right">${expiryPill(l.status, l.days_left)}
+        <button class="cred-del" data-lic-del="${esc(l.license_id)}" title="Remove"><i class="fas fa-xmark"></i></button></div>
+    </div>`;
+  }
+  function certCard(x){
+    return `<div class="wallet-card">
+      <div class="wallet-main">
+        <div class="wallet-title"><b>${esc(x.cert_name)}</b></div>
+        <div class="wallet-sub">${x.expiry_date ? `expires ${esc(String(x.expiry_date).slice(0,10))}` : "No expiry on file"}</div>
+      </div>
+      <div class="wallet-right">${expiryPill(x.status, x.days_left)}
+        <button class="cred-del" data-cert-del="${esc(x.cert_id)}" title="Remove"><i class="fas fa-xmark"></i></button></div>
+    </div>`;
+  }
+  async function loadWallet(){
+    const box = $("#wallet-body");
+    if (!box) return;
+    box.innerHTML = loading("Loading your credentials...");
+    try {
+      const c = await get("/api/profiles/me/credentials");
+      S.wallet = c;
+      const all = [...(c.licenses || []), ...(c.certifications || [])];
+      const by = s => all.filter(x => x.status === s).length;
+      box.innerHTML =
+        `<div class="wallet-summary">
+          ${walletStat(all.length, "Credentials")}
+          ${walletStat(by("valid"), "Valid", "valid")}
+          ${walletStat(by("expiring"), "Expiring soon", by("expiring") ? "expiring" : "")}
+          ${walletStat(by("expired"), "Expired", by("expired") ? "expired" : "")}
+        </div>`
+        + ((c.alerts && c.alerts.length) ? `<div class="cred-alert"><i class="fas fa-triangle-exclamation"></i>
+            ${c.alerts.map(a => `${esc(a.label)} ${a.status === "expired" ? "has expired" : `expires in ${a.days_left} days`}`).join(" · ")}</div>` : "")
+        + (c.compact_eligible ? `<p class="pc-note"><i class="fas fa-shield-halved"></i>You hold a compact licence — eligible to practise in around 40 states.</p>` : "")
+        + `<div class="wallet-section"><h2>Licences</h2>${
+            (c.licenses || []).length ? `<div class="wallet-list">${c.licenses.map(licCard).join("")}</div>`
+              : emptyState("No licences yet", "Add your licences so recruiters can find you and we can track expiry.", "fa-id-card")}</div>`
+        + `<div class="wallet-section"><h2>Certifications</h2>${
+            (c.certifications || []).length ? `<div class="wallet-list">${c.certifications.map(certCard).join("")}</div>`
+              : emptyState("No certifications yet", "Add BLS, ACLS, CCRN and the rest to complete your profile.", "fa-certificate")}</div>`;
+      $$("#wallet-body [data-lic-del]").forEach(b => b.onclick = async () => {
+        try { await del(`/api/profiles/me/licenses/${b.dataset.licDel}`); loadWallet(); loadCredentials(); }
+        catch(e) { toast(e.message || "That did not work.", {kind:"err"}); }
+      });
+      $$("#wallet-body [data-cert-del]").forEach(b => b.onclick = async () => {
+        try { await del(`/api/profiles/me/certifications/${b.dataset.certDel}`); loadWallet(); }
+        catch(e) { toast(e.message || "That did not work.", {kind:"err"}); }
+      });
+    } catch(e) { box.innerHTML = errorState("Could not load your credentials"); }
+  }
+  async function addCertification(){
+    const v = await formDialog({
+      title: "Add a certification",
+      intro: "BLS, ACLS, PALS, CCRN, TNCC… An expiry date lets us warn you before it lapses.",
+      submit: "Add certification",
+      fields: [
+        {name:"cert_name", label:"Certification", required:true, placeholder:"BLS, ACLS, CCRN…"},
+        {name:"issuing_body", label:"Issuing body", hint:"optional", placeholder:"AHA, AACN…"},
+        {name:"cert_number", label:"Number", hint:"optional"},
+        {name:"expiry_date", label:"Expires", type:"date", hint:"optional", wide:true},
+      ],
+    });
+    if (!v) return;
+    try {
+      await post("/api/profiles/me/certifications", {
+        cert_name: v.cert_name, issuing_body: v.issuing_body || null,
+        cert_number: v.cert_number || null, expiry_date: v.expiry_date || null});
+      toast("Added to your credentials.", {title:"Certification saved"});
+      loadWallet();
+    } catch(e) { toast(e.message, {title:"Could not add certification", kind:"err"}); }
+  }
+  function copyCredentialSummary(){
+    const c = S.wallet;
+    if (!c || (!(c.licenses || []).length && !(c.certifications || []).length))
+      return toast("Add a licence or certification first.", {kind:"err"});
+    const name = S.profile ? `${S.profile.first_name} ${S.profile.last_name}`.trim() : "";
+    const lines = [];
+    if (name) lines.push(name);
+    lines.push("Credentials (via HealthBoard)", "");
+    if ((c.licenses || []).length){
+      lines.push("Licences:");
+      c.licenses.forEach(l => lines.push(`  - ${l.license_type} (${l.state_code})`
+        + (l.is_compact ? " [compact]" : "") + (l.license_number ? " #" + l.license_number : "")
+        + (l.expiry_date ? " - exp " + String(l.expiry_date).slice(0, 10) : "")));
+    }
+    if ((c.certifications || []).length){
+      lines.push("Certifications:");
+      c.certifications.forEach(x => lines.push(`  - ${x.cert_name}`
+        + (x.expiry_date ? " - exp " + String(x.expiry_date).slice(0, 10) : "")));
+    }
+    const text = lines.join("\n");
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(
+        () => toast("Paste it into an email or message to a recruiter.", {title:"Credential summary copied"}),
+        () => toast("Could not copy automatically — select and copy manually.", {kind:"err"}));
+    } else {
+      toast("Copying isn't supported in this browser.", {kind:"err"});
+    }
   }
 
   function openProfileForm(){
@@ -748,12 +1047,41 @@
     } catch(e) { $("#feed-list").innerHTML = errorState("Could not load the feed"); }
   }
   async function loadNotifications(){
-    $("#notifications-list").innerHTML = loading("Loading notifications...");
+    const box = $("#notifications-list");
+    box.innerHTML = loading("Loading notifications...");
     try {
       const data = await get("/api/notifications");
-      $("#notifications-list").innerHTML = (data || []).map(n => `<div class="list-row"><div><strong>${esc(n.title)}</strong><div class="muted">${esc(n.body || "")}</div></div></div>`).join("") || emptyState("You are all caught up",
-                 "Replies, matches and licence reminders land here.", "fa-bell");
-    } catch(e) { $("#notifications-list").innerHTML = errorState("Could not load notifications"); }
+      if (!data || !data.length){
+        box.innerHTML = emptyState("You are all caught up",
+          "Replies, matches and licence reminders land here.", "fa-bell");
+        return;
+      }
+      const unread = data.filter(n => !n.is_read).length;
+      box.innerHTML =
+        (unread ? `<div class="notif-head"><span class="muted">${unread} unread</span>
+           <button class="btn ghost small" id="notif-read-all">Mark all as read</button></div>` : "")
+        + data.map(n => `<div class="list-row notif-row ${n.is_read ? "" : "unread"}" data-notif="${esc(n.notification_id)}">
+            <div><strong>${esc(n.title)}</strong><div class="muted">${esc(n.body || "")}</div>
+              <div class="notif-time">${esc(shortTime(n.created_at))}</div></div>
+            ${n.is_read ? "" : `<span class="notif-dot" title="Unread"></span>`}
+          </div>`).join("");
+      const all = $("#notif-read-all");
+      if (all) all.onclick = async () => {
+        try { await post("/api/notifications/read-all", {}); }
+        catch(e) { return toast(e.message || "That did not work.", {kind:"err"}); }
+        loadNotifications();
+        refreshNotificationBadge();
+      };
+      $$("#notifications-list [data-notif]").forEach(row => row.onclick = async () => {
+        if (!row.classList.contains("unread")) return;
+        try {
+          await post(`/api/notifications/${row.dataset.notif}/read`, {});
+          row.classList.remove("unread");
+          const dot = row.querySelector(".notif-dot"); if (dot) dot.remove();
+          refreshNotificationBadge();
+        } catch(e) { /* leave the row as-is on failure */ }
+      });
+    } catch(e) { box.innerHTML = errorState("Could not load notifications"); }
   }
   async function loadEmployer(){
     $("#employer-panel").innerHTML = loading("Loading recruiter dashboard...");
@@ -762,19 +1090,125 @@
       $("#employer-sub").textContent = d.employer ? d.employer.org_name : "Create an organization first";
       S.employer = d.employer || null;
       $("#employer-panel").innerHTML = d.employer
-        ? `<div class="profile-grid"><div><div class="muted">Organization</div><strong>${esc(d.employer.org_name)}</strong></div><div><div class="muted">Open jobs</div><strong>${esc(d.kpis.jobs)}</strong></div><div><div class="muted">Applications</div><strong>${esc(d.kpis.applications)}</strong></div><div><div class="muted">Interviews</div><strong>${esc(d.kpis.interviews)}</strong></div></div>`
+        ? `<div class="profile-panel-head">
+             <div class="profile-grid"><div><div class="muted">Organization</div><strong>${esc(d.employer.org_name)}</strong></div><div><div class="muted">Open orders</div><strong>${esc(d.kpis.jobs)}</strong></div><div><div class="muted">Applications</div><strong>${esc(d.kpis.applications)}</strong></div><div><div class="muted">Interviews</div><strong>${esc(d.kpis.interviews)}</strong></div></div>
+             <button class="btn ghost small" id="org-edit"><i class="fas fa-pen"></i>Edit organization</button>
+           </div>`
         : `<div class="match-empty"><i class="fas fa-building"></i><h3>No organization yet</h3>
-           <p>Create one to post jobs and source against them.</p>
+           <p>Create one to post job orders and source candidates against them.</p>
            <button class="btn primary" id="org-create"><i class="fas fa-plus"></i>Create organization</button></div>`;
       const oc = $("#org-create");
       if (oc) oc.onclick = createOrg;
-      loadEmployerJobs();
+      const oe = $("#org-edit");
+      if (oe) oe.onclick = () => editOrg(d.employer);
+      renderEmployerJobs(d.jobs || []);
+      loadTeam();
     } catch(e) { $("#employer-panel").innerHTML = errorState("Could not load the employer dashboard"); }
+  }
+
+  async function loadTeam(){
+    const box = $("#employer-team");
+    if (!box) return;
+    if (!S.employer || !S.employer.employer_id){ box.innerHTML = ""; return; }
+    box.innerHTML = loading("Loading your team...");
+    try {
+      const d = await get(`/api/employers/${S.employer.employer_id}/members`);
+      const rows = (d.items || []).map(m => `<tr>
+        <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div>
+            <div class="cell-sub">${esc(m.email || "")}</div></td>
+        <td>${m.is_owner ? `<span class="badge accent">Owner</span>`
+                         : `<span class="badge">${esc((m.member_role || "member"))}</span>`}</td>
+        <td class="td-actions">${(d.can_manage && !m.is_owner)
+          ? `<button class="btn small" data-member-remove="${esc(m.user_id)}" title="Remove from team"><i class="fas fa-user-minus"></i></button>`
+          : ""}</td>
+      </tr>`).join("");
+      box.innerHTML = `<div class="an-section">
+        <div class="team-head"><h2>Team</h2>${d.can_manage
+          ? `<button class="btn ghost small" id="team-invite"><i class="fas fa-user-plus"></i>Invite teammate</button>` : ""}</div>
+        <p class="team-note">Everyone here shares this organisation's talent pools, submissions and jobs.</p>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Member</th><th>Role</th><th class="th-actions"></th></tr></thead>
+          <tbody>${rows}</tbody></table></div></div>`;
+      const inv = $("#team-invite");
+      if (inv) inv.onclick = inviteTeammate;
+      $$("#employer-team [data-member-remove]").forEach(b =>
+        b.onclick = () => removeTeammate(b.dataset.memberRemove));
+    } catch(e) { box.innerHTML = ""; }
+  }
+  async function inviteTeammate(){
+    if (!S.employer) return;
+    const v = await formDialog({
+      title: "Invite a teammate",
+      intro: "They need a HealthBoard account already. Once added, they share this "
+           + "organisation's pools, submissions and jobs.",
+      submit: "Add to team",
+      fields: [{name:"email", label:"Their email", type:"email", required:true, wide:true,
+                placeholder:"colleague@youragency.com"}],
+    });
+    if (!v) return;
+    try {
+      await post(`/api/employers/${S.employer.employer_id}/members`, {email: v.email.trim()});
+      toast("They now share your workspace.", {title:"Teammate added"});
+      loadTeam();
+    } catch(e) {
+      toast(e.status === 404 ? "No HealthBoard account with that email — ask them to sign up first."
+          : e.status === 409 ? "They're already on your team."
+          : (e.message || "That did not work."),
+          {title:"Could not add teammate", kind:"err"});
+    }
+  }
+  async function removeTeammate(userId){
+    if (!await confirmDialog({
+      title: "Remove teammate",
+      body: "They lose access to this organisation's shared pools, submissions and "
+          + "jobs. Their own account is not affected.",
+      confirm: "Remove", danger: true})) return;
+    try { await del(`/api/employers/${S.employer.employer_id}/members/${userId}`); loadTeam(); }
+    catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
+  }
+  function jobStatusPill(status){
+    const cls = status === "active" ? "ok" : status === "closed" ? "no" : "";
+    const label = status ? status[0].toUpperCase() + status.slice(1) : "—";
+    return `<span class="status-pill ${cls}">${esc(label)}</span>`;
+  }
+
+  function renderEmployerJobs(jobs){
+    const box = $("#employer-jobs");
+    if (!box) return;
+    if (!S.employer){ box.innerHTML = ""; return; }
+    // Register titles so the applicant/detail views can label themselves.
+    jobs.forEach(j => S.jobsById.set(j.job_id, j));
+    box.innerHTML = `<div class="an-section"><h2>Your job orders</h2>${
+      jobs.length
+        ? `<div class="table-wrap"><table class="table">
+            <thead><tr><th>Role</th><th>Type</th><th>Location</th><th>Pay</th><th title="Inbound applicants, if you post this order publicly">Applied</th><th>Status</th><th class="th-actions"></th></tr></thead>
+            <tbody>${jobs.map(j => {
+              const closed = j.status !== "active";
+              const loc = [j.city, j.state_code].filter(Boolean).join(", ") || "—";
+              const n = j.application_count || 0;
+              return `<tr class="${closed ? "row-muted" : ""}">
+                <td><div class="cell-name"><button class="linklike" data-jobview="${esc(j.job_id)}">${esc(j.title)}</button></div>
+                    <div class="cell-sub">${esc(j.specialty || j.profession_type || "")}</div></td>
+                <td><span class="badge accent">${esc(j.job_type || "-")}</span></td>
+                <td>${esc(loc)}</td>
+                <td>${j.pay_rate_max ? `<strong>$${Math.round(j.pay_rate_max)}/hr</strong>` : "—"}</td>
+                <td><button class="btn small ghost" data-applicants="${esc(j.job_id)}" title="Inbound applicants"><i class="fas fa-users"></i>${n}</button></td>
+                <td>${jobStatusPill(j.status)}</td>
+                <td class="td-actions">
+                  ${closed ? "" : `<button class="btn small primary" data-source="${esc(j.job_id)}" title="Source matching candidates"><i class="fas fa-bolt"></i>Source</button>`}
+                  <button class="btn small" data-job-edit="${esc(j.job_id)}" title="Edit order"><i class="fas fa-pen"></i></button>
+                  ${closed ? "" : `<button class="btn small" data-job-close="${esc(j.job_id)}" title="Close order"><i class="fas fa-xmark"></i></button>`}
+                </td>
+              </tr>`;
+            }).join("")}</tbody></table></div>`
+        : `<p class="muted" style="font-size:13px">No job orders yet — create one to start sourcing candidates against it.</p>`}</div>`;
+    $$("#employer-jobs [data-job-edit]").forEach(b => b.onclick = () => editJob(b.dataset.jobEdit));
+    $$("#employer-jobs [data-job-close]").forEach(b => b.onclick = () => closeJob(b.dataset.jobClose));
   }
   async function createOrg(){
     const v = await formDialog({
       title: "Create your organization",
-      intro: "Jobs are posted under an organization, and it is what groups your team.",
+      intro: "Job orders are posted under your organization, and it is what groups your team.",
       submit: "Create",
       fields: [{name:"org_name", label:"Organization name", required:true, wide:true,
                 placeholder:"Radixsol Staffing"}],
@@ -786,71 +1220,255 @@
       loadEmployer();
     } catch(e) { toast(e.message, {title:"Could not create", kind:"err"}); }
   }
-  async function loadEmployerJobs(){
-    const box = $("#employer-jobs");
-    if (!box) return;
-    if (!S.employer){ box.innerHTML = ""; return; }
-    box.innerHTML = loading("Loading your jobs...");
-    try {
-      const d = await get(`/api/jobs?employer_id=${encodeURIComponent(S.employer.employer_id)}&limit=50`);
-      box.innerHTML = `<div class="an-section"><h2>Your job postings</h2>${
-        d.items.length
-          ? `<div class="table-wrap"><table class="table">
-              <thead><tr><th>Role</th><th>Type</th><th>Location</th><th>Pay</th><th class="th-actions"></th></tr></thead>
-              <tbody>${d.items.map(j => `<tr>
-                <td><div class="cell-name">${esc(j.title)}</div><div class="cell-sub">${esc(j.specialty || j.profession_type || "")}</div></td>
-                <td><span class="badge accent">${esc(j.job_type || "-")}</span></td>
-                <td>${esc([j.city, j.state_code].filter(Boolean).join(", ") || "-")}</td>
-                <td>${j.pay_rate_max ? `<strong>$${Math.round(j.pay_rate_max)}/hr</strong>` : "-"}</td>
-                <td class="td-actions"><button class="btn small primary" data-source="${j.job_id}"><i class="fas fa-bolt"></i>Source</button></td>
-              </tr>`).join("")}</tbody></table></div>`
-          : `<p class="muted" style="font-size:13px">No jobs posted yet.</p>`}</div>`;
-    } catch(e) { box.innerHTML = errorState("Could not load your jobs"); }
-  }
-  async function postJob(){
-    if (!S.employer) return toast("Create an organization first.", {kind:"err"});
+  async function editOrg(emp){
+    if (!emp || !emp.employer_id) return;
     const v = await formDialog({
-      title: "Post a job",
-      intro: "A role with a licence and specialty scores far better against candidates "
-           + "than a bare title — those are what the matching engine ranks on.",
-      submit: "Post job",
+      title: "Edit your organization",
+      submit: "Save changes",
       fields: [
-        {name:"title", label:"Job title", required:true, wide:true,
-         placeholder:"ICU Registered Nurse"},
-        {name:"profession_type", label:"Licence required", placeholder:"RN"},
-        {name:"specialty", label:"Specialty", placeholder:"ICU"},
-        {name:"city", label:"City", placeholder:"Austin"},
-        {name:"state_code", label:"State", placeholder:"TX", max:2},
-        {name:"pay_rate_max", label:"Pay rate ($/hr)", type:"number", step:"1"},
-        {name:"job_type", label:"Type", type:"select",
-         options:[["travel","Travel"],["staff","Staff"],["per_diem","Per diem"],["contract","Contract"]]},
-        {name:"is_urgent", label:"Mark as urgent", type:"checkbox"},
+        {name:"org_name", label:"Organization name", required:true, wide:true, value:emp.org_name || ""},
+        {name:"org_type", label:"Type", value:emp.org_type || "", placeholder:"Staffing agency, Hospital…"},
+        {name:"city", label:"City", value:emp.city || ""},
+        {name:"state_code", label:"State", value:emp.state_code || "", max:2},
+        {name:"website_url", label:"Website", wide:true, value:emp.website_url || "", placeholder:"https://…"},
+        {name:"description", label:"About", type:"textarea", wide:true, value:emp.description || "",
+         placeholder:"What your organization does, and the roles you staff."},
       ],
     });
     if (!v) return;
-    const body = {title: v.title, job_type: v.job_type || "travel",
-                  pay_unit: "hourly", is_urgent: !!v.is_urgent};
-    if (v.profession_type) body.profession_type = v.profession_type.toUpperCase();
-    if (v.specialty) body.specialty = v.specialty;
-    if (v.city) body.city = v.city;
-    if (v.state_code) body.state_code = v.state_code.toUpperCase();
-    const pay = parseFloat(v.pay_rate_max);
-    if (!isNaN(pay)) { body.pay_rate_max = pay; body.pay_rate_min = pay; }
     try {
-      await post(`/api/jobs?employer_id=${encodeURIComponent(S.employer.employer_id)}`, body);
-      toast(`"${v.title}" is live on the board.`, {title:"Job posted"});
-      loadEmployerJobs();
+      await patch(`/api/employers/${emp.employer_id}`, {
+        org_name: v.org_name,
+        org_type: v.org_type || null,
+        city: v.city || null,
+        state_code: v.state_code ? v.state_code.toUpperCase() : null,
+        website_url: v.website_url || null,
+        description: v.description || null,
+      });
+      toast("Your organization is updated.", {title:"Saved"});
+      loadEmployer();
+    } catch(e) { toast(e.message, {title:"Could not save", kind:"err"}); }
+  }
+  const JOB_TYPE_OPTIONS = [["travel","Travel"],["staff","Staff"],["per_diem","Per diem"],["contract","Contract"]];
+  const SHIFT_OPTIONS = [["","Any shift"],["Day","Day"],["Night","Night"],["Evening","Evening"],["Rotating","Rotating"],["Weekend","Weekend"]];
+
+  // One field set drives both posting and editing. A role with a licence,
+  // specialty and description scores and reads far better than a bare title —
+  // the licence and specialty are what the matching engine ranks on, and the
+  // description is what a candidate reads before applying.
+  function jobFields(j = {}){
+    return [
+      {name:"title", label:"Job title", required:true, wide:true,
+       value:j.title || "", placeholder:"ICU Registered Nurse"},
+      {name:"profession_type", label:"Licence required", value:j.profession_type || "", placeholder:"RN"},
+      {name:"specialty", label:"Specialty", value:j.specialty || "", placeholder:"ICU"},
+      {name:"city", label:"City", value:j.city || "", placeholder:"Austin"},
+      {name:"state_code", label:"State", value:j.state_code || "", placeholder:"TX", max:2},
+      {name:"pay_rate_min", label:"Pay from ($/hr)", type:"number", step:"1", value:j.pay_rate_min ?? ""},
+      {name:"pay_rate_max", label:"Pay to ($/hr)", type:"number", step:"1", value:j.pay_rate_max ?? ""},
+      {name:"job_type", label:"Type", type:"select", options:JOB_TYPE_OPTIONS, value:j.job_type || "travel"},
+      {name:"shift_type", label:"Shift", type:"select", options:SHIFT_OPTIONS, value:j.shift_type || ""},
+      {name:"description", label:"Description", type:"textarea", wide:true, value:j.description || "",
+       placeholder:"The unit, the schedule, the caseload, and what you're looking for."},
+      {name:"is_urgent", label:"Mark as urgent", type:"checkbox", value:!!j.is_urgent},
+    ];
+  }
+  function jobBody(v){
+    const lo = parseFloat(v.pay_rate_min), hi = parseFloat(v.pay_rate_max);
+    return {
+      title: v.title,
+      job_type: v.job_type || "travel",
+      pay_unit: "hourly",
+      is_urgent: !!v.is_urgent,
+      profession_type: v.profession_type ? v.profession_type.toUpperCase() : null,
+      specialty: v.specialty || null,
+      city: v.city || null,
+      state_code: v.state_code ? v.state_code.toUpperCase() : null,
+      shift_type: v.shift_type || null,
+      description: v.description || null,
+      pay_rate_min: isNaN(lo) ? (isNaN(hi) ? null : hi) : lo,
+      pay_rate_max: isNaN(hi) ? (isNaN(lo) ? null : lo) : hi,
+    };
+  }
+
+  async function postJob(){
+    if (!S.employer) return toast("Create an organization first.", {kind:"err"});
+    const v = await formDialog({title:"New job order", submit:"Create order", fields: jobFields()});
+    if (!v) return;
+    try {
+      await post(`/api/jobs?employer_id=${encodeURIComponent(S.employer.employer_id)}`, jobBody(v));
+      toast(`"${v.title}" is open — source candidates against it now.`, {title:"Job order created"});
+      loadEmployer();
       loadJobs();
     } catch(e) { toast(e.message, {title:"Could not post job", kind:"err"}); }
   }
 
-  async function applyJob(id){
+  async function editJob(jobId){
+    let job;
+    try { job = await get(`/api/jobs/${jobId}`); }
+    catch(e) { return toast(e.message || "Could not load the role.", {kind:"err"}); }
+    const v = await formDialog({title:"Edit job order", submit:"Save changes", fields: jobFields(job)});
+    if (!v) return;
     try {
-      await post(`/api/jobs/${id}/apply`, {});
-      toast("Track it under My Applications.", {title:"Application sent"});
+      await patch(`/api/jobs/${jobId}`, jobBody(v));
+      toast("Your changes are live.", {title:"Order updated"});
+      loadEmployer();
+      loadJobs();
+    } catch(e) { toast(e.message, {title:"Could not update order", kind:"err"}); }
+  }
+
+  async function closeJob(jobId){
+    const job = S.jobsById.get(jobId);
+    if (!await confirmDialog({
+      title: "Close this job order",
+      body: `"${(job && job.title) || "This order"}" will stop appearing for sourcing and stop `
+          + "accepting applications. Anyone you've already sourced or received stays with you.",
+      confirm: "Close order", danger: true})) return;
+    try {
+      await del(`/api/jobs/${jobId}`);
+      toast("The order is closed.", {title:"Order closed"});
+      loadEmployer();
+      loadJobs();
+    } catch(e) { toast(e.message || "That did not work.", {title:"Could not close order", kind:"err"}); }
+  }
+
+  // Full role detail — what a candidate reads before applying, and what a
+  // recruiter opens to check a posting. Rows across the app link here.
+  async function openJobDetail(jobId){
+    $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card job-detail-card">
+      <div class="dlg-body">${loading("Loading role…")}</div></div></div>`;
+    let job;
+    try { job = await get(`/api/jobs/${jobId}`); }
+    catch(e) { $("#modal-root").innerHTML = ""; return toast(e.message || "Could not load the role.", {kind:"err"}); }
+    S.jobsById.set(jobId, job);
+    const rec = isRecruiter();
+    const loc = [job.city, job.state_code].filter(Boolean).join(", ") || "Location flexible";
+    const pay = job.pay_rate_max
+      ? (job.pay_rate_min && job.pay_rate_min !== job.pay_rate_max
+          ? `$${Math.round(job.pay_rate_min)}–$${Math.round(job.pay_rate_max)}/hr`
+          : `$${Math.round(job.pay_rate_max)}/hr`)
+      : "Pay not listed";
+    const facts = [
+      ["Type", job.job_type], ["Shift", job.shift_type], ["Specialty", job.specialty],
+      ["Licence", job.profession_type], ["Location", loc], ["Pay", pay],
+    ].filter(([, val]) => val);
+    const reqs = job.requirements && typeof job.requirements === "object"
+      ? Object.entries(job.requirements) : [];
+    $("#modal-root").innerHTML = `
+      <div class="modal"><div class="modal-card job-detail-card">
+        <div class="modal-head">
+          <div><strong>${esc(job.title)}</strong>${job.is_urgent ? ` <span class="badge coral">Urgent</span>` : ""}
+            <div class="muted small">${esc(loc)}</div></div>
+          <button class="icon-btn" data-dlg-x><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="dlg-body">
+          <div class="job-detail-facts">${facts.map(([k, val]) =>
+            `<div><span class="muted">${esc(k)}</span><strong>${esc(val)}</strong></div>`).join("")}</div>
+          <div id="jd-pay"></div>
+          ${job.description
+            ? `<div class="job-detail-desc"><h4>About this role</h4><p>${esc(job.description)}</p></div>`
+            : `<p class="muted">No description was added for this role.</p>`}
+          ${(job.benefits && job.benefits.length)
+            ? `<div class="job-detail-desc"><h4>Benefits</h4><ul>${job.benefits.map(b => `<li>${esc(b)}</li>`).join("")}</ul></div>` : ""}
+          ${reqs.length
+            ? `<div class="job-detail-desc"><h4>Requirements</h4><ul>${reqs.map(([k, val]) => `<li>${esc(k)}: ${esc(val)}</li>`).join("")}</ul></div>` : ""}
+        </div>
+        <div class="dlg-foot"><span class="spacer"></span>
+          <button type="button" class="btn ghost" data-dlg-x>Close</button>
+          ${rec
+            ? `<button type="button" class="btn primary" id="jd-source"><i class="fas fa-bolt"></i>Source candidates</button>`
+            : `<button type="button" class="btn" id="jd-save"><i class="far fa-bookmark"></i>Save</button>
+               <button type="button" class="btn" id="jd-message"><i class="fas fa-comment-dots"></i>Message recruiter</button>
+               <button type="button" class="btn primary" id="jd-apply">Apply</button>`}
+        </div>
+      </div></div>`;
+    $$("#modal-root [data-dlg-x]").forEach(b => b.onclick = () => { $("#modal-root").innerHTML = ""; });
+    $("#modal-root .modal").addEventListener("click", e => {
+      if (e.target.classList.contains("modal")) $("#modal-root").innerHTML = "";
+    });
+    const src = $("#jd-source");
+    if (src) src.onclick = () => { $("#modal-root").innerHTML = ""; sourceForJob(jobId); };
+    const ap = $("#jd-apply");
+    if (ap) ap.onclick = () => { $("#modal-root").innerHTML = ""; applyJob(jobId); };
+    const jmsg = $("#jd-message");
+    if (jmsg) jmsg.onclick = () => { $("#modal-root").innerHTML = ""; messageAboutJob(jobId); };
+    const sv = $("#jd-save");
+    if (sv) sv.onclick = async () => {
+      try { await post(`/api/jobs/${jobId}/save`, {}); toast("Saved to your list.", {title:"Job saved"}); }
+      catch(e) { toast(e.message || "Could not save.", {kind:"err"}); }
+    };
+    loadJobPayEstimate(jobId);
+  }
+  async function loadJobPayEstimate(jobId){
+    const box = $("#jd-pay");
+    if (!box) return;
+    try {
+      const p = await get(`/api/jobs/${jobId}/pay-estimate`);
+      if (!p || !p.available){ box.innerHTML = ""; return; }
+      const ot = p.overtime || {};
+      const caNote = ot.mode === "california"
+        ? `<div class="jd-pay-ca"><i class="fas fa-scale-balanced"></i>Includes California daily overtime — ${ot.straight_hours}h regular + ${ot.ot_hours}h at 1.5×${ot.dt_hours ? ` + ${ot.dt_hours}h at 2×` : ""}.</div>`
+        : "";
+      box.innerHTML = `<div class="jd-pay-card">
+        <div class="jd-pay-head"><i class="fas fa-money-bill-trend-up"></i>Estimated take-home
+          <span class="jd-pay-src ${p.gsa_live ? "live" : ""}">${p.gsa_live ? "Live GSA rate" : "GSA estimate"}</span></div>
+        <div class="jd-pay-big">${payMoney(p.weekly_net)}<small>/week net</small></div>
+        <div class="jd-pay-rows">
+          <span>Weekly gross</span><b>${payMoney(p.weekly_total)}</b>
+          <span>of which tax-free per-diem</span><b>${payMoney(p.weekly_tax_free)}</b>
+          <span>Taxable pay</span><b>${payMoney(p.weekly_taxable_gross)}</b>
+        </div>
+        ${caNote}
+        <div class="jd-pay-foot">Estimate for ${p.hours_per_week}h/wk at $${p.hourly}/hr in ${esc([p.city,p.state_code].filter(Boolean).join(", "))}. Tax-free stipend needs a qualifying tax home. Not tax advice.</div>
+      </div>`;
+    } catch(e){ box.innerHTML = ""; }
+  }
+
+  async function messageAboutJob(jobId){
+    const v = await formDialog({
+      title: "Message the recruiter",
+      intro: "Ask a question about this role. This starts a conversation with the "
+           + "recruiter who posted it.",
+      submit: "Send",
+      fields: [{name:"body", label:"Your message", type:"textarea", required:true, wide:true,
+                placeholder:"Hi — I'm interested in this role and wanted to ask…"}],
+    });
+    if (!v) return;
+    try {
+      const thread = await post("/api/messages/threads", {job_id: jobId, body: v.body});
+      showPage("messages");
+      setTimeout(() => openThread(thread.thread_id), 400);
+    } catch(e){ toast(e.message || "Could not message the recruiter.", {kind:"err", ms:6500}); }
+  }
+  async function applyJob(id){
+    // A candidate applies with their profile + résumé, so make sure they exist
+    // and let them add a note — applying used to fire silently with nothing.
+    if (!S.profile){
+      toast("Add your details before applying to roles.", {title:"Complete your profile", kind:"err"});
+      return showPage("profile");
+    }
+    const job = (S.jobsById && S.jobsById.get(id)) || null;
+    const hasResume = !!S.profile.resume_url;
+    const v = await formDialog({
+      title: job ? `Apply — ${job.title}` : "Apply to this role",
+      intro: hasResume
+        ? "Your profile and résumé on file are sent with this application. Add a note if you'd like."
+        : "Your profile is sent with this application. Upload a résumé first (Resume tab) so the employer sees your full background.",
+      submit: "Submit application",
+      fields: [
+        {name:"cover_letter", label:"Message to the employer", type:"textarea", wide:true,
+         placeholder:"Why you're a strong fit for this role (optional)"},
+      ],
+    });
+    if (!v) return;
+    try {
+      await post(`/api/jobs/${id}/apply`, {cover_letter: v.cover_letter || null});
+      toast("The employer has your application — track it under My Applications.",
+            {title:"Application submitted"});
       loadDashboard();
+      if ($("#page-applications").classList.contains("active")) loadApplications();
     } catch(e) {
-      toast(e.status === 409 ? "You already applied to this job." : e.message,
+      toast(e.status === 409 ? "You already applied to this job." : (e.message || "That did not work."),
             {kind:"err"});
     }
   }
@@ -1229,7 +1847,328 @@
     });
   }
 
+  // --- Travel pay calculator ---------------------------------------------
+  const payMoney = value => new Intl.NumberFormat("en-US", {
+    style:"currency", currency:"USD", maximumFractionDigits:0,
+  }).format(Number(value) || 0);
+  const payRate = value => new Intl.NumberFormat("en-US", {
+    style:"currency", currency:"USD", minimumFractionDigits:2,
+    maximumFractionDigits:2,
+  }).format(Number(value) || 0);
+
+  function payNumber(id, optional=false){
+    const raw = ($(id).value || "").trim();
+    if (optional && raw === "") return null;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) throw new Error("Complete every required number before calculating.");
+    return value;
+  }
+
+  function collectPayInputs(){
+    const city = clean($("#calc-city").value);
+    const state = clean($("#calc-state").value).toUpperCase();
+    if (!city) throw new Error("Enter the assignment city.");
+    if (!/^[A-Z]{2}$/.test(state)) throw new Error("Enter a two-letter US state code.");
+    $("#calc-state").value = state;
+    return {
+      bill_rate: payNumber("#calc-bill-rate"),
+      contract_weeks: payNumber("#calc-weeks"),
+      hours_per_week: payNumber("#calc-hours"),
+      ot_hours_per_week: payNumber("#calc-ot-hours"),
+      shift_length_hours: payNumber("#calc-shift", true) || 12,
+      margin_pct: payNumber("#calc-margin"),
+      burden_multiplier: 1 + payNumber("#calc-burden") / 100,
+      benefits_cost_per_hr: payNumber("#calc-benefits"),
+      city, state_code:state,
+      gsa_lodging_override: payNumber("#calc-lodging-override", true),
+      mie_override: payNumber("#calc-mie-override", true),
+      completion_bonus: payNumber("#calc-bonus"),
+      travel_allowance: payNumber("#calc-travel"),
+      reimbursements: payNumber("#calc-reimbursements"),
+      tax_rate: payNumber("#calc-tax") / 100,
+      travel_start: ($("#calc-start").value || "").trim() || null,
+      travel_end: ($("#calc-end").value || "").trim() || null,
+    };
+  }
+
+  function payLine(label, value, strong=false){
+    return `<div class="calc-line${strong ? " is-total" : ""}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+  }
+
+  function payOption(option, featured=false){
+    return `<article class="calc-option${featured ? " featured" : ""}">
+      <div class="calc-option-head"><div><span>${featured ? "Recommended comparison" : "Baseline"}</span>
+        <h3>${esc(option.label)}</h3></div>${featured ? '<i class="fas fa-sparkles"></i>' : ""}</div>
+      ${payLine("Taxable hourly rate", `${payRate(option.taxable_rate)}/hr`)}
+      ${payLine("Overtime rate", `${payRate(option.ot_rate)}/hr`)}
+      ${payLine("Weekly taxable gross", payMoney(option.weekly_taxable_gross))}
+      ${payLine("Weekly tax-free stipend", payMoney(option.weekly_tax_free))}
+      ${payLine("Weekly package total", payMoney(option.weekly_total), true)}
+      <div class="calc-net"><span>Estimated weekly take-home</span><b>${payMoney(option.est_weekly_net)}</b></div>
+      <div class="calc-contract"><span>Full contract</span><b>${payMoney(option.contract_total)}</b></div>
+    </article>`;
+  }
+
+  function seasonalNote(d){
+    const sl = d.breakdown && d.breakdown.seasonal_lodging;
+    if (!sl) return "";
+    const vals = Object.values(d.gsa.monthly || {});
+    const flat = vals.length && Math.max(...vals) === Math.min(...vals);
+    if (flat)
+      return `<p class="calc-rate-note flat"><i class="fas fa-circle-info"></i>${esc(d.gsa.city)}'s GSA lodging is <b>${payMoney(d.gsa.lodging)}/night every month</b> — so changing the travel dates won't change the stipend for this location. Seasonal cities (e.g. Aspen, CO) do.</p>`;
+    return `<p class="calc-rate-note season"><i class="fas fa-calendar-check"></i>Seasonal rate for these dates: <b>${payMoney(sl.daily)}/night</b> lodging (${esc((sl.months || []).join(", "))}), used in place of the annual maximum.</p>`;
+  }
+  function overtimeNote(d){
+    const ot = d.breakdown && d.breakdown.overtime;
+    if (!ot || ot.mode !== "california") return "";
+    const parts = [`${ot.straight_hours}h regular`];
+    if (ot.ot_hours) parts.push(`${ot.ot_hours}h at 1.5×`);
+    if (ot.dt_hours) parts.push(`${ot.dt_hours}h at 2×`);
+    return `<p class="calc-rate-note ca"><i class="fas fa-scale-balanced"></i>California overtime `
+         + `applied (${ot.shift_length}h shifts): <b>${parts.join(" + ")}</b> per week. `
+         + `CA pays 1.5× after 8h/day and 2× after 12h/day, unlike the federal weekly-only rule.</p>`;
+  }
+  function gsaTripTotal(p){
+    return `<div class="gsa-trip">
+      <div class="gsa-trip-head"><i class="fas fa-building-columns"></i>
+        <span>Max GSA per-diem · ${esc(String(p.start))} to ${esc(String(p.end))}</span>
+        <b>${payMoney(p.per_diem_total)}</b></div>
+      <div class="gsa-trip-rows">
+        <span>Lodging — ${p.nights} night${p.nights === 1 ? "" : "s"}</span><b>${payMoney(p.lodging_total)}</b>
+        <span>Meals &amp; incidentals — ${p.days} day${p.days === 1 ? "" : "s"} <em>(first & last at 75%)</em></span><b>${payMoney(p.mie_total)}</b>
+      </div>
+      <p class="gsa-trip-foot"><i class="fas fa-circle-check"></i>Matches the official gsa.gov per-diem calculator for these dates.</p>
+    </div>`;
+  }
+  function renderPayPackage(d){
+    const box = $("#pay-calc-results");
+    const live = d.gsa.source === "api.gsa.gov";
+    const advantage = Number(d.perdiem_advantage) || 0;
+    const source = live ? "Live GSA rate" : "Offline GSA estimate";
+    box.innerHTML = `<div class="calc-rate-card">
+        <div class="calc-rate-head"><div><i class="fas fa-location-dot"></i>
+          <strong>${esc(d.gsa.city)}, ${esc(d.gsa.state_code)}</strong></div>
+          <span class="calc-source ${live ? "live" : "estimate"}">${esc(source)} · FY${esc(d.gsa.fiscal_year)}</span></div>
+        <div class="calc-rate-grid">
+          <div><span>Lodging</span><b>${payMoney((d.breakdown && d.breakdown.seasonal_lodging) ? d.breakdown.seasonal_lodging.daily : d.gsa.lodging)}</b><small>${(d.breakdown && d.breakdown.seasonal_lodging) ? "per night · your dates" : "per night"}</small></div>
+          <div><span>Meals &amp; incidentals</span><b>${payMoney(d.gsa.mie)}</b><small>per day</small></div>
+          <div><span>Weekly tax-free</span><b>${payMoney((d.breakdown && d.breakdown.weekly_tax_free_total != null) ? d.breakdown.weekly_tax_free_total : d.gsa.weekly_max_tax_free)}</b><small>per week</small></div>
+        </div>
+        ${seasonalNote(d)}
+        ${overtimeNote(d)}
+        ${(d.breakdown && d.breakdown.gsa_perdiem) ? gsaTripTotal(d.breakdown.gsa_perdiem) : ""}
+        ${live ? "" : `<p class="calc-rate-note"><i class="fas fa-triangle-exclamation"></i>Using built-in locality estimates${
+            d.gsa.fallback_reason ? ` (${esc(d.gsa.fallback_reason)})` : ""}. Confirm the official rate before quoting a package.</p>`}
+      </div>
+      <div class="calc-options">${payOption(d.option_w2)}${payOption(d.option_perdiem, true)}</div>
+      <div class="calc-advantage ${advantage < 0 ? "negative" : ""}">
+        <div><span>Estimated take-home difference over the contract</span>
+          <b>${advantage >= 0 ? "+" : ""}${payMoney(advantage)}</b></div>
+        <button class="btn primary" id="pay-calc-save" type="button"><i class="fas fa-bookmark"></i>Save comparison</button>
+      </div>
+      <div class="calc-breakdown">
+        <span>Pay pool ${payRate(d.breakdown.pool_per_hr)}/hr</span>
+        <span>Margin ${payRate(d.breakdown.agency_margin_per_hr)}/hr</span>
+        <span>Weekly stipend ${payMoney(d.breakdown.weekly_tax_free_total)}/wk</span>
+      </div>`;
+    $("#pay-calc-save").onclick = savePayPackage;
+  }
+
+  async function calculatePayPackage(e){
+    if (e) e.preventDefault();
+    const form = $("#pay-calc-form"), error = $("#calc-form-error");
+    if (!form.reportValidity()) return;
+    const button = $("#pay-calc-submit"), original = button.innerHTML;
+    error.textContent = "";
+    try {
+      const inputs = collectPayInputs();
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner sm"></span>Calculating…';
+      $("#pay-calc-results").innerHTML = loading("Looking up the location and calculating both packages...");
+      const result = await post("/api/gsa/pay-package/calculate", inputs);
+      S.payInputs = inputs;
+      S.payPackage = result;
+      renderPayPackage(result);
+    } catch(e) {
+      const message = e.status === 422
+        ? "Those assumptions do not produce a valid pay package. Check the bill rate, margin, burden and benefits."
+        : (e.message || "The pay package could not be calculated.");
+      error.textContent = message;
+      $("#pay-calc-results").innerHTML = errorState("Could not calculate this package", message);
+    } finally {
+      button.disabled = false;
+      button.innerHTML = original;
+    }
+  }
+
+  async function savePayPackage(){
+    if (!S.payInputs || !S.payPackage) return;
+    const values = await formDialog({
+      title:"Save pay comparison", submit:"Save comparison",
+      intro:"Give this package a recognizable name for your recruiter workspace.",
+      fields:[{name:"label", label:"Comparison name", required:true, wide:true,
+               value:`${S.payPackage.gsa.city}, ${S.payPackage.gsa.state_code} · ${S.payInputs.contract_weeks} weeks`}],
+    });
+    if (!values) return;
+    try {
+      await post("/api/gsa/pay-package/save", {
+        label:values.label, inputs:S.payInputs, result:S.payPackage,
+      });
+      toast("The pay comparison is available below.", {title:"Comparison saved"});
+      loadSavedPayPackages();
+    } catch(e) {
+      toast(e.message || "The comparison was not saved.", {title:"Could not save", kind:"err"});
+    }
+  }
+
+  async function loadSavedPayPackages(){
+    const box = $("#pay-calc-saved");
+    if (!box || !isRecruiter()) return;
+    box.innerHTML = '<div class="calc-saved-empty"><span class="spinner sm dark"></span>Loading saved comparisons…</div>';
+    try {
+      const rows = await get("/api/gsa/pay-package/saved");
+      box.innerHTML = rows.length ? rows.slice(0, 8).map(row => {
+        const result = row.result || {}, gsa = result.gsa || {}, pd = result.option_perdiem || {};
+        const when = row.created_at ? new Date(row.created_at).toLocaleDateString([], {month:"short", day:"numeric", year:"numeric"}) : "";
+        return `<article class="calc-saved-row"><div class="calc-saved-icon"><i class="fas fa-calculator"></i></div>
+          <div><strong>${esc(row.label || "Saved pay package")}</strong>
+            <span>${esc([gsa.city, gsa.state_code].filter(Boolean).join(", ") || "Location not recorded")} · ${esc(when)}</span></div>
+          <div class="calc-saved-value"><b>${payMoney(pd.est_weekly_net)}</b><span>est. weekly take-home</span></div></article>`;
+      }).join("") : '<div class="calc-saved-empty"><i class="fas fa-bookmark"></i>No comparisons saved yet.</div>';
+    } catch(e) {
+      box.innerHTML = '<div class="calc-saved-empty"><i class="fas fa-triangle-exclamation"></i>Saved comparisons could not be loaded.</div>';
+    }
+  }
+
+  function loadPayCalculator(){
+    if (isRecruiter()) loadSavedPayPackages();
+  }
+
+  // --- Seeker Pay Tools (candidate-framed pay calculator) ------------------
+  function renderPayTools(d){
+    const box = $("#pt-results");
+    const live = d.gsa.source === "api.gsa.gov";
+    const advantage = Number(d.perdiem_advantage) || 0;
+    const source = live ? "Live GSA rate" : "Offline GSA estimate";
+    box.innerHTML = `<div class="calc-rate-card">
+        <div class="calc-rate-head"><div><i class="fas fa-location-dot"></i>
+          <strong>${esc(d.gsa.city)}, ${esc(d.gsa.state_code)}</strong></div>
+          <span class="calc-source ${live ? "live" : "estimate"}">${esc(source)} · FY${esc(d.gsa.fiscal_year)}</span></div>
+        <div class="calc-rate-grid">
+          <div><span>Lodging</span><b>${payMoney((d.breakdown && d.breakdown.seasonal_lodging) ? d.breakdown.seasonal_lodging.daily : d.gsa.lodging)}</b><small>${(d.breakdown && d.breakdown.seasonal_lodging) ? "tax-free / night · your dates" : "tax-free / night"}</small></div>
+          <div><span>Meals &amp; incidentals</span><b>${payMoney(d.gsa.mie)}</b><small>tax-free / day</small></div>
+          <div><span>Weekly tax-free</span><b>${payMoney((d.breakdown && d.breakdown.weekly_tax_free_total != null) ? d.breakdown.weekly_tax_free_total : d.gsa.weekly_max_tax_free)}</b><small>per week</small></div>
+        </div>
+        ${seasonalNote(d)}
+        ${overtimeNote(d)}
+        ${(d.breakdown && d.breakdown.gsa_perdiem) ? gsaTripTotal(d.breakdown.gsa_perdiem) : ""}
+        ${live ? "" : `<p class="calc-rate-note"><i class="fas fa-triangle-exclamation"></i>Using built-in locality estimates${
+            d.gsa.fallback_reason ? ` (${esc(d.gsa.fallback_reason)})` : ""}. Confirm the figure with the agency before you sign.</p>`}
+      </div>
+      <div class="calc-options">${payOption(d.option_w2)}${payOption(d.option_perdiem, true)}</div>
+      <div class="calc-advantage ${advantage < 0 ? "negative" : ""}">
+        <div><span>Take-home difference over the contract (per-diem vs straight W2)</span>
+          <b>${advantage >= 0 ? "+" : ""}${payMoney(advantage)}</b></div>
+      </div>
+      <p class="calc-hint" style="margin-top:14px"><i class="fas fa-circle-info"></i>The tax-free portion applies only if you keep a qualifying tax home away from the assignment. Confirm your eligibility — this is not tax advice.</p>`;
+  }
+  async function calcPayTools(e){
+    if (e) e.preventDefault();
+    const form = $("#pt-form"), error = $("#pt-error");
+    if (!form.reportValidity()) return;
+    error.textContent = "";
+    const inputs = {
+      city: ($("#pt-city").value || "").trim(),
+      state_code: ($("#pt-state").value || "").trim().toUpperCase(),
+      bill_rate: parseFloat($("#pt-rate").value),
+      margin_pct: 0,           // a candidate's package IS their pay pool
+      burden_multiplier: 1.0,  // no employer burden from the candidate's side
+      hours_per_week: parseFloat($("#pt-hours").value) || 36,
+      shift_length_hours: parseFloat($("#pt-shift").value) || 12,
+      contract_weeks: parseInt($("#pt-weeks").value, 10) || 13,
+      tax_rate: (parseFloat($("#pt-tax").value) || 22) / 100,
+    };
+    const ts = ($("#pt-start").value || "").trim(), te = ($("#pt-end").value || "").trim();
+    if (ts) inputs.travel_start = ts;
+    if (te) inputs.travel_end = te;
+    const btn = $("#pt-submit"), orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span>Calculating…';
+    $("#pt-results").innerHTML = loading("Looking up local rates and estimating your take-home...");
+    try {
+      const result = await post("/api/gsa/pay-package/calculate", inputs);
+      renderPayTools(result);
+    } catch(err) {
+      const msg = err.status === 422
+        ? "Check the package rate and hours — those numbers don't produce a valid estimate."
+        : (err.message || "Could not calculate.");
+      error.textContent = msg;
+      $("#pt-results").innerHTML = errorState("Could not estimate this package", msg);
+    } finally { btn.disabled = false; btn.innerHTML = orig; }
+  }
+  // A live note reconciling the travel-date span against the contract length.
+  function updateDatesNote(startSel, endSel, weeksSel, noteSel){
+    const note = $(noteSel);
+    if (!note) return;
+    const s = ($(startSel).value || "").trim(), e = ($(endSel).value || "").trim();
+    if (!s || !e){ note.innerHTML = ""; note.className = "calc-dates-note"; return; }
+    const d1 = new Date(s + "T00:00:00"), d2 = new Date(e + "T00:00:00");
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1){
+      note.innerHTML = `<i class="fas fa-triangle-exclamation"></i>The end date must be on or after the start date.`;
+      note.className = "calc-dates-note warn"; return;
+    }
+    const days = Math.round((d2 - d1) / 86400000) + 1;
+    const wkR = Math.round((days / 7) * 10) / 10;
+    const wkStr = Number.isInteger(wkR) ? String(wkR) : wkR.toFixed(1);
+    const contract = parseFloat($(weeksSel).value) || 0;
+    if (contract && days !== contract * 7){
+      note.innerHTML = `<i class="fas fa-circle-info"></i>These dates span <b>${wkStr} weeks</b> (${days} days) — but the contract length is set to <b>${contract} weeks</b> (${contract * 7} days). Adjust one so they match.`;
+      note.className = "calc-dates-note warn";
+    } else {
+      note.innerHTML = `<i class="fas fa-circle-check"></i>These dates span <b>${wkStr} weeks</b> (${days} days).`;
+      note.className = "calc-dates-note ok";
+    }
+  }
+  function wireDatesNote(startSel, endSel, weeksSel, noteSel){
+    [startSel, endSel, weeksSel].forEach(sel => {
+      const el = $(sel);
+      if (el) el.addEventListener("input", () => updateDatesNote(startSel, endSel, weeksSel, noteSel));
+    });
+    updateDatesNote(startSel, endSel, weeksSel, noteSel);
+  }
+  function wirePayTools(){
+    const form = $("#pt-form");
+    if (!form) return;
+    form.addEventListener("submit", calcPayTools);
+    const st = $("#pt-state");
+    if (st) st.addEventListener("input", e => {
+      e.target.value = e.target.value.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 2); });
+    wireDatesNote("#pt-start", "#pt-end", "#pt-weeks", "#pt-dates-note");
+  }
+
+  function wirePayCalculator(){
+    const form = $("#pay-calc-form");
+    if (!form) return;
+    form.addEventListener("submit", calculatePayPackage);
+    $("#calc-state").addEventListener("input", e => { e.target.value = e.target.value.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 2); });
+    wireDatesNote("#calc-start", "#calc-end", "#calc-weeks", "#calc-dates-note");
+    form.addEventListener("reset", () => setTimeout(() => {
+      S.payInputs = null; S.payPackage = null;
+      $("#calc-form-error").textContent = "";
+      $("#pay-calc-results").innerHTML = `<div class="calc-empty"><i class="fas fa-chart-column"></i>
+        <strong>Your package comparison will appear here</strong>
+        <span>Enter the contract terms and calculate to compare weekly and full-contract pay.</span></div>`;
+      updateDatesNote("#calc-start", "#calc-end", "#calc-weeks", "#calc-dates-note");
+    }, 0));
+  }
+
   function wire(){
+    // Landing → sign-in, and back. Any element with data-auth-open opens the
+    // auth screen in the requested mode.
+    $$("[data-auth-open]").forEach(b => b.addEventListener("click", e => {
+      e.preventDefault(); showAuth(b.dataset.authOpen);
+    }));
+    const authBack = $("#auth-back");
+    if (authBack) authBack.onclick = showLanding;
     $$(".auth-tab").forEach(b => b.onclick = () => showAuthMode(b.dataset.authMode));
     $("#auth-submit").onclick = submitAuth;
     $("#auth-password").addEventListener("keydown", e => { if (e.key === "Enter") submitAuth(); });
@@ -1261,6 +2200,23 @@
       if (tile) showPage(tile.dataset.page);
     });
     $("#logout-btn").onclick = () => { setToken(""); setRefresh(""); location.reload(); };
+    // Verification gate (only reached when email delivery is on).
+    const vCont = $("#verify-continue");
+    if (vCont) vCont.onclick = async () => {
+      verifyMsg("Checking…", "");
+      const ok = await loadMe();
+      if (ok === true) enterAppPages();
+      else if (ok === "pending") verifyMsg("Not verified yet — open the link in your email, then try again.", "err");
+      else { setToken(""); setRefresh(""); location.reload(); }
+    };
+    const vResend = $("#verify-resend");
+    if (vResend) vResend.onclick = async () => {
+      verifyMsg("Sending…", "");
+      try { await post("/api/auth/email/request-verification", {}); verifyMsg("Sent — check your inbox.", "ok"); }
+      catch(e) { verifyMsg(e.message || "Could not resend the email.", "err"); }
+    };
+    const vSignout = $("#verify-signout");
+    if (vSignout) vSignout.onclick = () => { setToken(""); setRefresh(""); location.reload(); };
     ["job-q","job-type","job-state"].forEach(id => { const el = $("#" + id); el.addEventListener(id === "job-q" ? "input" : "change", debounce(loadJobs, 250)); });
     $("#provider-q").addEventListener("input", debounce(() => { S.provider.q = $("#provider-q").value.trim(); providerFilterChanged(); }, 300));
     $("#provider-license-title").onchange = () => { S.provider.license_title = $("#provider-license-title").value; providerFilterChanged(); };
@@ -1301,9 +2257,12 @@
       const resume = e.target.closest("[data-resume]"); if (resume) viewResume(resume.dataset.resume);
       const release = e.target.closest("[data-release]"); if (release) releaseContact(release.dataset.release);
       const sub = e.target.closest("[data-submit]"); if (sub) submitCandidate(sub.dataset.submit);
+      const message = e.target.closest("[data-message]"); if (message) messageCandidate(message.dataset.message);
       const pick = e.target.closest("[data-pick]");
       if (pick) togglePick(pick.dataset.pick, pick.checked);
       const source = e.target.closest("[data-source]"); if (source) sourceForJob(source.dataset.source);
+      const applicants = e.target.closest("[data-applicants]"); if (applicants) reviewApplicants(applicants.dataset.applicants);
+      const jobview = e.target.closest("[data-jobview]"); if (jobview) openJobDetail(jobview.dataset.jobview);
       const save = e.target.closest("[data-pool-save]");
       if (save){ e.stopPropagation(); openPoolMenu(save, save.dataset.poolSave); }
       else if (!e.target.closest(".pool-menu")) closePoolMenu();
@@ -1313,6 +2272,8 @@
     if (poolNew) poolNew.onclick = createPool;
     const matchBack = $("#match-back");
     if (matchBack) matchBack.onclick = () => showPage("jobs");
+    const applicantsBack = $("#applicants-back");
+    if (applicantsBack) applicantsBack.onclick = () => showPage("employer");
     const bulkAll = $("#bulk-all");
     if (bulkAll) bulkAll.onchange = () => {
       // Capture the intent first: togglePick re-renders the bar, which rewrites
@@ -1340,6 +2301,20 @@
     if (searchSave) searchSave.onclick = saveCurrentSearch;
     const jobNew = $("#job-new");
     if (jobNew) jobNew.onclick = postJob;
+    const clientNew = $("#client-new");
+    if (clientNew) clientNew.onclick = () => newClient();
+    const msgNew = $("#msg-new");
+    if (msgNew) msgNew.onclick = () => {
+      showPage("providers");
+      toast("Find a candidate and use the message icon to start a conversation.",
+            {kind:"info", ms:6000});
+    };
+    const walletAddLic = $("#wallet-add-lic");
+    if (walletAddLic) walletAddLic.onclick = addCredential;
+    const walletAddCert = $("#wallet-add-cert");
+    if (walletAddCert) walletAddCert.onclick = addCertification;
+    const credShare = $("#cred-share");
+    if (credShare) credShare.onclick = copyCredentialSummary;
     const tmplNew = $("#tmpl-new");
     if (tmplNew) tmplNew.onclick = newTemplate;
     const campNew = $("#camp-new");
@@ -1349,6 +2324,8 @@
     $("#resume-file").onchange = () => { if ($("#resume-file").files[0]) uploadResume($("#resume-file").files[0]); };
     wireAi();
     wireExtension();
+    wirePayCalculator();
+    wirePayTools();
   }
   // --- Dialogs & toasts ----------------------------------------------------
   // Browser prompt() chains were the worst of the interface: adding a licence
@@ -1627,10 +2604,42 @@
   // Starting a conversation existed in the API and had no caller. Reachability
   // is checked first: almost every profile is an imported résumé with no
   // account, and offering a button that always fails is worse than none.
+  async function emailCandidate(profileId){
+    // The candidate has no HealthBoard account — reach them by email instead.
+    const card = S.providerCards.get(profileId);
+    if (card && !card.is_released && !S.releasedContacts.has(profileId)){
+      return toast("Reveal this candidate's contact first, then you can email them.",
+                   {title:"Reveal needed", kind:"err", ms:6000});
+    }
+    const v = await formDialog({
+      title: "Email this candidate",
+      intro: "This candidate isn't on HealthBoard yet, so your message reaches them by "
+           + "email. Their reply comes straight to your inbox.",
+      submit: "Send email",
+      fields: [
+        {name:"subject", label:"Subject", required:true,
+         placeholder:"An opportunity that fits your background"},
+        {name:"body", label:"Message", type:"textarea", required:true, wide:true,
+         placeholder:"Hi — I'm recruiting for a role that looks like a strong match for your experience…"},
+      ],
+    });
+    if (!v) return;
+    try {
+      await post("/api/messages/email-outreach",
+                 {profile_id: profileId, subject: v.subject, body: v.body});
+      toast("Your email is on its way — replies land in your inbox.", {title:"Email sent"});
+    } catch(e){
+      if (e.status === 402)
+        toast("Reveal this candidate's contact first, then you can email them.",
+              {title:"Reveal needed", kind:"err"});
+      else toast(e.message || "Could not send the email.", {kind:"err"});
+    }
+  }
   async function messageCandidate(profileId){
     try {
       const check = await get(`/api/messages/can-message/${profileId}`);
-      if (!check.can_message) return toast(check.reason, {title:"Cannot message", kind:"err", ms:6000});
+      // No in-app account → fall back to the email bridge (cold outreach).
+      if (!check.can_message) return emailCandidate(profileId);
       if (check.thread_id){
         showPage("messages");
         setTimeout(() => openThread(check.thread_id), 400);
@@ -1795,6 +2804,7 @@
     const box = $("#apps-body");
     box.innerHTML = loading("Loading your applications...");
     loadJobAlerts();
+    loadSavedJobs();
     try {
       const d = await get("/api/applications/mine/detail");
       const n = d.items.length;
@@ -1817,6 +2827,38 @@
     } catch(e) { box.innerHTML = errorState("Could not load your applications"); }
   }
 
+  // Jobs the professional bookmarked — previously savable but with nowhere to
+  // see them. Shown beneath the applications list on the same page.
+  async function loadSavedJobs(){
+    const box = $("#saved-jobs");
+    if (!box) return;
+    try {
+      const jobs = await get("/api/applications/saved");
+      (jobs || []).forEach(j => S.jobsById.set(j.job_id, j));
+      box.innerHTML = (jobs && jobs.length)
+        ? `<div class="section-head saved-head"><div><h2>Saved jobs</h2>
+             <p>${jobs.length} role${jobs.length === 1 ? "" : "s"} you bookmarked</p></div></div>
+           <div class="table-wrap"><table class="table">
+             <thead><tr><th>Role</th><th>Type</th><th>Location</th><th>Pay</th><th class="th-actions"></th></tr></thead>
+             <tbody>${jobs.map(j => `<tr>
+               <td><div class="cell-name"><button class="linklike" data-jobview="${esc(j.job_id)}">${esc(j.title)}</button></div>
+                   <div class="cell-sub">${esc(j.specialty || j.profession_type || "")}</div></td>
+               <td>${j.job_type ? `<span class="badge accent">${esc(j.job_type)}</span>` : `<span class="cell-none">—</span>`}</td>
+               <td>${esc([j.city, j.state_code].filter(Boolean).join(", ") || "—")}</td>
+               <td>${j.pay_rate_max ? `<strong>$${Math.round(j.pay_rate_max)}/hr</strong>` : "—"}</td>
+               <td class="td-actions">
+                 <button class="btn small primary" data-apply="${esc(j.job_id)}">Apply</button>
+                 <button class="btn small" data-unsave="${esc(j.job_id)}" title="Remove from saved"><i class="fas fa-bookmark"></i></button>
+               </td>
+             </tr>`).join("")}</tbody></table></div>`
+        : "";   // nothing saved — stay quiet; the applications area owns the empty state
+      $$("#saved-jobs [data-unsave]").forEach(b => b.onclick = async () => {
+        try { await del(`/api/jobs/${b.dataset.unsave}/save`); loadSavedJobs(); loadDashboard(); }
+        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
+      });
+    } catch(e) { box.innerHTML = ""; }
+  }
+
   // --- Job alerts (professional saved searches) ----------------------------
   async function loadJobAlerts(){
     const box = $("#alerts-strip");
@@ -1826,7 +2868,7 @@
       S.jobAlerts = d.items || [];
       box.innerHTML = S.jobAlerts.length ? `<div class="alert-strip">${
         S.jobAlerts.map(a => `<span class="alert-chip"><b>${esc(a.name)}</b>
-          ${a.new_matches ? `<span class="new">+${a.new_matches}</span>` : ""}
+          ${a.new ? `<span class="new">+${a.new}</span>` : ""}
           <button class="drop" data-alert-del="${a.search_id}" title="Delete"><i class="fas fa-xmark"></i></button>
         </span>`).join("")}</div>` : "";
       $$("#alerts-strip [data-alert-del]").forEach(b => b.onclick = async () => {
@@ -1915,14 +2957,17 @@
     } catch(e) { box.innerHTML = errorState("Could not load submissions"); }
   }
   async function submitCandidate(profileId){
+    if (!S.clients) { try { S.clients = (await get("/api/clients")).items || []; } catch(e) { S.clients = []; } }
+    const clientOptions = [["", "— No client / type a facility below —"],
+      ...S.clients.map(c => [c.client_id, c.name + (c.location ? ` (${c.location})` : "")])];
     const v = await formDialog({
       title: "Submit to a client",
       intro: "Records what you put forward so the desk can see it and the margin "
-           + "is tracked.",
+           + "is tracked. Pick a client to fill the facility and default bill rate.",
       submit: "Submit candidate",
       fields: [
-        {name:"facility", label:"Client facility", wide:true,
-         placeholder:"Genesis - Mid-America"},
+        {name:"client_id", label:"Client", type:"select", options: clientOptions, wide:true},
+        {name:"facility", label:"Or facility name", wide:true, placeholder:"Genesis - Mid-America"},
         {name:"bill_rate", label:"Bill rate ($/hr)", type:"number", step:"1"},
         {name:"pay_rate", label:"Pay rate ($/hr)", type:"number", step:"1"},
         {name:"note", label:"Note", type:"textarea", hint:"optional", wide:true},
@@ -1930,9 +2975,10 @@
     });
     if (!v) return;
     const body = {profile_id: profileId};
+    if (v.client_id) body.client_id = v.client_id;
+    if (v.facility) body.facility = v.facility;
     if (v.bill_rate && !isNaN(Number(v.bill_rate))) body.bill_rate = Number(v.bill_rate);
     if (v.pay_rate && !isNaN(Number(v.pay_rate))) body.pay_rate = Number(v.pay_rate);
-    if (v.facility) body.facility = v.facility;
     if (v.note) body.note = v.note;
     try {
       await post("/api/submissions", body);
@@ -1940,52 +2986,248 @@
     } catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
   }
 
+  // --- Clients (agency book of business) -----------------------------------
+  function clientRow(c){
+    const contact = [c.contact_name, c.contact_email, c.contact_phone].filter(Boolean).join(" · ");
+    return `<tr class="${c.is_active ? "" : "row-muted"}">
+      <td><div class="cell-name"><button class="linklike" data-client-view="${esc(c.client_id)}">${esc(c.name)}</button></div>
+          ${c.placed ? `<div class="cell-sub">${c.placed} placed</div>` : ""}</td>
+      <td>${c.facility_type ? `<span class="badge">${esc(c.facility_type)}</span>` : `<span class="cell-none">—</span>`}</td>
+      <td>${esc(c.location || "—")}</td>
+      <td class="cell-sub">${esc(contact || "—")}</td>
+      <td>${c.default_bill_rate ? `<strong>$${Math.round(c.default_bill_rate)}/hr</strong>` : "—"}</td>
+      <td>${c.submissions || 0}</td>
+      <td class="td-actions">
+        <button class="btn small" data-client-edit="${esc(c.client_id)}" title="Edit"><i class="fas fa-pen"></i></button>
+        <button class="btn small" data-client-del="${esc(c.client_id)}" title="Delete"><i class="fas fa-xmark"></i></button>
+      </td>
+    </tr>`;
+  }
+  async function loadClients(){
+    const box = $("#clients-body");
+    box.innerHTML = loading("Loading clients...");
+    try {
+      const d = await get("/api/clients");
+      S.clients = d.items || [];
+      const n = S.clients.length;
+      $("#clients-sub").textContent = n ? `${n} client${n === 1 ? "" : "s"}` : "Facilities you place candidates into";
+      box.innerHTML = n
+        ? `<div class="table-wrap"><table class="table">
+            <thead><tr><th>Client</th><th>Type</th><th>Location</th><th>Contact</th><th>Bill rate</th><th>Subs</th><th class="th-actions"></th></tr></thead>
+            <tbody>${S.clients.map(clientRow).join("")}</tbody></table></div>`
+        : `<div class="match-empty"><i class="fas fa-hospital"></i><h3>No clients yet</h3>
+           <p>Add the hospitals and facilities you place candidates into, so submissions link to a real client instead of a typed name.</p>
+           <button class="btn primary" id="client-empty-new"><i class="fas fa-plus"></i>Add your first client</button></div>`;
+      const en = $("#client-empty-new");
+      if (en) en.onclick = () => newClient();
+      $$("#clients-body [data-client-view]").forEach(b => b.onclick = () => openClient(b.dataset.clientView));
+      $$("#clients-body [data-client-edit]").forEach(b => b.onclick = () => editClient(b.dataset.clientEdit));
+      $$("#clients-body [data-client-del]").forEach(b => b.onclick = () => deleteClient(b.dataset.clientDel));
+    } catch(e) { box.innerHTML = errorState("Could not load clients"); }
+  }
+  function clientFields(c = {}){
+    return [
+      {name:"name", label:"Client name", required:true, wide:true, value:c.name || "", placeholder:"St. David's Medical Center"},
+      {name:"facility_type", label:"Type", value:c.facility_type || "", placeholder:"Hospital, SNF, Clinic…"},
+      {name:"city", label:"City", value:c.city || ""},
+      {name:"state_code", label:"State", value:c.state_code || "", max:2},
+      {name:"default_bill_rate", label:"Default bill rate ($/hr)", type:"number", step:"1", value:c.default_bill_rate ?? ""},
+      {name:"website_url", label:"Website", value:c.website_url || "", placeholder:"https://…"},
+      {name:"contact_name", label:"Contact name", value:c.contact_name || ""},
+      {name:"contact_email", label:"Contact email", type:"email", value:c.contact_email || ""},
+      {name:"contact_phone", label:"Contact phone", value:c.contact_phone || ""},
+      {name:"notes", label:"Notes", type:"textarea", wide:true, value:c.notes || ""},
+    ];
+  }
+  function clientBody(v){
+    const br = parseFloat(v.default_bill_rate);
+    return {
+      name: v.name,
+      facility_type: v.facility_type || null,
+      city: v.city || null,
+      state_code: v.state_code ? v.state_code.toUpperCase() : null,
+      website_url: v.website_url || null,
+      contact_name: v.contact_name || null,
+      contact_email: v.contact_email || null,
+      contact_phone: v.contact_phone || null,
+      notes: v.notes || null,
+      default_bill_rate: isNaN(br) ? null : br,
+    };
+  }
+  async function newClient(){
+    const v = await formDialog({title:"New client", submit:"Add client", fields: clientFields()});
+    if (!v) return;
+    try { await post("/api/clients", clientBody(v)); toast("Client added.", {title:"Saved"});
+          S.clients = null; loadClients(); }
+    catch(e) { toast(e.message, {title:"Could not add client", kind:"err"}); }
+  }
+  async function editClient(id){
+    const c = (S.clients || []).find(x => x.client_id === id);
+    const v = await formDialog({title:"Edit client", submit:"Save changes", fields: clientFields(c || {})});
+    if (!v) return;
+    try { await patch(`/api/clients/${id}`, clientBody(v)); toast("Client updated.", {title:"Saved"});
+          S.clients = null; loadClients(); }
+    catch(e) { toast(e.message, {title:"Could not save", kind:"err"}); }
+  }
+  async function deleteClient(id){
+    const c = (S.clients || []).find(x => x.client_id === id);
+    if (!await confirmDialog({
+      title: "Delete client",
+      body: `"${(c && c.name) || "This client"}" will be removed. Submissions already sent keep their facility name.`,
+      confirm: "Delete", danger: true})) return;
+    try { await del(`/api/clients/${id}`); S.clients = null; loadClients(); }
+    catch(e) { toast(e.message || "That did not work.", {kind:"err"}); }
+  }
+  async function openClient(id){
+    const box = $("#clients-body");
+    box.innerHTML = loading("Loading client...");
+    try {
+      const d = await get(`/api/clients/${id}`);
+      const c = d.client, subs = d.submissions || [];
+      box.innerHTML = `
+        <div class="pool-detail-head">
+          <button class="btn ghost" id="client-back"><i class="fas fa-arrow-left"></i>All clients</button>
+          <h2>${esc(c.name)}</h2><div class="spacer"></div>
+          <button class="btn" id="client-edit-detail"><i class="fas fa-pen"></i>Edit</button>
+        </div>
+        <div class="profile-panel"><div class="profile-grid">
+          ${fieldRow("Type", c.facility_type)}
+          ${fieldRow("Location", c.location)}
+          ${fieldRow("Default bill rate", c.default_bill_rate ? `$${Math.round(c.default_bill_rate)}/hr` : "")}
+          ${fieldRow("Contact", c.contact_name)}
+          ${fieldRow("Email", c.contact_email)}
+          ${fieldRow("Phone", c.contact_phone)}
+          ${fieldRow("Website", c.website_url)}
+          ${fieldRow("Submissions", String(c.submissions || 0))}
+        </div>${c.notes ? `<p class="muted" style="margin-top:12px">${esc(c.notes)}</p>` : ""}</div>
+        <div class="an-section"><h2>Submissions to this client</h2>${
+          subs.length ? `<div class="table-wrap"><table class="table">
+            <thead><tr><th>Candidate</th><th>Status</th><th>Bill</th><th>Pay</th><th>Margin</th></tr></thead>
+            <tbody>${subs.map(s => `<tr>
+              <td>${esc(s.candidate)}</td>
+              <td><span class="badge">${esc(s.status.replace("_", " "))}</span></td>
+              <td>${s.bill_rate ? `$${Math.round(s.bill_rate)}` : "—"}</td>
+              <td>${s.pay_rate ? `$${Math.round(s.pay_rate)}` : "—"}</td>
+              <td>${s.margin != null ? `<span class="margin-pos">$${Math.round(s.margin)}</span>` : "—"}</td>
+            </tr>`).join("")}</tbody></table></div>`
+          : `<p class="muted" style="font-size:13px">No submissions to this client yet.</p>`}</div>`;
+      $("#client-back").onclick = loadClients;
+      $("#client-edit-detail").onclick = () => editClient(id);
+    } catch(e) { box.innerHTML = errorState("Could not load this client"); }
+  }
+
+  // --- Placements (submissions that reached "placed") ----------------------
+  async function loadPlacements(){
+    const box = $("#placements-body");
+    box.innerHTML = loading("Loading placements...");
+    try {
+      const d = await get("/api/submissions?status=placed");
+      const items = d.items || [];
+      const totalMargin = items.reduce((a, s) => a + (s.margin || 0), 0);
+      $("#placements-sub").textContent = items.length
+        ? `${items.length} placement${items.length === 1 ? "" : "s"}`
+          + (totalMargin ? ` · $${Math.round(totalMargin)}/hr total margin` : "")
+        : "Candidates placed with clients";
+      box.innerHTML = items.length
+        ? `<div class="table-wrap"><table class="table">
+            <thead><tr><th>Candidate</th><th>Client</th><th>Bill</th><th>Pay</th><th>Margin</th><th>Placed</th></tr></thead>
+            <tbody>${items.map(s => `<tr>
+              <td><div class="cell-name">${esc(s.candidate)}</div>
+                  <div class="cell-sub">${esc([s.profession_type, s.specialty].filter(Boolean).join(" · "))}</div></td>
+              <td>${esc(s.facility || "—")}</td>
+              <td>${s.bill_rate ? `$${Math.round(s.bill_rate)}/hr` : "—"}</td>
+              <td>${s.pay_rate ? `$${Math.round(s.pay_rate)}/hr` : "—"}</td>
+              <td>${s.margin != null ? `<span class="margin-pos">$${Math.round(s.margin)}/hr</span>` : "—"}</td>
+              <td>${esc(shortTime(s.status_updated_at || s.submitted_at))}</td>
+            </tr>`).join("")}</tbody></table></div>`
+        : `<div class="match-empty"><i class="fas fa-user-check"></i><h3>No placements yet</h3>
+           <p>When a submission reaches the <b>placed</b> stage it appears here with its realized margin. Move a submission to "placed" on the Submissions page.</p></div>`;
+    } catch(e) { box.innerHTML = errorState("Could not load placements"); }
+  }
+
   // --- Privacy (professional) ----------------------------------------------
   async function loadPrivacy(){
     const box = $("#profile-privacy");
-    if (!box || isRecruiter()) { if (box) box.innerHTML = ""; return; }
+    if (!box) return;
+    let html = "";
+    // Directory privacy applies only to professionals (recruiters aren't listed).
+    if (!isRecruiter()){
+      try {
+        const p = await get("/api/privacy/me/status");
+        if (p.has_profile){
+          html += `<div class="privacy-wrap">
+            <h3>Your privacy</h3>
+            <p>Recruiters can search this directory, but your name and contact details
+               stay hidden until one deliberately releases your profile — which is
+               recorded.${p.times_contact_released
+                 ? ` Your details have been released <b>${p.times_contact_released}</b> time${p.times_contact_released === 1 ? "" : "s"}.`
+                 : " Nobody has released your details yet."}</p>
+            <div class="privacy-actions">
+              <span class="privacy-state ${p.listed ? "on" : "off"}">${p.listed ? "Listed in the directory" : "Not listed"}</span>
+              <span class="spacer"></span>
+              <button class="btn ghost small" id="privacy-export"><i class="fas fa-download"></i>Download my data</button>
+              ${p.listed
+                ? `<button class="btn danger small" id="privacy-delist"><i class="fas fa-eye-slash"></i>Remove me from the directory</button>`
+                : `<button class="btn small" id="privacy-relist"><i class="fas fa-eye"></i>List me again</button>`}
+            </div>
+          </div>`;
+        }
+      } catch(e) { /* skip the directory section if status can't load */ }
+    }
+    // Deleting the account is available to everyone.
+    html += `<div class="privacy-wrap danger-zone">
+      <h3>Delete account</h3>
+      <p>Permanently close your account and erase your personal details — your
+         profile, contact information and résumé. This cannot be undone.</p>
+      <div class="privacy-actions"><span class="spacer"></span>
+        <button class="btn danger small" id="account-delete"><i class="fas fa-trash"></i>Delete my account</button>
+      </div>
+    </div>`;
+    box.innerHTML = html;
+
+    const ex = $("#privacy-export");
+    if (ex) ex.onclick = exportMyData;
+    const dl = $("#privacy-delist");
+    if (dl) dl.onclick = async () => {
+      if (!await confirmDialog({
+        title: "Remove yourself from the directory",
+        body: "Your email, phone and résumé are erased and "
+            + "recruiters stop seeing you in search. Your account stays open — "
+            + "you can list yourself again later.",
+        confirm: "Erase my details", danger: true})) return;
+      try { const r = await post("/api/privacy/me/delist", {});
+            toast(r.message, {title:"Removed from the directory", ms:7000});
+            loadPrivacy(); loadProfile(); }
+      catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
+    };
+    const rl = $("#privacy-relist");
+    if (rl) rl.onclick = async () => {
+      try { const r = await post("/api/privacy/me/relist", {});
+            toast(r.message, {title:"Back in the directory", ms:7000});
+            loadPrivacy(); loadProfile(); }
+      catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
+    };
+    const ad = $("#account-delete");
+    if (ad) ad.onclick = deleteAccount;
+  }
+  async function deleteAccount(){
+    const v = await formDialog({
+      title: "Delete your account",
+      intro: "This permanently closes your account and erases your personal "
+           + "details. It cannot be undone. Enter your password to confirm.",
+      submit: "Delete my account",
+      fields: [{name:"password", label:"Your password", type:"password",
+                required:true, wide:true, placeholder:"Confirm with your password"}],
+    });
+    if (!v) return;
     try {
-      const p = await get("/api/privacy/me/status");
-      if (!p.has_profile) { box.innerHTML = ""; return; }
-      box.innerHTML = `<div class="privacy-wrap">
-        <h3>Your privacy</h3>
-        <p>Recruiters can search this directory, but your name and contact details
-           stay hidden until one deliberately releases your profile — which is
-           recorded.${p.times_contact_released
-             ? ` Your details have been released <b>${p.times_contact_released}</b> time${p.times_contact_released === 1 ? "" : "s"}.`
-             : " Nobody has released your details yet."}</p>
-        <div class="privacy-actions">
-          <span class="privacy-state ${p.listed ? "on" : "off"}">${p.listed ? "Listed in the directory" : "Not listed"}</span>
-          <span class="spacer"></span>
-          <button class="btn ghost small" id="privacy-export"><i class="fas fa-download"></i>Download my data</button>
-          ${p.listed
-            ? `<button class="btn danger small" id="privacy-delist"><i class="fas fa-eye-slash"></i>Remove me from the directory</button>`
-            : `<button class="btn small" id="privacy-relist"><i class="fas fa-eye"></i>List me again</button>`}
-        </div>
-      </div>`;
-      const ex = $("#privacy-export");
-      if (ex) ex.onclick = exportMyData;
-      const dl = $("#privacy-delist");
-      if (dl) dl.onclick = async () => {
-        if (!await confirmDialog({
-          title: "Remove yourself from the directory",
-          body: "Your email, phone and r\u00e9sum\u00e9 are erased and "
-              + "recruiters stop seeing you in search. This cannot be undone "
-              + "from here — you would have to sign up again.",
-          confirm: "Erase my details", danger: true})) return;
-        try { const r = await post("/api/privacy/me/delist", {});
-              toast(r.message, {title:"Removed from the directory", ms:7000});
-              loadPrivacy(); loadProfile(); }
-        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
-      };
-      const rl = $("#privacy-relist");
-      if (rl) rl.onclick = async () => {
-        try { const r = await post("/api/privacy/me/relist", {});
-              toast(r.message, {title:"Back in the directory", ms:7000});
-              loadPrivacy(); loadProfile(); }
-        catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
-      };
-    } catch(e) { box.innerHTML = ""; }
+      await post("/api/privacy/me/delete", {password: v.password});
+      toast("Your account has been deleted.", {title:"Account closed", ms:3000});
+      setTimeout(() => { setToken(""); setRefresh(""); location.href = "/"; }, 1400);
+    } catch(e) {
+      toast(e.status === 400 ? "That password is incorrect." : (e.message || "That did not work."),
+            {title:"Could not delete account", kind:"err"});
+    }
   }
   async function exportMyData(){
     try {
@@ -2027,14 +3269,32 @@
     const box = $("#credits-body");
     box.innerHTML = loading("Loading credits...");
     try {
-      const [c, txns, usage] = await Promise.all([
-        get("/api/credits"), get("/api/credits/transactions?limit=40"), get("/api/credits/usage")]);
+      const [c, txns, usage, packs] = await Promise.all([
+        get("/api/credits"), get("/api/credits/transactions?limit=40"),
+        get("/api/credits/usage"),
+        get("/api/credits/packs").catch(() => ({enabled:false, packs:[]}))]);
       S.credits = c;
       $("#credits-sub").textContent = c.enabled
         ? `${c.lifetime_spent} spent of ${c.lifetime_granted} granted`
         : "Credits are currently switched off — nothing is being charged.";
+      const money = cents => `$${Math.round(cents / 100)}`;
+      const packSection = `
+        <div class="an-section"><h2>Buy credits</h2>
+          ${packs.enabled && packs.packs.length
+            ? `<div class="pack-grid">${packs.packs.map(p => `
+                <div class="pack-card">
+                  <div class="pack-label">${esc(p.label)}</div>
+                  <div class="pack-credits"><b>${p.credits}</b><span>credits</span></div>
+                  <div class="pack-price">${money(p.price_cents)}</div>
+                  <div class="pack-unit">$${(p.price_cents / 100 / p.credits).toFixed(2)} / credit</div>
+                  <button class="btn primary full" data-buy="${esc(p.pack_id)}">Buy</button>
+                </div>`).join("")}</div>
+              <p class="merge-hint">Secure checkout by Stripe. Credits land in your balance the moment payment completes.</p>`
+            : `<p class="muted" style="font-size:13px">Self-service purchasing isn't switched on yet — ask your administrator to top up your balance for now.</p>`}
+        </div>`;
       box.innerHTML = `
         <div class="credit-hero"><b>${c.balance}</b><span>credits remaining</span></div>
+        ${packSection}
         <div class="an-section"><h2>What things cost</h2>
           <div class="pipe-card">${Object.entries(c.costs).map(([a,n]) =>
             `<div class="price-row"><span>${esc(ACTION_LABELS[a] || a)}</span>
@@ -2058,7 +3318,38 @@
               <td>${t.balance_after}</td></tr>`).join("")}</tbody></table></div>`
             : `<p class="muted" style="font-size:13px">No transactions yet.</p>`}
         </div>`;
+      $$("#credits-body [data-buy]").forEach(b => b.onclick = () => buyCredits(b.dataset.buy, b));
     } catch(e) { box.innerHTML = errorState("Could not load credits"); }
+  }
+  async function buyCredits(packId, btn){
+    if (btn){ btn.disabled = true; btn.textContent = "Starting…"; }
+    try {
+      const r = await post("/api/credits/checkout", {pack_id: packId});
+      if (r.url) { location.href = r.url; return; }   // hand off to Stripe
+      throw new Error("No checkout URL");
+    } catch(e) {
+      if (btn){ btn.disabled = false; btn.textContent = "Buy"; }
+      toast(e.status === 503 ? "Purchasing isn't set up yet — ask your administrator to top you up."
+          : (e.message || "Could not start checkout."), {title:"Checkout unavailable", kind:"err"});
+    }
+  }
+  // Stripe redirects back with ?purchase=success|cancel after checkout.
+  function handlePurchaseReturn(){
+    const params = new URLSearchParams(location.search);
+    const purchase = params.get("purchase");
+    if (!purchase) return;
+    if (purchase === "success"){
+      toast("Payment received — your credits will appear here in a moment.",
+            {title:"Thanks for your purchase", ms:7000});
+      // The webhook grants a beat after the redirect; refresh once it's landed.
+      setTimeout(() => { refreshCredits();
+        if ($("#page-credits").classList.contains("active")) loadCredits(); }, 2500);
+    } else if (purchase === "cancel"){
+      toast("Checkout cancelled — no charge was made.", {kind:"info"});
+    }
+    params.delete("purchase");   // don't re-toast on refresh
+    const qs = params.toString();
+    history.replaceState({}, "", location.pathname + (qs ? "?" + qs : ""));
   }
 
   // --- Outreach ------------------------------------------------------------
@@ -2183,8 +3474,14 @@
       confirm: "Send now"})) return;
     try {
       const r = await post(`/api/outreach/campaigns/${id}/send`, {});
-      toast(`Sent ${r.sent}, skipped ${r.skipped}, failed ${r.failed}.`
-            + (r.note ? ` ${r.note}` : ""), {title:"Campaign sent", ms:7000});
+      if (r.simulated) {
+        toast(`${r.would_send} recipient${r.would_send === 1 ? "" : "s"} ready to send. `
+              + "Nothing was delivered — no email provider is connected yet.",
+              {title:"Preview only", kind:"info", ms:8000});
+      } else {
+        toast(`Sent ${r.sent}, skipped ${r.skipped}, failed ${r.failed}.`,
+              {title:"Campaign sent", ms:7000});
+      }
       loadOutreach();
     } catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
   }
@@ -2211,11 +3508,22 @@
     return `<div class="an-stat"><b${accent ? ' class="accent"' : ""}>${esc(value)}</b>
       <span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
   }
+  // Ordered ATS pipeline for the hiring funnel (terminal states shown apart).
+  const FUNNEL_ORDER = [["applied","Applied"],["screening","Screening"],
+                        ["interview","Interview"],["offer","Offer"],["hired","Hired"]];
+
   async function loadAnalytics(){
     const box = $("#analytics-panel");
     box.innerHTML = loading("Loading your activity...");
     try {
-      const d = await get("/api/analytics/sourcing?days=30");
+      // Sourcing is required; the CRM endpoints degrade gracefully to null so a
+      // recruiter with no applications/threads still sees their sourcing view.
+      const [d, kpis, funnel, convo] = await Promise.all([
+        get("/api/analytics/sourcing?days=30"),
+        get("/api/analytics/kpis").catch(() => null),
+        get("/api/analytics/funnel").catch(() => null),
+        get("/api/analytics/conversations").catch(() => null),
+      ]);
       const dir = d.directory, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging;
       const stages = pools.by_stage || {};
       const totalStaged = Object.values(stages).reduce((a,b) => a+b, 0);
@@ -2225,7 +3533,42 @@
            <div class="an-legend">${Object.entries(stages).map(([s,n]) =>
              `<span><i class="an-dot" style="background:${STAGE_COLORS[s] || "#94a3b8"}"></i>${esc(s)} ${n}</span>`).join("")}</div>`
         : `<p class="muted" style="font-size:12.5px">No candidates shortlisted yet.</p>`;
-      box.innerHTML = `
+
+      // Top-line CRM KPIs.
+      const kpiSection = kpis
+        ? `<div class="an-section"><h2>At a glance</h2><div class="an-grid">
+            ${stat(kpis.active_conversations, "Active conversations")}
+            ${stat(kpis.in_interview, "In interview")}
+            ${stat(kpis.offers_out, "Offers out")}
+            ${stat(kpis.hired, "Hired", "", true)}
+          </div></div>` : "";
+
+      // Hiring funnel — meaningful now that jobs can receive applications.
+      const funnelSection = (funnel && funnel.total)
+        ? `<div class="an-section"><h2>Hiring funnel</h2><div class="an-grid">
+            ${FUNNEL_ORDER.map(([k,label]) => stat(funnel.stages[k] || 0, label)).join("")}
+            ${stat(funnel.stages.rejected || 0, "Rejected")}
+          </div></div>`
+        : `<div class="an-section"><h2>Hiring funnel</h2>
+            <p class="muted" style="font-size:12.5px">No applications yet — when candidates
+             apply to your posted jobs, the funnel appears here.</p></div>`;
+
+      // Per-thread CRM table.
+      const convoRows = (convo && convo.conversations || []);
+      const convoSection = convoRows.length
+        ? `<div class="an-section"><h2>Conversations</h2>
+            <div class="table-wrap"><table class="table">
+              <thead><tr><th>Contact</th><th>Stage</th><th>Sent</th><th>Received</th><th>Reply rate</th><th>Last activity</th></tr></thead>
+              <tbody>${convoRows.slice(0, 25).map(c => `<tr>
+                <td><div class="cell-name">${esc(c.candidate || "—")}</div></td>
+                <td>${c.ats_stage ? `<span class="badge">${esc(c.ats_stage)}</span>` : `<span class="cell-none">—</span>`}</td>
+                <td>${c.messages_sent}</td>
+                <td>${c.messages_received}</td>
+                <td>${Math.round((c.response_rate || 0) * 100)}%</td>
+                <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "—"}</td>
+              </tr>`).join("")}</tbody></table></div></div>` : "";
+
+      box.innerHTML = kpiSection + funnelSection + `
         <div class="an-section"><h2>Directory reach</h2><div class="an-grid">
           ${stat(dir.listable.toLocaleString(), "Listable providers", "after screening")}
           ${stat(dir.reachable.toLocaleString(), "Reachable", "have an email or phone", true)}
@@ -2246,7 +3589,7 @@
           ${stat(msg.received, "Messages received")}
           ${stat(d.saved_searches, "Saved searches")}
           ${stat(d.notifications, "Notifications")}
-        </div></div>`;
+        </div></div>` + convoSection;
       $("#analytics-sub").textContent = `Last ${d.window_days} days · ${dir.listable.toLocaleString()} providers listed`;
     } catch(e) { box.innerHTML = errorState("Could not load analytics"); }
   }
@@ -2324,9 +3667,10 @@
                        {title:"Could not save search", kind:"err"}); }
   }
   // Re-count every saved search; growth since the last check becomes a
-  // notification. This is what finally makes the Notifications page live.
+  // notification. This is what makes the Notifications page live — and it runs
+  // for professionals (job alerts) as well as recruiters (candidate alerts),
+  // on app load, since there is no scheduler yet.
   async function checkSavedSearches(){
-    if (!isRecruiter()) return;
     try {
       const d = await post("/api/saved-searches/check", {});
       const byId = {};
@@ -2420,6 +3764,98 @@
         <button class="btn small${(S.poolMembership.get(c.profile_id) || []).length ? " saved" : ""}" data-pool-save="${c.profile_id}" title="Save to a talent pool"><i class="fas fa-layer-group"></i></button>
       </td>
     </tr>`;
+  }
+
+  // --- Applicant review (recruiter) ----------------------------------------
+  // Who actually applied to a role, versus sourceForJob's cold ranking of the
+  // whole directory. Applying reveals the candidate to this employer, so their
+  // real name and contact are shown here.
+  const APPLICANT_STATUS_LABEL = {
+    applied:"Applied", screening:"Screening", interview:"Interview",
+    offer:"Offer", hired:"Hired", rejected:"Rejected", withdrawn:"Withdrawn"};
+
+  async function reviewApplicants(jobId){
+    S.applicantsJobId = jobId;
+    const job = (S.jobsById && S.jobsById.get(jobId)) || null;
+    showPage("applicants");
+    $("#applicants-title").textContent = job ? job.title : "Applicants";
+    $("#applicants-sub").textContent = "Loading applicants…";
+    const box = $("#applicants-body");
+    box.innerHTML = loading("Loading applicants…");
+    try {
+      const d = await get(`/api/jobs/${jobId}/applicants`);
+      renderApplicants(d);
+    } catch(e) {
+      box.innerHTML = e.status === 403
+        ? `<div class="match-empty"><i class="fas fa-lock"></i><h3>Not your role</h3>
+           <p>You can only review applicants for jobs your organisation posted.</p></div>`
+        : errorState("Could not load applicants");
+    }
+  }
+
+  function renderApplicants(d){
+    const box = $("#applicants-body");
+    const items = d.items || [];
+    if (d.job) $("#applicants-title").textContent = d.job.title;
+    $("#applicants-sub").textContent = items.length
+      ? `${items.length} applicant${items.length === 1 ? "" : "s"} · ` +
+        Object.entries(d.by_status).map(([s,c]) => `${c} ${APPLICANT_STATUS_LABEL[s] || s}`).join(" · ")
+      : "No applicants yet";
+    if (!items.length){
+      box.innerHTML = `<div class="match-empty"><i class="fas fa-inbox"></i>
+        <h3>No applicants yet</h3>
+        <p>When candidates apply to this role they appear here, with their
+           details and where each one stands. Source the directory to invite
+           candidates to apply.</p>
+        <button class="btn primary" data-source="${esc(d.job ? d.job.job_id : "")}"><i class="fas fa-bolt"></i>Source candidates</button></div>`;
+      return;
+    }
+    box.innerHTML = `<div class="applicant-list">${items.map(applicantCard).join("")}</div>`;
+    // Stage changes move a candidate through the pipeline and notify them.
+    $$("#applicants-body [data-app-stage]").forEach(sel => sel.onchange = async () => {
+      const id = sel.dataset.appStage, status = sel.value;
+      sel.disabled = true;
+      try {
+        await patch(`/api/applications/${id}/stage`, {status});
+        toast(`Moved to ${APPLICANT_STATUS_LABEL[status] || status}.`, {title:"Applicant updated"});
+        reviewApplicants(S.applicantsJobId);
+      } catch(e) {
+        sel.disabled = false;
+        toast(e.message || "That did not work.", {title:"Could not update", kind:"err"});
+      }
+    });
+  }
+
+  function applicantCard(a){
+    const meta = [a.profession_type, a.specialty,
+                  a.years_experience != null ? `${a.years_experience} yrs` : "",
+                  a.location].filter(Boolean).join(" · ");
+    const contact = [
+      a.email ? `<a href="mailto:${esc(a.email)}"><i class="fas fa-envelope"></i>${esc(a.email)}</a>` : "",
+      a.phone ? `<a href="tel:${esc(a.phone)}"><i class="fas fa-phone"></i>${esc(a.phone)}</a>` : "",
+    ].filter(Boolean).join("");
+    const options = [...(a.stages || []), "rejected"].map(s =>
+      `<option value="${esc(s)}"${a.status === s ? " selected" : ""}>${esc(APPLICANT_STATUS_LABEL[s] || s)}</option>`).join("");
+    const pillCls = a.status === "hired" ? "ok" : a.is_closed ? "no" : "";
+    return `<div class="applicant-card">
+      <div class="app-head">
+        <h3>${esc(a.name)}</h3>
+        <span class="status-pill ${pillCls}">${esc(APPLICANT_STATUS_LABEL[a.status] || a.status)}</span>
+        <span class="spacer"></span>
+        <span class="muted small">applied ${esc(shortTime(a.applied_at))}</span>
+      </div>
+      <div class="app-meta">${esc(meta || "Details not listed")}</div>
+      ${contact ? `<div class="applicant-contact">${contact}</div>` : ""}
+      ${a.cover_letter ? `<details class="applicant-cover"><summary>Cover letter</summary><p>${esc(a.cover_letter)}</p></details>` : ""}
+      <div class="applicant-actions">
+        ${a.is_closed
+          ? `<span class="muted small">This application is ${esc(APPLICANT_STATUS_LABEL[a.status] || a.status).toLowerCase()}.</span>`
+          : `<label class="applicant-stage">Stage
+              <select class="input small" data-app-stage="${esc(a.application_id)}">${options}</select></label>`}
+        ${a.resume_url ? `<button class="btn small" data-resume="${esc(a.profile_id)}"><i class="fas fa-file-lines"></i>Résumé</button>` : ""}
+        <button class="btn small primary" data-message="${esc(a.profile_id)}"><i class="fas fa-comment-dots"></i>Message</button>
+      </div>
+    </div>`;
   }
 
   async function sourceForJob(jobId){
@@ -2517,6 +3953,7 @@
     return `<div class="pool-card" data-pool="${p.pool_id}">
       <button class="pool-del" data-pool-del="${p.pool_id}" title="Delete pool"><i class="fas fa-trash"></i></button>
       <h3>${esc(p.name)}</h3>
+      ${p.job_title ? `<div class="pool-job"><i class="fas fa-clipboard-list"></i>${esc(p.job_title)}</div>` : ""}
       <p class="pool-desc">${esc(p.description || "No description")}</p>
       <div class="pool-count">${esc(p.member_count)}<small>candidate${p.member_count === 1 ? "" : "s"}</small></div>
       <div class="pool-stages">${stages || `<span class="pool-stage-chip">empty</span>`}</div>
@@ -2590,6 +4027,28 @@
     </tr>`;
   }
 
+  async function emailPool(poolId){
+    const v = await formDialog({
+      title: "Email this pool",
+      intro: "Send one message to every candidate in this pool whose contact you've "
+           + "revealed. Replies come to your inbox; candidates you haven't revealed are skipped.",
+      submit: "Send to pool",
+      fields: [
+        {name:"subject", label:"Subject", required:true,
+         placeholder:"A role that fits your background"},
+        {name:"body", label:"Message", type:"textarea", required:true, wide:true,
+         placeholder:"Hi — I'm reaching out about an opportunity that matches your experience…"},
+      ],
+    });
+    if (!v) return;
+    try {
+      const r = await post(`/api/pools/${poolId}/email`, {subject: v.subject, body: v.body});
+      const parts = [`${r.sent} sent`];
+      if (r.skipped_not_revealed) parts.push(`${r.skipped_not_revealed} skipped — reveal contact first`);
+      if (r.skipped_no_email) parts.push(`${r.skipped_no_email} skipped — no email`);
+      toast(parts.join(" · "), {title:"Pool emailed", ms:6500});
+    } catch(e){ toast(e.message || "Could not email the pool.", {kind:"err"}); }
+  }
   async function openPool(poolId, stage=""){
     S.activePool = poolId; S.poolStage = stage;
     const box = $("#pools-body");
@@ -2597,15 +4056,18 @@
     try {
       const d = await get(`/api/pools/${poolId}/members${stage ? `?stage=${stage}` : ""}`);
       const p = d.pool;
+      const listed = (S.pools || []).find(x => x.pool_id === poolId);
+      const poolJob = p.job_title || (listed && listed.job_title) || null;
       const counts = p.stages || {};
       const tabs = [["", `All ${p.member_count}`]].concat(
         ATS_STAGES.map(s => [s, `${s[0].toUpperCase()+s.slice(1)} ${counts[s] || 0}`]));
       box.innerHTML = `
         <div class="pool-detail-head">
           <button class="btn ghost" id="pool-back"><i class="fas fa-arrow-left"></i>All pools</button>
-          <h2>${esc(p.name)}</h2>
+          <div><h2>${esc(p.name)}</h2>${poolJob ? `<div class="pool-detail-job"><i class="fas fa-clipboard-list"></i>Sourcing for ${esc(poolJob)}</div>` : ""}</div>
           <div class="spacer"></div>
           <a class="btn" id="pool-export" href="#"><i class="fas fa-file-csv"></i>Export CSV</a>
+          <button class="btn primary" id="pool-email"><i class="fas fa-envelope"></i>Email pool</button>
         </div>
         <div class="pool-stage-tabs">
           ${tabs.map(([v,label]) => `<button class="pool-stage-tab${S.poolStage === v ? " active" : ""}" data-pstage="${v}">${esc(label)}</button>`).join("")}
@@ -2617,6 +4079,7 @@
         </table></div>`;
       $("#pool-back").onclick = loadPools;
       $("#pool-export").onclick = e => { e.preventDefault(); exportPool(poolId); };
+      $("#pool-email").onclick = () => emailPool(poolId);
       $$("#pools-body [data-pstage]").forEach(b => b.onclick = () => openPool(poolId, b.dataset.pstage));
       $$("#pools-body [data-stage-for]").forEach(sel => sel.onchange = async () => {
         try { await patch(`/api/pools/${poolId}/members/${sel.dataset.stageFor}`, {stage: sel.value}); openPool(poolId, S.poolStage); }
@@ -2663,13 +4126,22 @@
   }
 
   async function createPool(){
+    // Offer the agency's open job orders so a pool says which role it's for.
+    const jobOpts = [["", "— Not tied to a specific role —"]];
+    try {
+      const d = await get("/api/employers/me/dashboard");
+      (d.jobs || []).filter(j => j.status === "active").forEach(j =>
+        jobOpts.push([j.job_id, j.title + (j.city ? ` — ${j.city}${j.state_code ? ", " + j.state_code : ""}` : "")]));
+    } catch(e) { /* no org yet — pool can still be created untied */ }
     const v = await formDialog({
       title: "New talent pool",
-      intro: "A shortlist you can move through stages, export, and email as a campaign.",
+      intro: "A shortlist you can move through stages, export, and email as a campaign. "
+           + "Link it to a job order so the desk knows what it's for.",
       submit: "Create pool",
       fields: [
         {name:"name", label:"Pool name", required:true, wide:true,
          placeholder:"ICU travel RNs — Q3"},
+        {name:"job_id", label:"Sourcing for (job order)", type:"select", options: jobOpts, wide:true},
         {name:"description", label:"Description", hint:"optional", wide:true},
         {name:"visibility", label:"Who can work it", type:"select",
          options:[["private","Only me"],["team","Everyone at my agency"]]},
@@ -2678,7 +4150,7 @@
     if (!v) return;
     try {
       await post("/api/pools", {name:v.name, description:v.description || null,
-                                visibility:v.visibility, color:"blue"});
+                                job_id: v.job_id || null, visibility:v.visibility, color:"blue"});
       toast("Save candidates to it from the directory.", {title:v.name});
       loadPools();
     } catch(e) { toast(e.status === 409 ? "You already have a pool with that name. Pick another."
@@ -2790,32 +4262,60 @@
     } catch(e) { /* leave the placeholders */ }
   }
 
+  // Everything that runs once a verified user is in: restore their page and
+  // prime the badges/searches. Shared by first load and the verify gate.
+  function enterAppPages(){
+    const requested = new URLSearchParams(location.search).get("page");
+    const saved = localStorage.getItem("hb_page");
+    const initial = requested && document.getElementById("page-" + requested)
+      ? requested : (saved && document.getElementById("page-" + saved) ? saved : "dashboard");
+    showPage(initial);
+    handlePurchaseReturn();
+    loadJobs();
+    refreshUnreadBadge();
+    refreshNotificationBadge();
+    refreshCredits();
+    if (isRecruiter()){
+      loadProviderFacets();
+      // Standing searches are re-counted on entry; anything that grew since
+      // the last visit turns into a notification.
+      loadSavedSearches().then(checkSavedSearches);
+    } else {
+      // Professionals' job alerts fire the same way, on load.
+      checkSavedSearches();
+    }
+  }
+
   async function startApp(){
     // A splash covers the screen while we validate an existing token, so a
     // logged-in user never sees the login form flash on refresh.
     if (token()) {
       const ok = await loadMe();
+      if (ok === "pending") return;   // verify gate is showing
       if (ok) {
         $("#boot-splash").classList.add("hidden");
-        const saved = localStorage.getItem("hb_page");
-        showPage(saved && document.getElementById("page-" + saved) ? saved : "dashboard");
-        loadJobs();
-        refreshUnreadBadge();
-        refreshNotificationBadge();
-        refreshCredits();
-        if (isRecruiter()){
-          loadProviderFacets();
-          // Standing searches are re-counted on entry; anything that grew since
-          // the last visit turns into a notification.
-          loadSavedSearches().then(checkSavedSearches);
-        }
+        enterAppPages();
         return;
       }
     }
-    // No token (or it was rejected): show the login form.
+    // No token (or it was rejected): show the public home page, not a raw login.
     $("#boot-splash").classList.add("hidden");
-    $("#auth-gate").classList.remove("hidden");
+    showLanding();
     loadPublicStats();
+  }
+
+  // Public views: the marketing home and the sign-in screen it leads to.
+  function showLanding(){
+    $("#auth-gate").classList.add("hidden");
+    $("#landing").classList.remove("hidden");
+    window.scrollTo(0, 0);
+  }
+  function showAuth(mode){
+    $("#landing").classList.add("hidden");
+    $("#auth-gate").classList.remove("hidden");
+    showAuthMode(mode === "signup" ? "signup" : "login");
+    window.scrollTo(0, 0);
+    setTimeout(() => { const el = $("#auth-email"); if (el) el.focus(); }, 60);
   }
   wire();
   startApp();

@@ -64,6 +64,7 @@ from .outreach import (
     OutreachMessage,
     Suppression,
 )
+from .client import Client
 from .pools import POOL_STAGES, TalentPool, TalentPoolMember
 from .saved_search import SavedSearch
 from .submissions import SUBMISSION_STATUSES, Submission
@@ -87,6 +88,8 @@ __all__ = [
     "SavedSearch",
     # submissions
     "Submission", "SUBMISSION_STATUSES",
+    # clients
+    "Client",
     # credits
     "CreditAccount", "CreditTransaction", "DEFAULT_COSTS",
     "COST_REVEAL_CONTACT",

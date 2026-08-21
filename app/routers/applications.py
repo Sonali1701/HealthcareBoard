@@ -16,8 +16,10 @@ from ..models import (
     Notification,
     Profile,
     SavedJob,
+    User,
 )
 from ..models.enums import ApplicationStatus, NotificationType
+from ..services.email import send_application_update
 from ..schemas.job import (
     ApplicationEventOut,
     ApplicationOut,
@@ -179,8 +181,9 @@ def update_stage(application_id: str, body: ApplicationStageUpdate,
         actor_user_id=user.user_id,
     ))
 
-    # Notify the candidate.
+    # Notify the candidate, in-app and by email.
     profile = db.get(Profile, app.profile_id)
+    candidate_user = db.get(User, profile.user_id) if profile and profile.user_id else None
     if profile and profile.user_id:
         db.add(Notification(
             user_id=profile.user_id,
@@ -191,6 +194,8 @@ def update_stage(application_id: str, body: ApplicationStageUpdate,
         ))
     db.commit()
     db.refresh(app)
+    if candidate_user and candidate_user.email:
+        send_application_update(candidate_user.email, job.title, body.status.value)
     return app
 
 

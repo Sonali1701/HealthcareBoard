@@ -70,7 +70,8 @@ def upload_profile_photo(user: CurrentUser, db: DbSession, file: UploadFile = Fi
 
     data = _read_validated(file, PHOTO_TYPES)
     profile = _profile(db, user)
-    key = storage.build_key(f"photos/{profile.profile_id}", file.filename or "photo")
+    key = storage.build_key(f"photos/{profile.profile_id}", file.filename or "photo",
+                            file.content_type)
     url = storage.upload(io.BytesIO(data), key, file.content_type)
     profile.profile_photo_url = url
     db.commit()
@@ -83,7 +84,8 @@ def upload_resume(user: CurrentUser, db: DbSession, file: UploadFile = File(...)
 
     data = _read_validated(file, RESUME_TYPES)
     profile = _profile(db, user)
-    key = storage.build_key(f"resumes/{profile.profile_id}", file.filename or "resume")
+    key = storage.build_key(f"resumes/{profile.profile_id}", file.filename or "resume",
+                            file.content_type)
     url = storage.upload(io.BytesIO(data), key, file.content_type)
     profile.resume_url = url
     changed = backfill_missing_contact(profile, data, file.filename or "resume")

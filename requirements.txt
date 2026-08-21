@@ -15,6 +15,7 @@ itsdangerous==2.2.0        # signed session/flash cookies
 
 # --- Production ---
 sendgrid==6.11.0            # transactional email
+stripe==11.4.1             # credit-pack purchases (Stripe Checkout)
 boto3==1.35.99             # S3-compatible object storage (Vultr / AWS / R2)
 slowapi==0.1.9             # rate limiting
 alembic==1.14.0            # database migrations

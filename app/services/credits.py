@@ -134,6 +134,37 @@ def charge(db: Session, user_id: str, action: str, *, entity_type: str | None = 
     return {"charged": True, "cost": price, "balance": account.balance}
 
 
+def grant_once(db: Session, user_id: str, amount: int, *, idempotency_key: str,
+               reason: str = "purchase", note: str | None = None) -> dict:
+    """Grant credits at most once for a given key.
+
+    Used for payments: a Stripe webhook can be delivered more than once, so the
+    grant is keyed on the checkout session id. A replay loses the unique-index
+    race and grants nothing rather than crediting the account twice.
+    """
+    if amount <= 0:
+        raise ValueError("grant amount must be positive")
+    if already_charged(db, idempotency_key):
+        return {"granted": 0, "balance": balance(db, user_id), "already_applied": True}
+    account = get_account(db, user_id)
+    db.execute(
+        text("UPDATE credit_accounts SET balance = balance + :n, "
+             "lifetime_granted = lifetime_granted + :n, updated_at = :now "
+             "WHERE user_id = :uid"),
+        {"n": amount, "uid": user_id, "now": utcnow()})
+    db.refresh(account)
+    db.add(CreditTransaction(
+        account_id=account.account_id, user_id=user_id, delta=amount,
+        balance_after=account.balance, reason=reason,
+        idempotency_key=idempotency_key, note=note))
+    try:
+        db.flush()
+    except IntegrityError:            # concurrent replay already granted it
+        db.rollback()
+        return {"granted": 0, "balance": balance(db, user_id), "already_applied": True}
+    return {"granted": amount, "balance": account.balance}
+
+
 def grant(db: Session, user_id: str, amount: int, *, reason: str = "grant",
           note: str | None = None, granted_by: str | None = None) -> dict:
     """Add credits. Positive amounts only — use `charge` to take them away."""

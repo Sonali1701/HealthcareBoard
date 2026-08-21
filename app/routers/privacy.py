@@ -28,7 +28,8 @@ from sqlalchemy import func, or_, select
 from ..config import settings
 from ..database import utcnow
 from ..deps import CurrentUser, DbSession
-from ..models import AuditLog, Profile
+from ..models import AuditLog, Profile, Session, User, UserStatus
+from ..security import verify_password
 from ..services.email import send_email
 
 router = APIRouter(prefix="/api/privacy", tags=["privacy"])
@@ -50,6 +51,11 @@ class OptOutRequest(BaseModel):
 
 class OptOutConfirm(BaseModel):
     token: str = Field(min_length=10)
+
+
+class AccountDeleteRequest(BaseModel):
+    # Deleting an account is destructive, so confirm the password first.
+    password: str
 
 
 def _log(db: DbSession, action: str, profile: Profile, *, actor: Optional[str] = None,
@@ -139,6 +145,49 @@ def relist_me(user: CurrentUser, db: DbSession, request: Request):
     return {"listed": True,
             "message": "You are listed again. Add your contact details back so "
                        "recruiters can reach you."}
+
+
+@router.post("/me/delete")
+def delete_my_account(body: AccountDeleteRequest, user: CurrentUser, db: DbSession,
+                      request: Request):
+    """Permanently delete the signed-in account and erase personal details.
+
+    Deletion goes further than delisting: the account is closed (and can no
+    longer sign in), every session is revoked, the login email is scrubbed, and
+    any directory profile is delisted AND anonymised (name removed), not just
+    hidden. Consistent with the module's stance, the profile row is retained in
+    anonymised form so the same résumé cannot be re-imported and reappear.
+    """
+    if not user.password_hash or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Password is incorrect")
+
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.user_id))
+    if profile:
+        _delist(db, profile, actor=user.user_id, request=request, via="account_deletion")
+        profile.first_name, profile.last_name = "Deleted", "User"
+        profile.headline = None
+        profile.bio = None
+        profile.rebuild_search_text()
+
+    # Close the account and remove its credentials / identifiers. The email is
+    # replaced with a unique tombstone so the address is freed and the unique
+    # index still holds.
+    user.deleted_at = utcnow()
+    user.status = UserStatus.deleted
+    user.email = f"deleted+{user.user_id}@deleted.invalid"
+    user.password_hash = None
+    user.mfa_enabled = False
+    user.mfa_secret = None
+    user.capture_token = None
+    for s in db.scalars(select(Session).where(Session.user_id == user.user_id)):
+        s.revoked_at = utcnow()
+
+    db.add(AuditLog(actor_user_id=user.user_id, action="account_deleted",
+                    entity_type="user", entity_id=user.user_id,
+                    ip_address=request.client.host if request.client else None))
+    db.commit()
+    return {"deleted": True,
+            "message": "Your account has been deleted and your personal details erased."}
 
 
 @router.get("/me/status")

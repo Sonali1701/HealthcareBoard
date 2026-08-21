@@ -15,3 +15,10 @@ uploads/
 .ruff_cache/
 .mypy_cache/
 scratchpad/
+# Candidate PII and processing artefacts — never bake these into the image.
+Data/
+data/
+exports/
+*_manifest.jsonl
+*.log
+.audit_*/

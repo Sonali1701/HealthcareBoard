@@ -19,9 +19,10 @@ services:
       # Auth — Render generates a strong secret.
       - key: JWT_SECRET
         generateValue: true
-      # CORS / frontend origin — set to your real domain.
+      # CORS — set to your real frontend origin(s) in the dashboard. Never "*"
+      # in production: with credentials that would expose the API to any site.
       - key: CORS_ORIGINS
-        value: "*"
+        sync: false
       - key: FRONTEND_BASE_URL
         sync: false
       # Object storage (Cloudflare R2) — set these in the dashboard.

@@ -9,7 +9,10 @@ from sqlalchemy import and_, func, or_, select
 from ..database import utcnow
 from ..deps import CurrentUser, DbSession
 from ..models import (
+    Employer,
+    EmployerMember,
     Interview,
+    JobPosting,
     Message,
     MessageThread,
     Notification,
@@ -25,6 +28,7 @@ from ..models.enums import (
 )
 from ..schemas.messaging import (
     ATSStageUpdate,
+    EmailOutreachIn,
     InterviewConfirm,
     InterviewCreate,
     InterviewOut,
@@ -191,6 +195,55 @@ def can_message(profile_id: str, user: CurrentUser, db: DbSession):
             "thread_id": existing.thread_id if existing else None}
 
 
+@router.post("/email-outreach")
+def email_outreach(body: EmailOutreachIn, user: CurrentUser, db: DbSession):
+    """Message an off-platform candidate by email (cold outreach).
+
+    For candidates with no HealthBoard account. Gated behind the contact
+    reveal — the recruiter must have released this candidate first — and the
+    reply is routed to the recruiter's own inbox, not back into the app.
+    """
+    if user.role.value not in ("recruiter", "employer", "admin"):
+        raise HTTPException(status_code=403, detail="Only recruiters can send outreach.")
+    profile = db.get(Profile, body.profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if profile.user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This candidate is on HealthBoard — message them in-app instead.")
+    if not profile.email:
+        raise HTTPException(status_code=400, detail="No email on file for this candidate.")
+
+    # Gate on the reveal: only email candidates whose contact you've released.
+    from .profiles import _released_profile_ids
+    if not _released_profile_ids(db, user, [profile.profile_id]):
+        raise HTTPException(
+            status_code=402,
+            detail="Reveal this candidate's contact before emailing them.")
+
+    # Recruiter identity for the message + reply-to.
+    emp = db.scalar(select(Employer).where(Employer.owner_user_id == user.user_id))
+    if not emp:
+        member = db.scalar(select(EmployerMember).where(EmployerMember.user_id == user.user_id))
+        emp = db.get(Employer, member.employer_id) if member else None
+    from_label = emp.org_name if emp else "A recruiter on HealthBoard"
+
+    from ..services.email import send_recruiter_message
+    sent = send_recruiter_message(
+        profile.email,
+        candidate_name=(profile.first_name or "").strip(),
+        from_label=from_label,
+        reply_to=user.email,
+        subject=body.subject,
+        message=body.body,
+    )
+    if not sent:
+        raise HTTPException(
+            status_code=502, detail="The email could not be sent right now — please try again.")
+    return {"sent": True, "email": profile.email}
+
+
 @router.post("/threads", response_model=ThreadDetail, status_code=201)
 def create_thread(body: ThreadCreate, user: CurrentUser, db: DbSession):
     recipient_id = body.recipient_id
@@ -204,9 +257,27 @@ def create_thread(body: ThreadCreate, user: CurrentUser, db: DbSession):
                 detail="This candidate has no platform account yet — release their "
                        "contact details and reach out by email or phone instead.")
         recipient_id = profile.user_id
+    # Seeker-initiated: message the recruiter who posted a job (no recipient/
+    # profile given, just the job). Resolves to the poster, else the org owner.
+    if not recipient_id and body.job_id:
+        job = db.get(JobPosting, body.job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        recipient_id = job.posted_by_user_id
+        if not recipient_id:
+            emp = db.get(Employer, job.employer_id)
+            recipient_id = emp.owner_user_id if emp else None
+        # Imported/ATS jobs are owned by a system account — no one to chat with.
+        if recipient_id:
+            owner = db.get(User, recipient_id)
+            if owner and (owner.email or "").endswith("@system.local"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="This role was imported from an ATS and has no recruiter to "
+                           "message here — apply to register your interest instead.")
     if not recipient_id:
         raise HTTPException(status_code=400,
-                            detail="Provide either recipient_id or profile_id")
+                            detail="Provide a recipient, a profile, or a job")
     if recipient_id == user.user_id:
         raise HTTPException(status_code=400, detail="You cannot message yourself")
     if not db.get(User, recipient_id):
@@ -409,6 +480,13 @@ def confirm_interview(interview_id: str, body: InterviewConfirm,
     interview = db.get(Interview, interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
+    # Only the interview's recruiter or its candidate may confirm it — without
+    # this any authenticated user could confirm any interview by guessing an id.
+    profile = db.get(Profile, interview.profile_id)
+    candidate_uid = profile.user_id if profile else None
+    if user.user_id not in (interview.recruiter_user_id, candidate_uid) \
+            and user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Not a participant in this interview")
     interview.confirmed_slot = body.confirmed_slot
     interview.status = InterviewStatus.confirmed
     db.commit()
@@ -420,6 +498,13 @@ def confirm_interview(interview_id: str, body: InterviewConfirm,
 
 @router.post("/offers", response_model=OfferOut, status_code=201)
 def send_offer(body: OfferCreate, user: CurrentUser, db: DbSession):
+    # Extending an offer is a recruiter action, and if it's attached to a thread
+    # the sender must be a participant of that thread — otherwise anyone could
+    # inject an offer into a conversation they're not part of.
+    if user.role.value not in {"recruiter", "employer", "admin"}:
+        raise HTTPException(status_code=403, detail="Only recruiters can extend offers")
+    if body.thread_id:
+        _thread_or_404(db, body.thread_id, user)
     offer = Offer(
         recruiter_user_id=user.user_id,
         job_id=body.job_id,
@@ -460,6 +545,12 @@ def respond_offer(offer_id: str, body: OfferRespond, user: CurrentUser, db: DbSe
     offer = db.get(Offer, offer_id)
     if not offer:
         raise HTTPException(status_code=404, detail="Offer not found")
+    # Only the candidate the offer was made to may accept or decline it — without
+    # this any authenticated user could respond to anyone's offer by id.
+    profile = db.get(Profile, offer.profile_id)
+    candidate_uid = profile.user_id if profile else None
+    if user.user_id != candidate_uid and user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Only the candidate can respond to this offer")
     if body.status not in (OfferStatus.accepted, OfferStatus.declined):
         raise HTTPException(status_code=400, detail="Status must be accepted or declined")
     offer.status = body.status

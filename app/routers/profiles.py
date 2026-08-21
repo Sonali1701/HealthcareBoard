@@ -636,6 +636,33 @@ def _provider_conditions(
 
 
 _PROVIDER_CATS = ["Physicians", "Nursing", "Allied", "APP", "Others"]
+# ``Other`` was emitted by an older importer. Keep accepting it at the
+# directory boundary while the data migration catches up, otherwise a valid,
+# listable profile silently disappears from both the All view and Others tab.
+_OTHER_CATEGORY_ALIASES = ("Others", "Other", "others", "other", "OTHER")
+_DIRECTORY_CATEGORY_VALUES = tuple(_PROVIDER_CATS) + _OTHER_CATEGORY_ALIASES[1:]
+
+
+def _canonical_provider_category(value: str | None) -> str | None:
+    if value and value.strip().lower() in {"other", "others"}:
+        return "Others"
+    return value
+
+
+def _provider_category_condition(category: str):
+    normalized = category.strip().lower()
+    if normalized in {"other", "others"}:
+        return func.lower(Profile.provider_category).in_(("other", "others"))
+    return func.lower(Profile.provider_category) == normalized
+
+
+def _fold_provider_category_counts(rows) -> dict[str, int]:
+    counts = {category: 0 for category in _PROVIDER_CATS}
+    for category, count in rows:
+        canonical = _canonical_provider_category(category)
+        if canonical in counts:
+            counts[canonical] += count
+    return counts
 
 
 @router.get("", response_model=Page[ProfileCardOut])
@@ -679,9 +706,9 @@ def search_profiles(
         travel_experience=travel_experience)
     stmt = select(Profile).where(*conds)
     if category:
-        stmt = stmt.where(func.lower(Profile.provider_category) == category.lower())
+        stmt = stmt.where(_provider_category_condition(category))
     elif providers_only:
-        stmt = stmt.where(Profile.provider_category.in_(_PROVIDER_CATS))
+        stmt = stmt.where(Profile.provider_category.in_(_DIRECTORY_CATEGORY_VALUES))
 
     total = None
     if count:
@@ -716,7 +743,8 @@ def search_profiles(
 # and never writes SQL — it only fills a small, validated JSON of filters.
 
 _COPILOT_CATS = {"physicians": "Physicians", "nursing": "Nursing",
-                 "allied": "Allied", "app": "APP", "others": "Others"}
+                 "allied": "Allied", "app": "APP", "other": "Others",
+                 "others": "Others"}
 _COPILOT_LICENSES = {"RN", "MD", "NP", "PA", "LPN", "CNA", "PT", "DO", "CRNA",
                      "RT", "OT", "PHARMD", "CNM", "DNP", "FNP", "LVN", "LCSW"}
 # US state + territory codes, so "California" -> "CA" is validated, not trusted.
@@ -766,7 +794,14 @@ _COPILOT_INSTR = (
     "- q: any remaining descriptive keywords (specialty like 'ICU','telemetry', "
     "'med-surg'; qualifiers like 'compact license','bilingual'; certifications). "
     "Lowercase, space-separated. null if none.\n\n"
+    "IGNORE anything the recruiter rules out or retracts — 'not X', 'instead of "
+    "X', 'rather than X', 'no X', or a correction like 'sorry, I meant …'. Never "
+    "put an excluded or retracted term into q or any other field.\n\n"
     "Examples:\n"
+    "'CRNA instead of RN ER' -> "
+    '{"q":null,"category":"APP","license_title":"CRNA","state_code":null,'
+    '"city":null,"radius_mi":null,"min_experience":null,"max_experience":null,'
+    '"contact_available":null}\n'
     "'Find ICU nurses in California with compact licenses' -> "
     '{"q":"icu compact license","category":"Nursing","license_title":null,'
     '"state_code":"CA","city":null,"radius_mi":null,"min_experience":null,'
@@ -1053,12 +1088,22 @@ def _merge_copilot_filters(context: dict, delta: dict) -> dict:
     for k in _MERGE_FIELDS:
         if delta.get(k) not in (None, ""):
             merged[k] = delta[k]
+    # When the follow-up changes the role — a different licence or category — its
+    # keywords describe the NEW intent, so the previous turn's keywords are
+    # dropped rather than accumulated ("RN erd" then "crna" must not become
+    # "erd crna"). A pure refinement of the same role still accumulates.
+    role_changed = any(
+        delta.get(k) not in (None, "") and delta.get(k) != context.get(k)
+        for k in ("license_title", "category"))
+    prior_q = "" if role_changed else str(context.get("q") or "")
     tokens: list[str] = []
-    for tok in (str(context.get("q") or "") + " " + str(delta.get("q") or "")).split():
+    for tok in (prior_q + " " + str(delta.get("q") or "")).split():
         if tok and tok not in tokens:
             tokens.append(tok)
     if tokens:
         merged["q"] = " ".join(tokens[:6])
+    else:
+        merged.pop("q", None)
     return merged
 
 
@@ -1137,6 +1182,12 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
         except Exception:  # noqa: BLE001
             llm_delta = {}
     delta = {**rule_delta, **llm_delta}
+    # The LLM is the authority on free-text keywords. When it parsed the query,
+    # its q wins outright — including "no keywords at all" — so the rule
+    # extractor's leftover words ("sorry", "instead of rn") never leak in as
+    # spurious search filters.
+    if llm_delta:
+        delta["q"] = llm_delta.get("q")   # may be None → clears rule-extractor noise
 
     # Refine the previous turn's filters unless the user asked to start over.
     # The client-supplied context is re-validated, never trusted as-is.
@@ -1166,7 +1217,7 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
         conds.append(Profile.search_text.like(f"%{tok}%"))
     stmt = select(Profile).where(*conds)
     if category:
-        stmt = stmt.where(func.lower(Profile.provider_category) == category.lower())
+        stmt = stmt.where(_provider_category_condition(category))
 
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(
@@ -1218,10 +1269,10 @@ def category_counts(
         travel_experience=travel_experience)
     rows = db.execute(
         select(Profile.provider_category, func.count())
-        .where(*conds, Profile.provider_category.in_(_PROVIDER_CATS))
+        .where(*conds, Profile.provider_category.in_(_DIRECTORY_CATEGORY_VALUES))
         .group_by(Profile.provider_category)
     ).all()
-    return {cat: 0 for cat in _PROVIDER_CATS} | {c: n for c, n in rows}
+    return _fold_provider_category_counts(rows)
 
 
 @router.get("/screening-report")
@@ -1296,15 +1347,15 @@ def profile_facets(user: CurrentUser, db: DbSession):
 
     cat_rows = db.execute(
         select(Profile.provider_category, func.count())
-        .where(Profile.is_listable.is_(True))
+        .where(
+            Profile.is_listable.is_(True),
+            Profile.provider_category.in_(_DIRECTORY_CATEGORY_VALUES),
+        )
         .group_by(Profile.provider_category)
     ).all()
-    # NULL categories fold into "Others" — accumulate, don't overwrite, or the
-    # handful of uncategorised profiles silently replaces the real Others count.
-    categories: dict[str, int] = {}
-    for c, n in cat_rows:
-        key = c or "Others"
-        categories[key] = categories.get(key, 0) + n
+    # Fold the legacy singular label into the public ``Others`` tab. Blank
+    # categories stay excluded until classified, matching the result query.
+    categories = _fold_provider_category_counts(cat_rows)
     data = {
         "categories": categories,
         "license_titles": license_titles,
@@ -1497,6 +1548,28 @@ def delete_my_license(license_id: str, user: CurrentUser, db: DbSession):
     lic = db.get(License, license_id)
     if profile and lic and lic.profile_id == profile.profile_id:
         db.delete(lic)
+        db.commit()
+
+
+@router.post("/me/certifications", response_model=CertificationOut, status_code=201)
+def add_my_certification(body: CertificationCreate, user: CurrentUser, db: DbSession):
+    """Add a certification (BLS, ACLS, CCRN…) to your own profile."""
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.user_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail="Create your profile first")
+    cert = Certification(profile_id=profile.profile_id, **body.model_dump())
+    db.add(cert)
+    db.commit()
+    db.refresh(cert)
+    return cert
+
+
+@router.delete("/me/certifications/{cert_id}", status_code=204)
+def delete_my_certification(cert_id: str, user: CurrentUser, db: DbSession):
+    profile = db.scalar(select(Profile).where(Profile.user_id == user.user_id))
+    cert = db.get(Certification, cert_id)
+    if profile and cert and cert.profile_id == profile.profile_id:
+        db.delete(cert)
         db.commit()
 
 

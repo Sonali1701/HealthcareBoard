@@ -4,10 +4,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from ..models.enums import UserRole, UserStatus
 from .common import ORMModel
+
+# Roles a member of the public may register as. `admin` (and anything else) is
+# never self-assignable — otherwise anyone could POST role=admin and own the app.
+_SELF_SIGNUP_ROLES = {UserRole.job_seeker, UserRole.recruiter, UserRole.employer}
 
 
 class RegisterRequest(BaseModel):
@@ -16,6 +20,13 @@ class RegisterRequest(BaseModel):
     role: UserRole = UserRole.job_seeker
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+
+    @field_validator("role")
+    @classmethod
+    def _no_privileged_role(cls, v: UserRole) -> UserRole:
+        if v not in _SELF_SIGNUP_ROLES:
+            raise ValueError("role must be one of: job_seeker, recruiter, employer")
+        return v
 
 
 class LoginRequest(BaseModel):

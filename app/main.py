@@ -22,12 +22,14 @@ from . import __version__
 from .bootstrap import ensure_admin
 from .config import settings
 from .database import SessionLocal, init_db
+from .deps import CurrentUser
 from .ratelimit import limiter
 from .routers import (
     admin_import,
     analytics,
     applications,
     auth,
+    clients,
     credits,
     duplicates,
     employers,
@@ -76,6 +78,11 @@ app = FastAPI(
         "GSA per-diem pay calculation."
     ),
     lifespan=lifespan,
+    # The interactive docs enumerate the whole API surface — keep them off in
+    # production so they aren't a free map of every endpoint.
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
 # Rate limiting (slowapi): register limiter, handler, and the enforcing middleware.
@@ -84,13 +91,32 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 if settings.rate_limit_enabled:
     app.add_middleware(SlowAPIMiddleware)
 
+# Never combine a wildcard origin with credentials: the CORS spec forbids it,
+# and Starlette would otherwise reflect any caller's Origin back, letting any
+# website make credentialed cross-origin calls. With a wildcard, drop creds.
+_cors_wildcard = settings.cors_origin_list == ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
+    allow_credentials=not _cors_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    """Baseline security headers on every response."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # Complements X-Frame-Options; safe (only restricts framing, not resources).
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+    if settings.is_production:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 # --- Web app: load current user onto request.state for templates ----------
 
@@ -132,7 +158,7 @@ for module in (
     auth, profiles, employers, jobs, applications, social,
     messaging, notifications, matching, gsa, analytics, uploads,
     integrations, admin_import, ingest, extension, pools, saved_searches,
-    duplicates, outreach, credits, privacy, submissions,
+    duplicates, outreach, credits, privacy, submissions, clients,
 ):
     app.include_router(module.router)
 
@@ -181,6 +207,28 @@ def launch_board(request: Request):
     return templates.TemplateResponse("launch/board.html", {"request": request})
 
 
+@app.get("/reset-password", include_in_schema=False)
+def reset_password_page(request: Request):
+    """Landing page for the link in a password-reset email (reads ?token=)."""
+    return templates.TemplateResponse("auth/reset_password.html", {"request": request})
+
+
+@app.get("/verify-email", include_in_schema=False)
+def verify_email_page(request: Request):
+    """Landing page for the link in an email-verification email (reads ?token=)."""
+    return templates.TemplateResponse("auth/verify_email.html", {"request": request})
+
+
+@app.get("/terms", include_in_schema=False)
+def terms_page(request: Request):
+    return templates.TemplateResponse("legal/terms.html", {"request": request})
+
+
+@app.get("/privacy", include_in_schema=False)
+def privacy_page(request: Request):
+    return templates.TemplateResponse("legal/privacy.html", {"request": request})
+
+
 @app.get("/match", include_in_schema=False)
 def launch_match():
     return RedirectResponse("/")
@@ -193,7 +241,7 @@ def launch_chat():
 
 @app.get("/calculator", include_in_schema=False)
 def launch_calculator():
-    return RedirectResponse("/app/tools/pay-calculator")
+    return RedirectResponse("/?page=calculator")
 
 
 # --- Prototype reference pages, not product routes ------------------------
@@ -227,9 +275,11 @@ def serve_ui(page: str):
 
 
 @app.get("/files/{key:path}", include_in_schema=False)
-def serve_file(key: str):
-    """Serve a stored file. For a private S3/R2 bucket this redirects to a
-    short-lived signed URL; locally it points at /static/uploads."""
+def serve_file(key: str, user: CurrentUser):
+    """Serve a stored file. Requires authentication — these are résumés and
+    other PII, and this used to hand out signed URLs to anyone. For a private
+    S3/R2 bucket this redirects to a short-lived signed URL; locally it points
+    at the upload fallback. (Keys are unguessable UUIDs.)"""
     if settings.storage_enabled:
         from .services import storage
         return RedirectResponse(storage.presigned_url(key))
@@ -243,10 +293,13 @@ for module in (web_public, web_auth, web_seeker, web_recruiter,
 
 
 # --- Static assets --------------------------------------------------------
-# /assets -> app design assets (css/js);  /static -> project root (legacy
-# mockups' hb-api.js + local upload fallback at /static/uploads).
+# /assets -> app design assets (css/js). We deliberately do NOT mount the
+# project root: doing so served .env, the database and every résumé over HTTP.
+# Only the local upload fallback directory is exposed, at /static/uploads.
 app.mount("/assets", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="assets")
-app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT)), name="static")
+app.mount("/static/uploads",
+          StaticFiles(directory=str(PROJECT_ROOT / "uploads"), check_dir=False),
+          name="local-uploads")
 
 
 @app.get("/favicon.ico", include_in_schema=False)

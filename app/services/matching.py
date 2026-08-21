@@ -278,7 +278,9 @@ def run_matching(db: Session, req: MatchRequest,
                 state_code=p.state_code,
                 years_experience=p.years_experience or 0,
                 pay_min=float(p.pay_min_hourly) if p.pay_min_hourly is not None else None,
-                pay_max=float(p.pay_min_hourly) + 15 if p.pay_min_hourly is not None else None,
+                # A candidate states a desired floor, not a ceiling — don't
+                # invent one. (This used to report pay_min + $15 for everyone.)
+                pay_max=None,
                 skills=[s.name for s in p.skills],
                 certifications=[c.cert_name for c in p.certifications],
                 completion_score=p.completion_score or 0,

@@ -38,8 +38,24 @@ def _client():
     return _s3_client
 
 
-def build_key(prefix: str, filename: str) -> str:
-    suffix = Path(filename).suffix.lower()
+# Map validated content types to safe extensions. Deriving the stored file's
+# extension from its (verified) type — not its client-supplied name — means an
+# upload can never be stored as .html/.svg/.js and later served as a script.
+_EXT_BY_TYPE = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+    "application/pdf": ".pdf", "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+}
+_SAFE_SUFFIXES = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".webp"}
+
+
+def build_key(prefix: str, filename: str, content_type: str | None = None) -> str:
+    if content_type and content_type in _EXT_BY_TYPE:
+        suffix = _EXT_BY_TYPE[content_type]
+    else:
+        suffix = Path(filename).suffix.lower()
+        if suffix not in _SAFE_SUFFIXES:
+            suffix = ""   # never persist an arbitrary or executable extension
     return f"{prefix}/{uuid.uuid4().hex}{suffix}"
 
 

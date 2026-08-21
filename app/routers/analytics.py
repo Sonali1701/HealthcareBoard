@@ -204,8 +204,9 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
                      .where(Profile.is_listable.is_(True)))
     reachable = count(select(func.count()).select_from(Profile).where(
         Profile.is_listable.is_(True),
-        ((Profile.email.isnot(None)) & (func.length(func.btrim(Profile.email)) > 0))
-        | ((Profile.phone.isnot(None)) & (func.length(func.btrim(Profile.phone)) > 0))))
+        # trim() (not Postgres-only btrim) so this works on SQLite dev too.
+        ((Profile.email.isnot(None)) & (func.length(func.trim(Profile.email)) > 0))
+        | ((Profile.phone.isnot(None)) & (func.length(func.trim(Profile.phone)) > 0))))
 
     # How much of the shortlist actually got worked, and how far it got.
     moved = sum(n for s, n in by_stage.items() if s != "sourced")

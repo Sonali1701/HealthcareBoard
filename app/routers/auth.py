@@ -12,6 +12,7 @@ from sqlalchemy import select
 from ..config import settings
 from ..database import utcnow
 from ..deps import CurrentUser, DbSession
+from ..ratelimit import auth_rate_limit
 from ..models import (
     EmailVerificationToken,
     PasswordResetToken,
@@ -73,7 +74,8 @@ def _issue_tokens(db: DbSession, user: User, request: Request | None = None) -> 
 
 
 @router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
-def register(body: RegisterRequest, db: DbSession, request: Request):
+def register(body: RegisterRequest, db: DbSession, request: Request,
+             _rl: None = Depends(auth_rate_limit)):
     existing = db.scalar(select(User).where(User.email == body.email))
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -115,8 +117,7 @@ def register(body: RegisterRequest, db: DbSession, request: Request):
     return _issue_tokens(db, user, request)
 
 
-@router.post("/login", response_model=TokenPair)
-def login(body: LoginRequest, db: DbSession, request: Request):
+def _login(body: LoginRequest, db: DbSession, request: Request) -> TokenPair:
     user = db.scalar(select(User).where(User.email == body.email))
     if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -130,11 +131,17 @@ def login(body: LoginRequest, db: DbSession, request: Request):
     return _issue_tokens(db, user, request)
 
 
+@router.post("/login", response_model=TokenPair)
+def login(body: LoginRequest, db: DbSession, request: Request,
+          _rl: None = Depends(auth_rate_limit)):
+    return _login(body, db, request)
+
+
 @router.post("/login/form", response_model=TokenPair, include_in_schema=False)
 def login_form(db: DbSession, request: Request,
                form: OAuth2PasswordRequestForm = Depends()):
     """OAuth2 password-flow shim so the Swagger 'Authorize' button works."""
-    return login(LoginRequest(email=form.username, password=form.password), db, request)
+    return _login(LoginRequest(email=form.username, password=form.password), db, request)
 
 
 @router.post("/refresh", response_model=TokenPair)
@@ -205,7 +212,8 @@ def mfa_enroll(user: CurrentUser, db: DbSession):
 
 
 @router.post("/mfa/verify", response_model=Message)
-def mfa_verify(body: MFAVerifyRequest, user: CurrentUser, db: DbSession):
+def mfa_verify(body: MFAVerifyRequest, user: CurrentUser, db: DbSession, request: Request,
+               _rl: None = Depends(auth_rate_limit)):
     if not user.mfa_secret:
         raise HTTPException(status_code=400, detail="No MFA enrollment in progress")
     if not verify_mfa_code(user.mfa_secret, body.code):
@@ -226,11 +234,26 @@ def mfa_disable(body: MFAVerifyRequest, user: CurrentUser, db: DbSession):
 
 
 # --- Password reset & email verification ----------------------------------
-# In production the token would be emailed; here it is returned in the response
-# (dev convenience). Swap the `dev_token` exposure for an email send in prod.
+# The token is emailed. For local development (email disabled, non-production)
+# it is ALSO returned as `dev_token` so a developer can complete the flow
+# without a mail provider. It is never returned in production and never returned
+# when email actually delivered it — see `_dev_token` below.
+
+def _maybe_dev_token(resp: dict, raw: str, sent: bool) -> dict:
+    """Expose a reset/verify token in the response only when it is safe to.
+
+    Gated on the environment, NOT on `email_enabled`: production ships with
+    email disabled on some hosts, and leaking the token there would let anyone
+    reset any account. So: never in production, and never once it was emailed.
+    """
+    if not sent and settings.environment != "production":
+        resp["dev_token"] = raw
+    return resp
+
 
 @router.post("/password-reset/request")
-def password_reset_request(body: PasswordResetRequest, db: DbSession):
+def password_reset_request(body: PasswordResetRequest, db: DbSession, request: Request,
+                           _rl: None = Depends(auth_rate_limit)):
     user = db.scalar(select(User).where(User.email == body.email))
     # Always return success to avoid email enumeration.
     if not user:
@@ -242,11 +265,9 @@ def password_reset_request(body: PasswordResetRequest, db: DbSession):
         expires_at=utcnow() + timedelta(hours=1),
     ))
     db.commit()
-    send_password_reset(user.email, raw)
-    resp = {"detail": "If the email exists, a reset link was sent"}
-    if not settings.email_enabled:
-        resp["dev_token"] = raw  # dev convenience only; never exposed in prod
-    return resp
+    sent = send_password_reset(user.email, raw)
+    return _maybe_dev_token({"detail": "If the email exists, a reset link was sent"},
+                            raw, sent)
 
 
 @router.post("/password-reset/confirm", response_model=Message)
@@ -274,11 +295,8 @@ def request_email_verification(user: CurrentUser, db: DbSession):
         expires_at=utcnow() + timedelta(days=2),
     ))
     db.commit()
-    send_email_verification(user.email, raw)
-    resp = {"detail": "Verification email sent"}
-    if not settings.email_enabled:
-        resp["dev_token"] = raw
-    return resp
+    sent = send_email_verification(user.email, raw)
+    return _maybe_dev_token({"detail": "Verification email sent"}, raw, sent)
 
 
 @router.post("/email/verify", response_model=Message)

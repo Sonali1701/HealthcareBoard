@@ -40,7 +40,9 @@ def set_session(resp, token: str) -> None:
     resp.set_cookie(
         SESSION_COOKIE, token,
         httponly=True, samesite="lax",
-        secure=settings.environment == "production",
+        # Robust across "prod"/"release"; a plain == "production" check would
+        # silently ship the session cookie over plaintext HTTP otherwise.
+        secure=settings.is_production,
         max_age=settings.refresh_token_expire_days * 86400,
         path="/",
     )

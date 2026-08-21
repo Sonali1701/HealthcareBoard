@@ -17,8 +17,10 @@ from ..models import (
     Notification,
     Profile,
     SavedJob,
+    User,
 )
 from ..models.enums import ApplicationStatus, NotificationType
+from ..services.email import send_new_application
 from ..schemas.common import Message, Page
 from ..schemas.job import (
     ApplicationCreate,
@@ -233,6 +235,52 @@ def get_job(job_id: str, db: DbSession, user: CurrentUser):
     return job
 
 
+@router.get("/{job_id}/pay-estimate")
+async def job_pay_estimate(job_id: str, db: DbSession, user: CurrentUser):
+    """Estimated weekly take-home for this job, GSA per-diem-aware.
+
+    Treats the job's advertised hourly as a blended package (the clinician's own
+    pay, not a bill rate) and splits it into taxable pay + tax-free per-diem for
+    the job's location — the same model as the seeker Pay Tools tab. California
+    daily overtime applies automatically.
+    """
+    from ..schemas.gsa import PayPackageRequest
+    from ..services.gsa import calculate_pay_package, get_gsa_rates
+
+    job = db.get(JobPosting, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    reqs = job.requirements or {}
+    hours = float(reqs.get("hours_per_week") or 36) or 36
+    hourly = float(job.pay_rate_max or job.pay_rate_min or 0)
+    if not hourly and reqs.get("weekly_pay"):
+        try:
+            hourly = float(reqs["weekly_pay"]) / hours
+        except (TypeError, ValueError, ZeroDivisionError):
+            hourly = 0.0
+    if not hourly or not job.state_code:
+        return {"available": False}
+    weeks = int(reqs.get("duration_weeks") or 13) or 13
+    try:
+        payreq = PayPackageRequest(
+            bill_rate=hourly, city=(job.city or job.state_code), state_code=job.state_code,
+            margin_pct=0, burden_multiplier=1.0, hours_per_week=hours,
+            contract_weeks=min(max(weeks, 1), 104), tax_rate=0.22)
+    except Exception:  # noqa: BLE001 — a bad rate/location just means "no estimate"
+        return {"available": False}
+    rates = await get_gsa_rates(payreq.city, payreq.state_code)
+    r = calculate_pay_package(payreq, rates)
+    pd = r.option_perdiem
+    return {
+        "available": True,
+        "hourly": round(hourly, 2), "hours_per_week": hours,
+        "weekly_net": pd.est_weekly_net, "weekly_tax_free": pd.weekly_tax_free,
+        "weekly_taxable_gross": pd.weekly_taxable_gross, "weekly_total": pd.weekly_total,
+        "overtime": r.breakdown["overtime"], "gsa_live": rates.source == "api.gsa.gov",
+        "city": job.city, "state_code": job.state_code,
+    }
+
+
 @router.patch("/{job_id}", response_model=JobOut)
 def update_job(job_id: str, body: JobUpdate, user: CurrentUser, db: DbSession):
     job = db.get(JobPosting, job_id)
@@ -292,18 +340,23 @@ def apply_to_job(job_id: str, body: ApplicationCreate, user: CurrentUser, db: Db
     db.add(ApplicationEvent(application_id=app.application_id,
                             to_status=ApplicationStatus.applied.value,
                             actor_user_id=user.user_id))
-    # Notify the employer owner.
+    # Notify the employer owner, in-app and by email.
     employer = db.get(Employer, job.employer_id)
+    candidate_name = f"{profile.first_name} {profile.last_name}".strip()
     if employer:
         db.add(Notification(
             user_id=employer.owner_user_id,
             type=NotificationType.application,
             title="New application",
-            body=f"{profile.first_name} {profile.last_name} applied to {job.title}",
+            body=f"{candidate_name} applied to {job.title}",
             data={"job_id": job_id, "application_id": app.application_id},
         ))
     db.commit()
     db.refresh(app)
+    if employer:
+        owner = db.get(User, employer.owner_user_id)
+        if owner and owner.email:
+            send_new_application(owner.email, candidate_name, job.title)
     return app
 
 
@@ -318,6 +371,75 @@ def list_job_applications(job_id: str, user: CurrentUser, db: DbSession,
     if status_filter:
         stmt = stmt.where(Application.status == status_filter)
     return db.scalars(stmt.order_by(Application.applied_at.desc())).all()
+
+
+# The candidate ATS pipeline, in the order applicants actually move through it.
+# "rejected"/"withdrawn" are terminal and sit outside the ordered steps.
+_APPLICANT_STAGES = ["applied", "screening", "interview", "offer", "hired"]
+
+
+@router.get("/{job_id}/applicants")
+def list_job_applicants(job_id: str, user: CurrentUser, db: DbSession,
+                        status_filter: Optional[ApplicationStatus] = Query(None, alias="status")):
+    """Applicants for a job, with each candidate's details attached.
+
+    `/applications` returns bare rows carrying a profile_id, which is unusable
+    as a review screen. Applying to a job reveals the candidate to that
+    employer (the apply notification already names them), so this returns their
+    real name and contact to the job's recruiters — the counterpart to the
+    credit-gated reveal that governs the cold directory.
+    """
+    job = db.get(JobPosting, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _require_job_manager(db, job, user)
+
+    stmt = select(Application).where(Application.job_id == job_id)
+    if status_filter:
+        stmt = stmt.where(Application.status == status_filter)
+    apps = db.scalars(stmt.order_by(Application.applied_at.desc())).all()
+
+    profs = {p.profile_id: p for p in db.scalars(
+        select(Profile).where(Profile.profile_id.in_([a.profile_id for a in apps])))} if apps else {}
+
+    items, by_status = [], {}
+    for a in apps:
+        p = profs.get(a.profile_id)
+        status = a.status.value if hasattr(a.status, "value") else str(a.status)
+        by_status[status] = by_status.get(status, 0) + 1
+        items.append({
+            "application_id": a.application_id,
+            "profile_id": a.profile_id,
+            "user_id": p.user_id if p else None,
+            "name": f"{p.first_name} {p.last_name}".strip() if p else "Candidate",
+            "headline": p.headline if p else None,
+            "profession_type": p.profession_type if p else None,
+            "specialty": p.specialty if p else None,
+            "years_experience": p.years_experience if p else None,
+            "location": ", ".join(x for x in [getattr(p, "city", None),
+                                              getattr(p, "state_code", None)] if x) if p else None,
+            "completion": p.completion_score if p else 0,
+            "email": p.email if p else None,
+            "phone": p.phone if p else None,
+            "resume_url": p.resume_url if p else None,
+            "cover_letter": a.cover_letter,
+            "recruiter_rating": a.recruiter_rating,
+            "recruiter_notes": a.recruiter_notes,
+            "status": status,
+            "stage_index": _APPLICANT_STAGES.index(status) if status in _APPLICANT_STAGES else None,
+            "stages": _APPLICANT_STAGES,
+            "is_closed": status in {"rejected", "withdrawn"},
+            "applied_at": a.applied_at,
+            "status_updated_at": a.status_updated_at,
+        })
+    return {
+        "job": {"job_id": job.job_id, "title": job.title,
+                "specialty": job.specialty, "profession_type": job.profession_type,
+                "location": ", ".join(x for x in [job.city, job.state_code] if x)},
+        "items": items,
+        "by_status": by_status,
+        "stages": _APPLICANT_STAGES,
+    }
 
 
 # --- Saved jobs -----------------------------------------------------------

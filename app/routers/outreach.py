@@ -262,6 +262,24 @@ def send_campaign(campaign_id: str, user: CurrentUser, db: DbSession,
 
     base = settings.frontend_base_url.rstrip("/")
     simulated = not (settings.email_enabled and settings.sendgrid_api_key)
+
+    def _deliverable(m) -> bool:
+        addr = (m.to_email or "").strip().lower()
+        return bool(addr) and addr not in suppressed
+
+    # With no mail provider configured, this is a preview only: nothing is sent,
+    # nothing is recorded as sent, and the queue is left intact so it can be sent
+    # for real once a provider is wired up. Reporting these as delivered (which
+    # this used to do) would inflate every campaign's sent/open stats.
+    if simulated:
+        would_send = sum(1 for m in queued if _deliverable(m))
+        return {"sent": 0, "failed": 0, "skipped": 0,
+                "would_send": would_send, "would_skip": len(queued) - would_send,
+                "simulated": True, "status": c.status,
+                "note": "No mail provider configured — nothing was sent. This is a "
+                        "preview of what a real send would do. Set EMAIL_ENABLED and "
+                        "SENDGRID_API_KEY to send for real."}
+
     sent = failed = skipped = 0
     # Sending costs no credits. The credit was already spent to reveal this
     # candidate's contact details; charging again to use them would bill the
@@ -282,16 +300,14 @@ def send_campaign(campaign_id: str, user: CurrentUser, db: DbSession,
             f"<img src='{base}/api/outreach/open/{m.token}' width='1' height='1' alt=''>"
             f"</div>"
         )
-        ok = send_email(addr, m.subject or c.subject, html)
-        # With no provider configured send_email returns False by design; the
-        # row is still marked sent so the pipeline is exercisable end to end.
-        m.status = "sent"
-        m.sent_at = utcnow()
-        if not ok and not simulated:
+        # Only a real provider acceptance counts as sent — a rejection is failed,
+        # never silently recorded as delivered.
+        if send_email(addr, m.subject or c.subject, html):
+            m.status, m.sent_at = "sent", utcnow()
+            sent += 1
+        else:
             m.status, m.reason = "failed", "provider rejected"
             failed += 1
-        else:
-            sent += 1
 
     c.sent += sent
     c.failed += failed
@@ -303,10 +319,7 @@ def send_campaign(campaign_id: str, user: CurrentUser, db: DbSession,
     c.updated_at = utcnow()
     db.commit()
     return {"sent": sent, "failed": failed, "skipped": skipped,
-            "simulated": simulated, "status": c.status,
-            "note": ("No mail provider configured — messages were recorded but not "
-                     "delivered. Set email_enabled and sendgrid_api_key to send for real."
-                     if simulated else None)}
+            "simulated": False, "status": c.status, "note": None}
 
 
 # --- Tracking (public, no auth) --------------------------------------------
