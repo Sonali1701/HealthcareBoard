@@ -2267,6 +2267,24 @@
       S.provider[t.dataset.toggle] = on ? "true" : "";
       providerFilterChanged();
     });
+    const resetBtn = $("#search-reset");
+    if (resetBtn) resetBtn.onclick = () => {
+      const p = S.provider;
+      ["q", "license_title", "state_code", "licensed_state", "worked_at",
+       "travel_experience", "city", "zip", "radius_mi", "contact_available",
+       "compact", "min_experience", "max_experience", "category"]
+        .forEach(k => { p[k] = ""; });
+      S.providerOffset = 0;
+      $("#provider-q").value = "";
+      $("#provider-zip").value = "";
+      ["#provider-license-title", "#provider-state", "#provider-experience", "#provider-contact"]
+        .forEach(s => { const el = $(s); if (el) el.value = ""; });
+      radiusEl.value = 25; radiusEl.disabled = true; paintRadius();
+      $$(".provider-toggles .ptoggle").forEach(t => t.classList.remove("active"));
+      $$("#provider-tabs .tab").forEach(t => t.classList.toggle("active", t.dataset.category === ""));
+      loadProviders();
+      toast("Filters cleared.", {title: "Reset"});
+    };
     document.body.addEventListener("click", e => {
       const apply = e.target.closest("[data-apply]"); if (apply) applyJob(apply.dataset.apply);
       const resume = e.target.closest("[data-resume]"); if (resume) viewResume(resume.dataset.resume);
