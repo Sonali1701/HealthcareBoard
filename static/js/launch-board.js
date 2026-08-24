@@ -185,6 +185,7 @@
     $("#auth-subtitle").textContent = mode === "signup" ? "Join HealthBoard in seconds." : "Sign in to access your workspace.";
     $("#auth-submit").textContent = mode === "signup" ? "Create account" : "Sign in";
     $("#auth-hint").classList.toggle("show", mode === "signup");
+    $("#signup-agree-row").classList.toggle("show", mode === "signup");
     $("#auth-password").setAttribute("autocomplete", mode === "signup" ? "new-password" : "current-password");
     $("#auth-error").textContent = "";
   }
@@ -200,6 +201,8 @@
     try {
       if (S.authMode === "signup") {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
+        if (!$("#auth-agree").checked)
+          throw new Error("Please agree to the Terms of Service and Privacy Policy to continue.");
         await register({
           email, password,
           role: $("input[name='signup-role']:checked").value,
@@ -1090,9 +1093,21 @@
       $("#employer-sub").textContent = d.employer ? d.employer.org_name : "Create an organization first";
       S.employer = d.employer || null;
       $("#employer-panel").innerHTML = d.employer
-        ? `<div class="profile-panel-head">
-             <div class="profile-grid"><div><div class="muted">Organization</div><strong>${esc(d.employer.org_name)}</strong></div><div><div class="muted">Open orders</div><strong>${esc(d.kpis.jobs)}</strong></div><div><div class="muted">Applications</div><strong>${esc(d.kpis.applications)}</strong></div><div><div class="muted">Interviews</div><strong>${esc(d.kpis.interviews)}</strong></div></div>
-             <button class="btn ghost small" id="org-edit"><i class="fas fa-pen"></i>Edit organization</button>
+        ? `<div class="emp-summary">
+             <div class="emp-head">
+               <div class="emp-org">
+                 <span class="emp-org-label">Organization</span>
+                 <h2 class="emp-org-name">${esc(d.employer.org_name)}</h2>
+                 ${d.employer.is_verified ? `<span class="emp-verified"><i class="fas fa-circle-check"></i>Verified</span>` : ""}
+               </div>
+               <button class="btn ghost small" id="org-edit"><i class="fas fa-pen"></i>Edit organization</button>
+             </div>
+             <div class="emp-kpis">
+               ${[["Open orders", d.kpis.jobs], ["Applications", d.kpis.applications],
+                  ["Interviews", d.kpis.interviews], ["Offers", d.kpis.offers],
+                  ["Hired", d.kpis.hired]].map(([l, n]) =>
+                 `<div class="emp-kpi"><b>${esc(n ?? 0)}</b><span>${esc(l)}</span></div>`).join("")}
+             </div>
            </div>`
         : `<div class="match-empty"><i class="fas fa-building"></i><h3>No organization yet</h3>
            <p>Create one to post job orders and source candidates against them.</p>

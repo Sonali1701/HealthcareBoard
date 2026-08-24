@@ -223,6 +223,11 @@ h2{font-size:16px;font-weight:600}
 .pw-toggle{position:absolute;right:6px;top:5px;width:32px;height:32px;border:0;background:transparent;color:var(--dim);cursor:pointer}
 .auth-hint{display:none;font-size:12px;color:var(--faint);margin:-6px 0 9px}
 .auth-hint.show{display:block}
+.signup-agree-row{display:none;align-items:flex-start;gap:9px;margin:4px 0 10px;font-size:12.5px;
+  color:var(--muted);cursor:pointer;line-height:1.45}
+.signup-agree-row.show{display:flex}
+.signup-agree-row input{margin:2px 0 0;width:15px;height:15px;flex:0 0 auto;accent-color:var(--accent);cursor:pointer}
+.signup-agree-row a{color:var(--accent);font-weight:600}
 .form-error{min-height:18px;color:var(--rose);font-size:13px;margin:4px 0 10px}
 .btn.primary.full[disabled]{opacity:.5;cursor:not-allowed}
 .auth-foot{display:flex;align-items:center;justify-content:center;gap:7px;
@@ -1155,6 +1160,22 @@ tr.is-selected{background:var(--accent-soft)}
 .linklike:hover{color:var(--accent);text-decoration:underline}
 .row-muted{opacity:.55}
 .profile-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+
+/* --- Employer / Job Orders summary --------------------------------------- */
+.emp-summary{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:22px 24px;box-shadow:var(--shadow)}
+.emp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  padding-bottom:18px;border-bottom:1px solid var(--line);margin-bottom:20px}
+.emp-org-label{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+.emp-org-name{font-size:21px;font-weight:700;color:var(--ink);margin:4px 0 0;line-height:1.15}
+.emp-verified{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;
+  color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:2px 10px;margin-top:9px}
+.emp-verified i{font-size:10px}
+.emp-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+.emp-kpi{background:var(--soft);border:1px solid var(--line);border-radius:var(--radius);padding:15px 16px}
+.emp-kpi b{display:block;font-size:26px;font-weight:700;color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
+.emp-kpi span{font-size:12px;color:var(--faint);margin-top:6px;display:block}
+@media(max-width:760px){.emp-kpis{grid-template-columns:repeat(2,1fr)}.emp-head{flex-direction:column}}
 
 /* --- Applicant review (recruiter) ---------------------------------------- */
 .applicant-list{display:flex;flex-direction:column;gap:12px}
