@@ -557,7 +557,18 @@ def _provider_conditions(
     if providers_only:
         conds.append(Profile.is_listable.is_(True))
     if q:
-        conds.append(Profile.search_text.like(f"%{q.lower()}%"))
+        # Match whole words (at a word start), not raw substrings — otherwise a
+        # short query like "ICU" matches inside larger words, e.g. "connectICUt"
+        # (University of Connecticut appears in tens of thousands of profiles).
+        # search_text is a space-joined lowercase string, so a token counts as a
+        # word start when search_text begins with it or a space precedes it.
+        for tok in q.lower().split():
+            if len(tok) < 2:
+                continue
+            conds.append(or_(
+                Profile.search_text.like(f"{tok}%"),
+                Profile.search_text.like(f"% {tok}%"),
+            ))
     if specialty:
         conds.append(Profile.specialty == specialty)
     if profession_type:
@@ -1214,7 +1225,11 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
                       if k not in ("category", "q")}
     conds = _provider_conditions(db, providers_only=True, **search_filters)
     for tok in hard:
-        conds.append(Profile.search_text.like(f"%{tok}%"))
+        # Whole-word (word-start) match — see _provider_conditions for why.
+        conds.append(or_(
+            Profile.search_text.like(f"{tok}%"),
+            Profile.search_text.like(f"% {tok}%"),
+        ))
     stmt = select(Profile).where(*conds)
     if category:
         stmt = stmt.where(_provider_category_condition(category))
