@@ -578,6 +578,7 @@
       <td class="td-contact">${providerContactCell(p)}</td>
       <td class="td-actions">
         <button class="btn small" data-resume="${p.profile_id}" title="View résumé"><i class="fas fa-file-lines"></i>Résumé</button>
+        <button class="btn small" data-message="${p.profile_id}" title="Message this candidate"><i class="fas fa-comment-dots"></i></button>
         <button class="btn small${S.poolMembership.get(p.profile_id) ? " saved" : ""}" data-pool-save="${p.profile_id}" title="Save to a talent pool"><i class="fas fa-layer-group"></i>${S.poolMembership.get(p.profile_id) ? "Saved" : "Save"}</button>
       </td>
     </tr>`;
