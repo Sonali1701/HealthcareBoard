@@ -807,8 +807,15 @@ _COPILOT_INSTR = (
     "Lowercase, space-separated. null if none.\n\n"
     "IGNORE anything the recruiter rules out or retracts — 'not X', 'instead of "
     "X', 'rather than X', 'no X', or a correction like 'sorry, I meant …'. Never "
-    "put an excluded or retracted term into q or any other field.\n\n"
+    "put an excluded or retracted term into q or any other field.\n"
+    "IGNORE availability / willingness phrases that are not filterable facts — "
+    "'open to travel', 'willing to travel', 'open to relocation', 'available now', "
+    "'who are', 'looking for'. Never put these words into q.\n\n"
     "Examples:\n"
+    "'RN who are open to travel in Folsom' -> "
+    '{"q":null,"category":"Nursing","license_title":"RN","state_code":"CA",'
+    '"city":"Folsom","radius_mi":null,"min_experience":null,"max_experience":null,'
+    '"contact_available":null}\n'
     "'CRNA instead of RN ER' -> "
     '{"q":null,"category":"APP","license_title":"CRNA","state_code":null,'
     '"city":null,"radius_mi":null,"min_experience":null,"max_experience":null,'

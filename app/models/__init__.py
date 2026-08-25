@@ -52,6 +52,7 @@ from .job import (
     ApplicationEvent,
     Employer,
     EmployerMember,
+    TeamInvite,
     JobPosting,
     SavedJob,
 )
@@ -77,7 +78,7 @@ __all__ = [
     # profiles
     "Profile", "License", "WorkHistory", "Certification", "ProfileSkill",
     # jobs
-    "Employer", "EmployerMember", "JobPosting", "Application", "ApplicationEvent", "SavedJob",
+    "Employer", "EmployerMember", "TeamInvite", "JobPosting", "Application", "ApplicationEvent", "SavedJob",
     # social
     "Connection", "Post", "PostLike", "PostComment",
     # messaging

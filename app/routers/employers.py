@@ -5,8 +5,12 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
+from datetime import timedelta
+
+from ..config import settings
+from ..database import utcnow
 from ..deps import CurrentUser, DbSession
 from ..models import (
     Application,
@@ -15,11 +19,13 @@ from ..models import (
     JobPosting,
     Notification,
     Profile,
+    TeamInvite,
     User,
 )
 from ..models.enums import ApplicationStatus, NotificationType
 from ..schemas.common import Page
 from ..schemas.job import EmployerCreate, EmployerOut, EmployerUpdate
+from ..security import generate_opaque_token, sha256
 from ..services.email import send_team_invite
 
 router = APIRouter(prefix="/api/employers", tags=["employers"])
@@ -251,3 +257,102 @@ def remove_member(employer_id: str, member_user_id: str, user: CurrentUser, db: 
     if m:
         db.delete(m)
         db.commit()
+
+
+# --- Team invitations (invite anyone by email) ----------------------------
+# Unlike adding an existing member, an invitation reaches someone who may not
+# have an account yet: they receive a link, sign up or sign in, and join.
+
+_INVITE_ROLES = {"admin", "recruiter"}
+
+
+class InviteCreate(BaseModel):
+    email: EmailStr
+    role: str = "recruiter"          # admin | recruiter
+
+
+class InviteAccept(BaseModel):
+    token: str
+
+
+@router.post("/{employer_id}/invites", status_code=201)
+def create_invite(employer_id: str, body: InviteCreate, user: CurrentUser, db: DbSession):
+    """Invite someone to the team by email — an account is not required yet."""
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(status_code=404, detail="Employer not found")
+    _require_owner(employer, user)
+    role = body.role if body.role in _INVITE_ROLES else "recruiter"
+    email = body.email.strip().lower()
+
+    existing = db.scalar(select(User).where(func.lower(User.email) == email))
+    if existing and (existing.user_id == employer.owner_user_id or db.scalar(
+            select(EmployerMember).where(EmployerMember.employer_id == employer_id,
+                                         EmployerMember.user_id == existing.user_id))):
+        raise HTTPException(status_code=409, detail="They are already on your team")
+
+    # Supersede any earlier pending invite for the same person.
+    db.execute(update(TeamInvite).where(
+        TeamInvite.employer_id == employer_id, TeamInvite.email == email,
+        TeamInvite.status == "pending").values(status="revoked"))
+
+    raw = generate_opaque_token()
+    inv = TeamInvite(employer_id=employer_id, email=email, role=role,
+                     token_hash=sha256(raw), status="pending",
+                     invited_by_user_id=user.user_id,
+                     expires_at=utcnow() + timedelta(days=14))
+    db.add(inv)
+    db.commit()
+    link = f"{settings.frontend_base_url.rstrip('/')}/?invite={raw}"
+    send_team_invite(email, employer.org_name, accept_link=link)
+    return {"invite_id": inv.invite_id, "email": email, "role": role, "status": "pending"}
+
+
+@router.get("/{employer_id}/invites")
+def list_invites(employer_id: str, user: CurrentUser, db: DbSession):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(status_code=404, detail="Employer not found")
+    _require_owner(employer, user)
+    invs = db.scalars(select(TeamInvite).where(
+        TeamInvite.employer_id == employer_id, TeamInvite.status == "pending")
+        .order_by(TeamInvite.created_at.desc())).all()
+    return {"items": [{"invite_id": i.invite_id, "email": i.email, "role": i.role,
+                       "created_at": i.created_at, "expires_at": i.expires_at} for i in invs]}
+
+
+@router.delete("/{employer_id}/invites/{invite_id}", status_code=204)
+def revoke_invite(employer_id: str, invite_id: str, user: CurrentUser, db: DbSession):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        return
+    _require_owner(employer, user)
+    inv = db.get(TeamInvite, invite_id)
+    if inv and inv.employer_id == employer_id and inv.status == "pending":
+        inv.status = "revoked"
+        db.commit()
+
+
+@router.post("/invites/accept")
+def accept_invite(body: InviteAccept, user: CurrentUser, db: DbSession):
+    """The signed-in user accepts an invitation and joins the organisation."""
+    inv = db.scalar(select(TeamInvite).where(TeamInvite.token_hash == sha256(body.token.strip())))
+    if not inv or inv.status != "pending":
+        raise HTTPException(status_code=400, detail="This invitation is no longer valid.")
+    if inv.expires_at < utcnow():
+        inv.status = "revoked"
+        db.commit()
+        raise HTTPException(status_code=400, detail="This invitation has expired.")
+    employer = db.get(Employer, inv.employer_id)
+    if not employer:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+
+    already = user.user_id == employer.owner_user_id or bool(db.scalar(
+        select(EmployerMember).where(EmployerMember.employer_id == inv.employer_id,
+                                     EmployerMember.user_id == user.user_id)))
+    if not already:
+        db.add(EmployerMember(employer_id=inv.employer_id, user_id=user.user_id,
+                              member_role=inv.role))
+    inv.status = "accepted"
+    db.commit()
+    return {"joined": True, "org_name": employer.org_name, "already": already}

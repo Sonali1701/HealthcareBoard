@@ -40,7 +40,7 @@ button,input,select{font:inherit}
 .top-search{height:38px;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);display:flex;align-items:center;gap:8px;padding:0 12px;width:min(400px,44vw);color:var(--dim);font-size:14px}
 .top-search input{border:0;background:transparent;outline:0;width:100%;color:var(--ink)}
 .top-search input::placeholder{color:var(--dim)}
-.top-actions{display:flex;gap:6px;align-items:center}
+.top-actions{display:flex;gap:6px;align-items:center;margin-left:auto}
 .top-user{border:0;background:transparent;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink);font-size:14px;font-weight:500;padding:4px 6px;border-radius:6px}
 .top-user:hover{background:var(--soft)}
 

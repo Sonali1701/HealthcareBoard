@@ -112,6 +112,18 @@ def send_credential_expiry(email: str, *, name: str, credential: str,
     return send_email(email, f"Reminder: your {credential} {when}", html)
 
 
+def send_notification_email(to: str, *, title: str, body: str,
+                            cta_text: str = "Open HealthBoard",
+                            cta_link: str | None = None) -> bool:
+    """A branded email mirroring an in-app notification (new message, offer…)."""
+    html = _wrap(
+        title,
+        f"<p>{escape(body)}</p>",
+        cta_text, cta_link or _base(),
+    )
+    return send_email(to, title, html)
+
+
 # --- Account emails -------------------------------------------------------
 
 def send_password_reset(email: str, token: str) -> bool:
@@ -162,7 +174,17 @@ def send_application_update(email: str, job_title: str, status: str) -> bool:
     return send_email(email, f"Update on your application: {job_title}", html)
 
 
-def send_team_invite(email: str, org_name: str) -> bool:
+def send_team_invite(email: str, org_name: str, accept_link: str | None = None) -> bool:
+    if accept_link:
+        html = _wrap(
+            f"Join {escape(org_name)} on HealthBoard",
+            f"<p>You've been invited to join <strong>{escape(org_name)}</strong> on "
+            "HealthBoard — its shared talent pools, submissions and jobs.</p>"
+            "<p>Accept the invitation to get started. If you don't have an account "
+            "yet, you'll be able to create one first. This link expires in 14 days.</p>",
+            "Accept invitation", accept_link,
+        )
+        return send_email(email, f"You're invited to join {org_name} on HealthBoard", html)
     html = _wrap(
         "You've been added to a team",
         f"<p>You now have access to <strong>{escape(org_name)}</strong> on "

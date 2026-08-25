@@ -1129,6 +1129,11 @@
     box.innerHTML = loading("Loading your team...");
     try {
       const d = await get(`/api/employers/${S.employer.employer_id}/members`);
+      let invites = [];
+      if (d.can_manage){
+        try { invites = (await get(`/api/employers/${S.employer.employer_id}/invites`)).items || []; }
+        catch(_){}
+      }
       const rows = (d.items || []).map(m => `<tr>
         <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div>
             <div class="cell-sub">${esc(m.email || "")}</div></td>
@@ -1138,40 +1143,62 @@
           ? `<button class="btn small" data-member-remove="${esc(m.user_id)}" title="Remove from team"><i class="fas fa-user-minus"></i></button>`
           : ""}</td>
       </tr>`).join("");
+      const inviteRows = invites.map(i => `<tr>
+        <td><div class="cell-name">${esc(i.email)}</div><div class="cell-sub">Invitation pending</div></td>
+        <td><span class="badge">${esc(i.role)}</span></td>
+        <td class="td-actions"><button class="btn small" data-invite-revoke="${esc(i.invite_id)}" title="Revoke invitation"><i class="fas fa-xmark"></i></button></td>
+      </tr>`).join("");
       box.innerHTML = `<div class="an-section">
         <div class="team-head"><h2>Team</h2>${d.can_manage
           ? `<button class="btn ghost small" id="team-invite"><i class="fas fa-user-plus"></i>Invite teammate</button>` : ""}</div>
         <p class="team-note">Everyone here shares this organisation's talent pools, submissions and jobs.</p>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Member</th><th>Role</th><th class="th-actions"></th></tr></thead>
-          <tbody>${rows}</tbody></table></div></div>`;
+          <tbody>${rows}</tbody></table></div>
+        ${invites.length ? `<div class="team-head" style="margin-top:24px"><h2>Pending invitations</h2></div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
+            <tbody>${inviteRows}</tbody></table></div>` : ""}
+        </div>`;
       const inv = $("#team-invite");
       if (inv) inv.onclick = inviteTeammate;
       $$("#employer-team [data-member-remove]").forEach(b =>
         b.onclick = () => removeTeammate(b.dataset.memberRemove));
+      $$("#employer-team [data-invite-revoke]").forEach(b =>
+        b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
     } catch(e) { box.innerHTML = ""; }
   }
   async function inviteTeammate(){
     if (!S.employer) return;
     const v = await formDialog({
       title: "Invite a teammate",
-      intro: "They need a HealthBoard account already. Once added, they share this "
-           + "organisation's pools, submissions and jobs.",
-      submit: "Add to team",
-      fields: [{name:"email", label:"Their email", type:"email", required:true, wide:true,
-                placeholder:"colleague@youragency.com"}],
+      intro: "They'll get an email invitation to join your organisation. They don't "
+           + "need a HealthBoard account yet — they can create one when they accept.",
+      submit: "Send invitation",
+      fields: [
+        {name:"email", label:"Their email", type:"email", required:true, wide:true,
+         placeholder:"colleague@youragency.com"},
+        {name:"role", label:"Role", type:"select", value:"recruiter", options:[
+          {value:"recruiter", label:"Recruiter — source and submit candidates"},
+          {value:"admin", label:"Admin — also manage the team"},
+        ]},
+      ],
     });
     if (!v) return;
     try {
-      await post(`/api/employers/${S.employer.employer_id}/members`, {email: v.email.trim()});
-      toast("They now share your workspace.", {title:"Teammate added"});
+      await post(`/api/employers/${S.employer.employer_id}/invites`,
+                 {email: v.email.trim(), role: v.role || "recruiter"});
+      toast(`Invitation sent to ${v.email.trim()}.`, {title:"Teammate invited"});
       loadTeam();
     } catch(e) {
-      toast(e.status === 404 ? "No HealthBoard account with that email — ask them to sign up first."
-          : e.status === 409 ? "They're already on your team."
-          : (e.message || "That did not work."),
-          {title:"Could not add teammate", kind:"err"});
+      toast(e.status === 409 ? "They're already on your team."
+          : (e.message || "Could not send the invitation."),
+          {title:"Could not invite", kind:"err"});
     }
+  }
+  async function revokeInvite(inviteId){
+    try { await del(`/api/employers/${S.employer.employer_id}/invites/${inviteId}`); loadTeam(); }
+    catch(e){ toast(e.message || "That did not work.", {kind:"err"}); }
   }
   async function removeTeammate(userId){
     if (!await confirmDialog({
@@ -1703,6 +1730,12 @@
   async function aiSearch(message){
     message = (message || "").trim();
     if (!message || S.aiBusy) return;
+    // A query typed from the hero (no results on screen yet — e.g. right after
+    // "New search") is a fresh search: never inherit a previous conversation's
+    // filters. Refinement only applies once results are already showing.
+    const fresh = !$("#page-ai").classList.contains("has-results")
+               || !$("#ai-thread").children.length;
+    if (fresh) S.aiContext = null;
     S.aiBusy = true;
     $("#page-ai").classList.add("has-results");   // collapse hero → compact top bar
     $("#ai-input").value = "";
@@ -4321,6 +4354,11 @@
   }
 
   async function startApp(){
+    // Stash a team-invite token from the URL so it survives the sign-in flow.
+    try {
+      const it = new URLSearchParams(location.search).get("invite");
+      if (it) sessionStorage.setItem("hb_invite", it);
+    } catch(_){}
     // A splash covers the screen while we validate an existing token, so a
     // logged-in user never sees the login form flash on refresh.
     if (token()) {
@@ -4329,13 +4367,39 @@
       if (ok) {
         $("#boot-splash").classList.add("hidden");
         enterAppPages();
+        acceptStashedInvite();
         return;
       }
     }
     // No token (or it was rejected): show the public home page, not a raw login.
     $("#boot-splash").classList.add("hidden");
-    showLanding();
+    let invited = false;
+    try { invited = !!sessionStorage.getItem("hb_invite"); } catch(_){}
+    if (invited){
+      showAuth("signup");
+      toast("Create an account or sign in to accept your team invitation.",
+            {kind:"info", ms:7000});
+    } else {
+      showLanding();
+    }
     loadPublicStats();
+  }
+  async function acceptStashedInvite(){
+    let tok = null;
+    try { tok = sessionStorage.getItem("hb_invite"); } catch(_){}
+    if (!tok) return;
+    try { sessionStorage.removeItem("hb_invite"); } catch(_){}
+    try { history.replaceState(null, "", location.pathname); } catch(_){}
+    try {
+      const r = await post("/api/employers/invites/accept", {token: tok});
+      toast(r.already ? `You're already part of ${esc(r.org_name)}.`
+                      : `You've joined ${esc(r.org_name)}.`,
+            {title:"Team joined", ms:6000});
+      if (typeof refreshUser === "function") refreshUser();
+    } catch(e){
+      toast(e.message || "This invitation link is no longer valid.",
+            {title:"Invitation", kind:"err", ms:6000});
+    }
   }
 
   // Public views: the marketing home and the sign-in screen it leads to.

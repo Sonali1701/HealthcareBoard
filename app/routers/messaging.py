@@ -26,6 +26,7 @@ from ..models.enums import (
     NotificationType,
     OfferStatus,
 )
+from ..services.notifications import notify
 from ..schemas.messaging import (
     ATSStageUpdate,
     EmailOutreachIn,
@@ -356,13 +357,11 @@ def _persist_message(db: DbSession, thread: MessageThread, user: CurrentUser,
     )
     db.add(msg)
     thread.last_message_at = utcnow()
-    db.add(Notification(
-        user_id=recipient_id,
-        type=NotificationType.message,
-        title="New message",
-        body=(body.body or body.kind.value)[:140],
-        data={"thread_id": thread.thread_id},
-    ))
+    # In-app bell + an email to the recipient's inbox.
+    notify(db, user_id=recipient_id, type=NotificationType.message,
+           title="You have a new message",
+           body=(body.body or body.kind.value)[:140],
+           data={"thread_id": thread.thread_id})
     return msg
 
 
@@ -462,13 +461,10 @@ def schedule_interview(body: InterviewCreate, user: CurrentUser, db: DbSession):
             ))
     profile = db.get(Profile, body.profile_id)
     if profile and profile.user_id:
-        db.add(Notification(
-            user_id=profile.user_id,
-            type=NotificationType.system,
-            title="Interview proposed",
-            body="A recruiter proposed interview times",
-            data={"interview_id": interview.interview_id},
-        ))
+        notify(db, user_id=profile.user_id, type=NotificationType.system,
+               title="Interview proposed",
+               body="A recruiter proposed interview times",
+               data={"interview_id": interview.interview_id})
     db.commit()
     db.refresh(interview)
     return interview
@@ -528,13 +524,10 @@ def send_offer(body: OfferCreate, user: CurrentUser, db: DbSession):
             ))
     profile = db.get(Profile, body.profile_id)
     if profile and profile.user_id:
-        db.add(Notification(
-            user_id=profile.user_id,
-            type=NotificationType.system,
-            title="You received an offer",
-            body="A recruiter extended a formal offer",
-            data={"offer_id": offer.offer_id},
-        ))
+        notify(db, user_id=profile.user_id, type=NotificationType.system,
+               title="You received an offer",
+               body="A recruiter extended a formal offer",
+               data={"offer_id": offer.offer_id})
     db.commit()
     db.refresh(offer)
     return offer
@@ -555,13 +548,10 @@ def respond_offer(offer_id: str, body: OfferRespond, user: CurrentUser, db: DbSe
         raise HTTPException(status_code=400, detail="Status must be accepted or declined")
     offer.status = body.status
     offer.responded_at = utcnow()
-    db.add(Notification(
-        user_id=offer.recruiter_user_id,
-        type=NotificationType.system,
-        title=f"Offer {body.status.value}",
-        body=f"The candidate {body.status.value} the offer",
-        data={"offer_id": offer_id},
-    ))
+    notify(db, user_id=offer.recruiter_user_id, type=NotificationType.system,
+           title=f"Offer {body.status.value}",
+           body=f"The candidate {body.status.value} the offer",
+           data={"offer_id": offer_id})
     db.commit()
     db.refresh(offer)
     return offer
