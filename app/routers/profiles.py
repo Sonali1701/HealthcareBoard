@@ -774,7 +774,7 @@ _COPILOT_INSTR = (
     "Return JSON with exactly these keys (use null when the request does not "
     "specify one):\n"
     '{"q":null,"category":null,"license_title":null,"state_code":null,'
-    '"city":null,"radius_mi":null,"compact":null,"min_experience":null,'
+    '"city":null,"zip":null,"radius_mi":null,"compact":null,"min_experience":null,'
     '"max_experience":null,"contact_available":null}\n\n'
     "- category: one of \"Physicians\",\"Nursing\",\"Allied\",\"APP\",\"Others\". "
     "Nurse/RN/LPN/CNA -> Nursing. Doctor/physician/MD/DO -> Physicians. "
@@ -788,9 +788,11 @@ _COPILOT_INSTR = (
     "'licensed in', 'can work in', 'eligible to work in' a state. 2-letter code. "
     "null otherwise.\n"
     "- city: the CENTRE city for the search, name only, no state (e.g. 'around "
-    "Folsom, California' -> \"Folsom\"). null if none.\n"
+    "Folsom, California' -> \"Folsom\"). null if none. Never put a ZIP code here.\n"
+    "- zip: a 5-digit US ZIP code the search should centre on ('within 25 miles "
+    "of 95630', 'near 90210'). Put ONLY the 5 digits. null if none.\n"
     "- radius_mi: whole miles when a distance is given ('within 50 miles of', "
-    "'around 25 mi from'). null if none.\n"
+    "'around 25 mi from', '25 miles from 95630'). null if none.\n"
     "- compact: true when they ask for a compact / multistate / eNLC nursing "
     "license; else null.\n"
     "- worked_at: an employer / health-system name when they ask for someone who "
@@ -799,11 +801,16 @@ _COPILOT_INSTR = (
     "- travel_experience: true when they ask for prior travel assignments / "
     "travel experience; else null.\n"
     "- min_experience / max_experience: whole years. 'more than 5 years' -> "
-    "min_experience 5. 'at least 3' -> min 3. 'under 2' -> max_experience 2.\n"
+    "min_experience 5. 'at least 3' -> min 3. 'under 2' -> max_experience 2. A "
+    "bare experience amount is a minimum: 'with 10 years experience', '10 years', "
+    "'10 yrs exp' -> min_experience 10.\n"
     "- contact_available: \"any\" if they ask for reachable candidates / with "
     "contact info; else null.\n"
     "- q: any remaining descriptive keywords (specialty like 'ICU','telemetry', "
     "'med-surg'; qualifiers like 'compact license','bilingual'; certifications). "
+    "NORMALISE informal or misspelled specialties to the standard searchable term: "
+    "'medsurg'/'medsurgian'/'med surg' -> 'med surg'; 'tele' -> 'telemetry'; 'l&d' "
+    "-> 'labor delivery'; 'peds' -> 'pediatric'; 'er'/'ed' -> 'emergency'. "
     "Lowercase, space-separated. null if none.\n\n"
     "IGNORE anything the recruiter rules out or retracts — 'not X', 'instead of "
     "X', 'rather than X', 'no X', or a correction like 'sorry, I meant …'. Never "
@@ -1043,8 +1050,13 @@ def _copilot_filters(raw: dict) -> dict:
     if ls in _US_STATES:
         out["licensed_state"] = ls
     city = str(raw.get("city") or "").strip()
+    zc = re.sub(r"\D", "", str(raw.get("zip") or ""))
+    if not zc and re.fullmatch(r"\d{5}", city):   # a bare 5-digit "city" is a ZIP
+        zc, city = city, ""
     if city and city.lower() != "null":
         out["city"] = city[:60]
+    if len(zc) == 5:
+        out["zip"] = zc
     rad = _clean_int(raw.get("radius_mi"), lo=1, hi=500)
     if rad:
         out["radius_mi"] = rad
@@ -1095,7 +1107,7 @@ _RESET_RE = re.compile(
 
 # Fields carried between turns. `q` is merged token-wise; the rest override.
 _MERGE_FIELDS = ("category", "license_title", "state_code", "licensed_state",
-                 "city", "radius_mi", "min_experience", "max_experience",
+                 "city", "zip", "radius_mi", "min_experience", "max_experience",
                  "contact_available", "compact", "worked_at", "travel_experience")
 
 
@@ -1137,10 +1149,13 @@ def _copilot_summary(filters: dict, total: int, soft: list | None = None,
         bits.append(f"“{filters['q']}”")
     place = ", ".join(x for x in (
         (filters.get("city") or "").title() or None, filters.get("state_code")) if x)
-    if filters.get("radius_mi") and filters.get("city"):
-        bits.append(f"within {filters['radius_mi']} mi of {place}")
+    center = place or filters.get("zip")
+    if filters.get("radius_mi") and center:
+        bits.append(f"within {filters['radius_mi']} mi of {center}")
     elif place:
         bits.append(place)
+    elif filters.get("zip"):
+        bits.append(filters["zip"])
     if filters.get("min_experience") and filters.get("max_experience"):
         bits.append(f"{filters['min_experience']}–{filters['max_experience']} yrs")
     elif filters.get("min_experience"):
