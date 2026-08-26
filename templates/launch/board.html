@@ -796,7 +796,9 @@
         <button class="admin-tab active" data-atab="overview"><i class="fas fa-gauge-high"></i>Overview</button>
         <button class="admin-tab" data-atab="users"><i class="fas fa-users"></i>Users</button>
         <button class="admin-tab" data-atab="orgs"><i class="fas fa-hospital"></i>Organizations</button>
+        <button class="admin-tab" data-atab="jobs"><i class="fas fa-briefcase"></i>Jobs</button>
         <button class="admin-tab" data-atab="logins"><i class="fas fa-network-wired"></i>IP &amp; Logins</button>
+        <button class="admin-tab" data-atab="audit"><i class="fas fa-clock-rotate-left"></i>Audit log</button>
       </div>
 
       <div class="admin-panel active" id="admin-overview">
@@ -845,16 +847,51 @@
       <div class="admin-panel" id="admin-orgs">
         <div class="admin-toolbar">
           <div class="admin-search"><i class="fas fa-search"></i><input id="admin-org-q" placeholder="Search organizations"></div>
+          <button class="btn primary small" id="admin-org-new"><i class="fas fa-plus"></i>New organization</button>
         </div>
         <div class="admin-table-wrap">
           <table class="admin-table">
             <thead><tr>
-              <th>Organization</th><th>Type</th><th>Location</th><th>Owner</th><th>Members</th><th>Jobs</th><th>Joined</th>
+              <th>Organization</th><th>Type</th><th>Location</th><th>Owner</th><th>Members</th><th>Jobs</th><th>Joined</th><th></th>
             </tr></thead>
             <tbody id="admin-org-rows"></tbody>
           </table>
         </div>
         <div class="admin-pager" id="admin-org-pager"></div>
+      </div>
+
+      <div class="admin-panel" id="admin-jobs">
+        <div class="admin-toolbar">
+          <div class="admin-search"><i class="fas fa-search"></i><input id="admin-job-q" placeholder="Search jobs"></div>
+          <select id="admin-job-status" class="input">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="closed">Closed</option>
+            <option value="draft">Draft</option>
+            <option value="expired">Expired</option>
+          </select>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr>
+              <th>Job</th><th>Organization</th><th>Location</th><th>Status</th><th>Applied</th><th>Posted</th><th></th>
+            </tr></thead>
+            <tbody id="admin-job-rows"></tbody>
+          </table>
+        </div>
+        <div class="admin-pager" id="admin-job-pager"></div>
+      </div>
+
+      <div class="admin-panel" id="admin-audit">
+        <p class="muted" style="font-size:13px;margin:0 0 14px">Every admin action is recorded — who did what, and to which record.</p>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>Action</th><th>Admin</th><th>Target</th><th>Details</th><th>When</th></tr></thead>
+            <tbody id="admin-audit-rows"></tbody>
+          </table>
+        </div>
+        <div class="admin-pager" id="admin-audit-pager"></div>
       </div>
     </section>
   </main>

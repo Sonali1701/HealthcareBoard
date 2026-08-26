@@ -1335,6 +1335,30 @@ tr.is-selected{background:var(--accent-soft)}
 .admin-pager{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-top:14px}
 .admin-pager-info{font-size:13px;color:var(--faint);margin-right:auto}
 .admin-pager .btn[disabled]{opacity:.45;cursor:default;pointer-events:none}
+.admin-featured{color:#b8860b}
+.admin-badge.accent{background:var(--accent-soft);border-color:var(--line-2);color:var(--accent-strong)}
+
+.admin-recent{display:flex;flex-direction:column;gap:6px}
+.admin-recent-row{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.admin-recent-email{font-weight:500;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+/* Admin detail modal (user / organization drill-down) */
+.admin-modal{width:min(680px,94vw)}
+.admin-detail{display:flex;flex-direction:column;gap:18px;padding:4px 2px}
+.admin-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.admin-detail-head h3{margin:0;font-size:18px;color:var(--ink)}
+.admin-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px}
+.admin-detail-grid > div{display:flex;flex-direction:column;gap:3px}
+.admin-detail label,.admin-members label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.admin-detail-grid > div > div{font-size:14px;color:var(--ink);display:flex;align-items:center;gap:8px}
+.admin-credit-box{display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--soft);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 18px}
+.admin-credit-box .admin-stat-val{font-size:26px}
+.admin-credit-box .admin-stat-label{font-size:12px;color:var(--muted)}
+.admin-credit-actions{display:flex;gap:8px}
+.admin-chips{display:flex;flex-wrap:wrap;gap:6px}
+.admin-members-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.tm-role{border:1px solid var(--line);border-radius:6px;background:var(--white);padding:5px 8px;font-size:13px;color:var(--ink);outline:0;cursor:pointer}
+.tm-role:hover{border-color:var(--line-2)}
 
 /* --- Job AI: seeker result cards ---------------------------------------- */
 .jai-results{display:flex;flex-direction:column;gap:10px}

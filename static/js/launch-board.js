@@ -280,8 +280,9 @@
   }
 
   // ---- Admin console (platform super-admin) --------------------------------
-  const ADMIN = { tab: "overview", uOffset: 0, uLimit: 25, oOffset: 0, oLimit: 25, lOffset: 0, lLimit: 50 };
-  const ADMIN_COLS = 8, ADMIN_ORG_COLS = 7, ADMIN_LOGIN_COLS = 5;
+  const ADMIN = { tab: "overview", uOffset: 0, uLimit: 25, oOffset: 0, oLimit: 25,
+                  lOffset: 0, lLimit: 50, jOffset: 0, jLimit: 25, auOffset: 0, auLimit: 50 };
+  const ADMIN_COLS = 8, ADMIN_ORG_COLS = 8, ADMIN_LOGIN_COLS = 5, ADMIN_JOB_COLS = 7, ADMIN_AUDIT_COLS = 5;
   const ROLE_LABEL = {job_seeker:"Job seeker", recruiter:"Recruiter", employer:"Employer", admin:"Admin"};
   const STATUS_LABEL = {active:"Active", suspended:"Suspended", pending_verify:"Pending", deleted:"Deleted"};
   const adminDate = iso => iso ? new Date(iso).toLocaleDateString([], {year:"numeric", month:"short", day:"numeric"}) : "—";
@@ -297,7 +298,9 @@
     if (name === "overview") loadAdminOverview();
     if (name === "users") loadAdminUsers();
     if (name === "orgs") loadAdminOrgs();
+    if (name === "jobs") loadAdminJobs();
     if (name === "logins") loadAdminLogins();
+    if (name === "audit") loadAdminAudit();
   }
 
   async function loadAdminLogins(){
@@ -355,8 +358,8 @@
         ])
         + statGroup("Content", [
           statCard("Providers", nf(c.profiles), `${nf(c.profiles_listable)} listable`),
-          statCard("Jobs", nf(c.jobs), `${nf(c.jobs_active)} active`),
-          statCard("Organizations", nf(c.organizations)),
+          statCard("Jobs", nf(c.jobs), `${nf(c.jobs_active)} active · ${nf(c.jobs_featured)} featured`),
+          statCard("Organizations", nf(c.organizations), `${nf(c.organizations_verified)} verified`),
           statCard("Applications", nf(c.applications)),
           statCard("Messages", nf(c.messages)),
         ])
@@ -364,7 +367,12 @@
           statCard("Credits in circulation", nf(b.credit_balance)),
           statCard("Credits spent", nf(b.credit_spent), "lifetime reveals"),
           statCard("Credits granted", nf(b.credit_granted), "lifetime"),
-        ]);
+        ])
+        + (o.recent_signups && o.recent_signups.length ? `<div class="admin-stat-group"><h3>Recent signups</h3>
+          <div class="admin-recent">${o.recent_signups.map(s => `<div class="admin-recent-row">
+            <span class="admin-recent-email">${esc(s.email)}</span>
+            <span class="admin-badge">${esc(ROLE_LABEL[s.role] || s.role)}</span>
+            <span class="admin-sub">${esc(adminDate(s.created_at))}</span></div>`).join("")}</div></div>` : "");
     } catch(e) {
       box.innerHTML = errorState("Could not load the overview.", e.message || "");
     }
@@ -418,7 +426,7 @@
       <td>${u.last_login_at ? adminDate(u.last_login_at) : "Never"}</td>
       <td class="admin-ip">${esc(u.last_ip || "—")}</td>
       <td>${adminDate(u.created_at)}</td>
-      <td class="td-actions">${action}</td>
+      <td class="td-actions"><button class="btn ghost small" data-admin-user="${esc(u.user_id)}"><i class="fas fa-sliders"></i>Manage</button>${action}</td>
     </tr>`;
   }
 
@@ -457,12 +465,258 @@
           <td>${Number(o.members).toLocaleString()}</td>
           <td>${Number(o.jobs).toLocaleString()} <span class="admin-sub">(${Number(o.jobs_active).toLocaleString()} active)</span></td>
           <td>${adminDate(o.created_at)}</td>
+          <td class="td-actions"><button class="btn ghost small" data-admin-org="${esc(o.employer_id)}"><i class="fas fa-sliders"></i>Manage</button></td>
         </tr>`;
       }).join("");
       renderPager("#admin-org-pager", data, () => loadAdminOrgs(), "oOffset");
     } catch(e) {
       tb.innerHTML = errorRow(ADMIN_ORG_COLS, "Could not load organizations.");
     }
+  }
+
+  // ---- Admin: jobs moderation ----------------------------------------------
+  async function loadAdminJobs(){
+    const tb = $("#admin-job-rows");
+    tb.innerHTML = loadingRow(ADMIN_JOB_COLS, "Loading jobs…");
+    const q = clean($("#admin-job-q").value), status = $("#admin-job-status").value;
+    const params = new URLSearchParams({limit:ADMIN.jLimit, offset:ADMIN.jOffset});
+    if (q) params.set("q", q);
+    if (status) params.set("status", status);
+    try {
+      const data = await get("/api/admin/jobs?" + params.toString());
+      if (!data.jobs.length){
+        tb.innerHTML = emptyRow(ADMIN_JOB_COLS, "No jobs match.", "", "fa-briefcase");
+        renderPager("#admin-job-pager", data, () => loadAdminJobs(), "jOffset");
+        return;
+      }
+      tb.innerHTML = data.jobs.map(adminJobRow).join("");
+      renderPager("#admin-job-pager", data, () => loadAdminJobs(), "jOffset");
+    } catch(e) { tb.innerHTML = errorRow(ADMIN_JOB_COLS, "Could not load jobs."); }
+  }
+  function adminJobRow(j){
+    const statusCls = j.status === "active" ? "ok" : (j.status === "closed" ? "err" : "warn");
+    const feat = j.is_featured ? `<i class="fas fa-star admin-featured" title="Featured"></i> ` : "";
+    const featBtn = j.is_featured
+      ? `<button class="btn ghost small" data-admin-job-unfeature="${esc(j.job_id)}" title="Remove from featured"><i class="fas fa-star"></i></button>`
+      : `<button class="btn ghost small" data-admin-job-feature="${esc(j.job_id)}" title="Feature this job"><i class="far fa-star"></i></button>`;
+    const statusBtn = j.status === "active"
+      ? `<button class="btn ghost small" data-admin-job-pause="${esc(j.job_id)}">Pause</button>`
+      : `<button class="btn ghost small" data-admin-job-activate="${esc(j.job_id)}">Activate</button>`;
+    return `<tr>
+      <td class="admin-user-cell">${feat}<b>${esc(j.title)}</b><span class="admin-sub">${esc(j.specialty || j.source || "")}</span></td>
+      <td>${esc(j.org_name || "—")}</td>
+      <td>${esc(j.location || "—")}</td>
+      <td><span class="admin-badge ${statusCls}">${esc(j.status)}</span></td>
+      <td>${Number(j.applications || 0).toLocaleString()}</td>
+      <td>${adminDate(j.created_at)}</td>
+      <td class="td-actions">${featBtn}${statusBtn}<button class="btn ghost small danger" data-admin-job-delete="${esc(j.job_id)}" title="Delete job"><i class="fas fa-trash"></i></button></td>
+    </tr>`;
+  }
+  async function adminModerateJob(jobId, body){
+    try { await patch(`/api/admin/jobs/${jobId}`, body); loadAdminJobs(); }
+    catch(e) { toast(e.message || "Could not update the job.", {title:"Job", kind:"err"}); }
+  }
+  async function adminDeleteJob(jobId){
+    const ok = await confirmDialog({title:"Delete this job?",
+      body:"This permanently deletes the job and its applications. This cannot be undone.",
+      confirm:"Delete", danger:true});
+    if (!ok) return;
+    try { await del(`/api/admin/jobs/${jobId}`); toast("Job deleted.", {title:"Jobs"}); loadAdminJobs(); }
+    catch(e) { toast(e.message || "Could not delete the job.", {title:"Delete failed", kind:"err"}); }
+  }
+
+  // ---- Admin: audit log ----------------------------------------------------
+  async function loadAdminAudit(){
+    const tb = $("#admin-audit-rows");
+    tb.innerHTML = loadingRow(ADMIN_AUDIT_COLS, "Loading audit log…");
+    const params = new URLSearchParams({limit:ADMIN.auLimit, offset:ADMIN.auOffset});
+    try {
+      const data = await get("/api/admin/audit?" + params.toString());
+      if (!data.logs.length){
+        tb.innerHTML = emptyRow(ADMIN_AUDIT_COLS, "No admin actions yet.", "", "fa-clock-rotate-left");
+        renderPager("#admin-audit-pager", data, () => loadAdminAudit(), "auOffset");
+        return;
+      }
+      tb.innerHTML = data.logs.map(l => {
+        const action = (l.action || "").replace("admin.", "").replace(/_/g, " ");
+        const when = l.created_at ? new Date(l.created_at).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "—";
+        const meta = l.meta && Object.keys(l.meta).length
+          ? Object.entries(l.meta).map(([k, v]) => `${k}: ${v}`).join(", ") : "";
+        const target = [l.entity_type, l.entity_id ? l.entity_id.slice(0, 8) : ""].filter(Boolean).join(" ");
+        return `<tr>
+          <td><b>${esc(action)}</b></td>
+          <td class="admin-sub">${esc(l.actor || "—")}</td>
+          <td class="admin-sub">${esc(target || "—")}</td>
+          <td class="admin-sub">${esc(meta)}</td>
+          <td>${esc(when)}</td>
+        </tr>`;
+      }).join("");
+      renderPager("#admin-audit-pager", data, () => loadAdminAudit(), "auOffset");
+    } catch(e) { tb.innerHTML = errorRow(ADMIN_AUDIT_COLS, "Could not load the audit log."); }
+  }
+
+  // ---- Admin: detail modals + actions --------------------------------------
+  function adminModal(title, bodyHtml){
+    $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card admin-modal">
+      <div class="modal-head"><strong>${esc(title)}</strong>
+        <button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div>
+      <div class="modal-body" id="admin-modal-body">${bodyHtml}</div>
+    </div></div>`;
+  }
+
+  async function adminAdjustCredits({title, sign, url, after}){
+    const v = await formDialog({title, submit: sign > 0 ? "Grant" : "Deduct",
+      fields:[
+        {name:"amount", label:"Amount (credits)", type:"number", required:true, value:"10"},
+        {name:"note", label:"Note (optional)", wide:true, placeholder:"Reason for this adjustment"},
+      ]});
+    if (!v) return;
+    const amt = Math.abs(parseInt(v.amount, 10) || 0) * sign;
+    if (!amt){ toast("Enter a non-zero amount.", {kind:"err"}); return; }
+    try {
+      const r = await post(url, {amount: amt, note: v.note || null});
+      toast(`Balance is now ${Number(r.balance).toLocaleString()} credits.`, {title:"Credits updated"});
+      if (after) after();
+    } catch(e){ toast(e.message || "Could not adjust credits.", {title:"Credits", kind:"err"}); }
+  }
+
+  async function openAdminUser(userId){
+    adminModal("User", loading("Loading user…"));
+    try {
+      const u = await get(`/api/admin/users/${userId}`);
+      const orgs = (u.organizations || []).map(o =>
+        `<span class="admin-badge">${esc(o.org_name)} · ${esc(o.role)}</span>`).join(" ")
+        || `<span class="admin-sub">Not in any organization</span>`;
+      const logins = (u.recent_logins || []).map(l =>
+        `<div class="admin-recent-row"><span class="admin-ip">${esc(l.ip || "—")}</span>
+          <span class="admin-sub">${esc(adminDate(l.created_at))}</span>
+          ${l.active ? `<span class="admin-badge ok">active</span>` : ""}</div>`).join("")
+        || `<span class="admin-sub">No logins recorded</span>`;
+      $("#admin-modal-body").innerHTML = `
+        <div class="admin-detail">
+          <div class="admin-detail-head">
+            <div><h3>${esc(u.name || u.email.split("@")[0])}</h3><div class="admin-sub">${esc(u.email)}</div></div>
+            <span class="admin-badge ${u.status === "active" ? "ok" : (u.status === "suspended" ? "err" : "warn")}">${esc(u.status)}</span>
+          </div>
+          <div class="admin-detail-grid">
+            <div><label>Role</label><div>${esc(ROLE_LABEL[u.role] || u.role)}</div></div>
+            <div><label>Email verified</label><div>${u.email_verified ? "Yes" : `No <button class="btn ghost small" id="au-verify">Verify now</button>`}</div></div>
+            <div><label>Joined</label><div>${esc(adminDate(u.created_at))}</div></div>
+            <div><label>Last IP</label><div class="admin-ip">${esc(u.last_ip || "—")}</div></div>
+          </div>
+          <div class="admin-credit-box">
+            <div><span class="admin-stat-val">${Number(u.credits.balance).toLocaleString()}</span>
+              <span class="admin-stat-label">Credits</span>
+              <span class="admin-sub">${Number(u.credits.lifetime_granted).toLocaleString()} granted · ${Number(u.credits.lifetime_spent).toLocaleString()} spent</span></div>
+            <div class="admin-credit-actions">
+              <button class="btn ghost small" id="au-grant"><i class="fas fa-plus"></i>Grant</button>
+              <button class="btn ghost small" id="au-deduct"><i class="fas fa-minus"></i>Deduct</button>
+            </div>
+          </div>
+          <div><label>Organizations</label><div class="admin-chips">${orgs}</div></div>
+          <div><label>Recent logins</label><div class="admin-recent">${logins}</div></div>
+        </div>`;
+      const vbtn = $("#au-verify");
+      if (vbtn) vbtn.onclick = async () => {
+        try { await post(`/api/admin/users/${userId}/verify`, {}); toast("Email verified.", {title:"User"});
+          openAdminUser(userId); loadAdminUsers(); }
+        catch(e){ toast(e.message || "Failed.", {kind:"err"}); }
+      };
+      $("#au-grant").onclick = () => adminAdjustCredits({title:`Grant credits · ${u.email}`, sign:1,
+        url:`/api/admin/users/${userId}/credits`, after:() => openAdminUser(userId)});
+      $("#au-deduct").onclick = () => adminAdjustCredits({title:`Deduct credits · ${u.email}`, sign:-1,
+        url:`/api/admin/users/${userId}/credits`, after:() => openAdminUser(userId)});
+    } catch(e){ $("#admin-modal-body").innerHTML = errorState("Could not load the user.", e.message || ""); }
+  }
+
+  async function openAdminOrg(orgId){
+    adminModal("Organization", loading("Loading organization…"));
+    try {
+      const o = await get(`/api/admin/organizations/${orgId}`);
+      const members = (o.members || []).map(m => `<tr>
+        <td>${esc(m.name || m.email || "—")}<div class="admin-sub">${esc(m.email || "")}</div></td>
+        <td>${m.is_owner ? `<span class="admin-badge accent">Owner</span>`
+          : `<select class="admin-mini-sel" data-org-member-role="${esc(m.user_id)}">${
+              ["recruiter", "manager", "admin"].map(r => `<option value="${r}"${r === m.role ? " selected" : ""}>${r}</option>`).join("")
+            }</select>`}</td>
+        <td class="td-actions">${m.is_owner ? "" : `<button class="btn ghost small danger" data-org-member-remove="${esc(m.user_id)}" title="Remove from org"><i class="fas fa-user-minus"></i></button>`}</td>
+      </tr>`).join("");
+      $("#admin-modal-body").innerHTML = `
+        <div class="admin-detail">
+          <div class="admin-detail-head">
+            <div><h3>${esc(o.org_name)} ${o.is_verified ? `<i class="fas fa-circle-check admin-verified"></i>` : ""}</h3>
+              <div class="admin-sub">${esc(o.org_type || "—")} · ${esc([o.city, o.state_code].filter(Boolean).join(", ") || "—")} · owner ${esc(o.owner_email || "—")}</div></div>
+          </div>
+          <div class="admin-detail-grid">
+            <div><label>Jobs</label><div>${Number(o.jobs).toLocaleString()} <span class="admin-sub">(${Number(o.jobs_active).toLocaleString()} active)</span></div></div>
+            <div><label>Plan</label><div>${esc(o.subscription_tier)}</div></div>
+            <div><label>Verified</label><div><button class="btn ghost small" id="ao-verify">${o.is_verified ? "Un-verify" : "Verify"}</button></div></div>
+            <div><label>Owner credits</label><div>${Number(o.owner_credits).toLocaleString()} <button class="btn ghost small" id="ao-grant"><i class="fas fa-plus"></i>Grant</button></div></div>
+          </div>
+          <div class="admin-members">
+            <div class="admin-members-head"><label>Members</label><button class="btn ghost small" id="ao-add-member"><i class="fas fa-user-plus"></i>Add member</button></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Member</th><th>Org role</th><th></th></tr></thead><tbody>${members}</tbody></table></div>
+          </div>
+        </div>`;
+      $("#ao-verify").onclick = async () => {
+        try { await patch(`/api/admin/organizations/${orgId}`, {is_verified: !o.is_verified});
+          toast("Organization updated.", {title:"Organization"}); openAdminOrg(orgId); loadAdminOrgs(); }
+        catch(e){ toast(e.message || "Failed.", {kind:"err"}); }
+      };
+      $("#ao-grant").onclick = () => adminAdjustCredits({title:`Grant credits · ${o.org_name}`, sign:1,
+        url:`/api/admin/organizations/${orgId}/credits`, after:() => openAdminOrg(orgId)});
+      $("#ao-add-member").onclick = () => adminAddMember(orgId);
+      $$("#admin-modal-body [data-org-member-role]").forEach(s => s.onchange = async () => {
+        try { await patch(`/api/admin/organizations/${orgId}/members/${s.dataset.orgMemberRole}`, {role: s.value});
+          toast("Member role updated.", {title:"Member"}); }
+        catch(e){ toast(e.message || "Failed.", {kind:"err"}); openAdminOrg(orgId); }
+      });
+      $$("#admin-modal-body [data-org-member-remove]").forEach(b => b.onclick = async () => {
+        try { await del(`/api/admin/organizations/${orgId}/members/${b.dataset.orgMemberRemove}`);
+          toast("Member removed.", {title:"Member"}); openAdminOrg(orgId); }
+        catch(e){ toast(e.message || "Failed.", {kind:"err"}); }
+      });
+    } catch(e){ $("#admin-modal-body").innerHTML = errorState("Could not load the organization.", e.message || ""); }
+  }
+
+  async function adminAddMember(orgId){
+    const v = await formDialog({title:"Add member to organization",
+      intro:"The user must already have a HealthBoard account. They'll be promoted to a recruiter account so they can use the workspace.",
+      submit:"Add member",
+      fields:[
+        {name:"email", label:"User email", type:"email", required:true, wide:true, placeholder:"person@agency.com"},
+        {name:"role", label:"Org role", type:"select", value:"recruiter", options:[
+          {value:"recruiter", label:"Member — use the tools"},
+          {value:"manager", label:"Manager — manage members"},
+          {value:"admin", label:"Admin — manage roles & billing"}]},
+      ]});
+    if (!v) return;
+    try { await post(`/api/admin/organizations/${orgId}/members`, {email:v.email.trim(), role:v.role});
+      toast("Member added.", {title:"Organization"}); openAdminOrg(orgId); }
+    catch(e){ toast(e.status === 404 ? "No user with that email." : (e.status === 409 ? "That user is already a member." : (e.message || "Could not add member.")),
+      {title:"Add failed", kind:"err"}); }
+  }
+
+  async function adminNewOrg(){
+    const v = await formDialog({title:"New organization",
+      intro:"Leave owner email blank to own it yourself, or enter an existing user's email to make them the owner.",
+      submit:"Create organization",
+      fields:[
+        {name:"org_name", label:"Organization name", required:true, wide:true, placeholder:"Radixsol Staffing"},
+        {name:"org_type", label:"Type", type:"select", value:"agency", options:[
+          {value:"agency", label:"Staffing agency"}, {value:"hospital", label:"Hospital"},
+          {value:"health_system", label:"Health system"}, {value:"clinic", label:"Clinic"}]},
+        {name:"owner_email", label:"Owner email (optional)", type:"email", wide:true, placeholder:"an existing user's email"},
+      ]});
+    if (!v) return;
+    try {
+      const r = await post("/api/admin/organizations", {org_name:v.org_name.trim(), org_type:v.org_type,
+        owner_email: v.owner_email ? v.owner_email.trim() : null});
+      toast("Organization created.", {title:"Admin"});
+      loadAdminOrgs();
+      openAdminOrg(r.employer_id);
+    } catch(e){ toast(e.status === 404 ? "No user with that owner email." : (e.message || "Could not create the organization."),
+      {title:"Create failed", kind:"err"}); }
   }
 
   function renderPager(sel, data, reload, offsetKey){
@@ -1351,29 +1605,40 @@
     box.innerHTML = loading("Loading your team...");
     try {
       const d = await get(`/api/employers/${S.employer.employer_id}/members`);
+      const perms = d.permissions || {manage_members: d.can_manage, manage_roles: d.can_manage,
+                                      analytics: d.can_manage};
+      S.teamPerms = perms;
       let invites = [];
-      if (d.can_manage){
+      if (perms.manage_members){
         try { invites = (await get(`/api/employers/${S.employer.employer_id}/invites`)).items || []; }
         catch(_){}
       }
+      const roleCell = m => m.is_owner
+        ? `<span class="badge accent">Owner</span>`
+        : perms.manage_roles
+          ? `<select class="tm-role" data-member-role="${esc(m.user_id)}">${
+              ["recruiter","manager","admin"].map(r =>
+                `<option value="${r}"${r === m.member_role ? " selected" : ""}>${ORG_ROLE_LABEL[r]}</option>`).join("")
+            }</select>`
+          : `<span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.member_role] || m.member_role)}</span>`;
       const rows = (d.items || []).map(m => `<tr>
         <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div>
             <div class="cell-sub">${esc(m.email || "")}</div></td>
-        <td>${m.is_owner ? `<span class="badge accent">Owner</span>`
-                         : `<span class="badge">${esc((m.member_role || "member"))}</span>`}</td>
-        <td class="td-actions">${(d.can_manage && !m.is_owner)
+        <td>${roleCell(m)}</td>
+        <td class="td-actions">${(perms.manage_members && !m.is_owner)
           ? `<button class="btn small" data-member-remove="${esc(m.user_id)}" title="Remove from team"><i class="fas fa-user-minus"></i></button>`
           : ""}</td>
       </tr>`).join("");
       const inviteRows = invites.map(i => `<tr>
         <td><div class="cell-name">${esc(i.email)}</div><div class="cell-sub">Invitation pending</div></td>
-        <td><span class="badge">${esc(i.role)}</span></td>
+        <td><span class="badge">${esc(ORG_ROLE_LABEL[i.role] || i.role)}</span></td>
         <td class="td-actions"><button class="btn small" data-invite-revoke="${esc(i.invite_id)}" title="Revoke invitation"><i class="fas fa-xmark"></i></button></td>
       </tr>`).join("");
       box.innerHTML = `<div class="an-section">
-        <div class="team-head"><h2>Team</h2>${d.can_manage
+        <div class="team-head"><h2>Team</h2>${perms.manage_members
           ? `<button class="btn ghost small" id="team-invite"><i class="fas fa-user-plus"></i>Invite teammate</button>` : ""}</div>
-        <p class="team-note">Everyone here shares this organisation's talent pools, submissions and jobs.</p>
+        <p class="team-note">Everyone here shares this organisation's talent pools, submissions and jobs.
+          ${perms.manage_roles ? "Admins manage roles &amp; billing; managers manage members; members use the tools." : ""}</p>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Member</th><th>Role</th><th class="th-actions"></th></tr></thead>
           <tbody>${rows}</tbody></table></div>
@@ -1381,6 +1646,8 @@
           <div class="table-wrap"><table class="table">
             <thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
             <tbody>${inviteRows}</tbody></table></div>` : ""}
+        ${perms.analytics ? `<div class="team-head" style="margin-top:24px"><h2>Team usage</h2></div>
+          <div id="team-usage">${loading("Loading usage…")}</div>` : ""}
         </div>`;
       const inv = $("#team-invite");
       if (inv) inv.onclick = inviteTeammate;
@@ -1388,10 +1655,44 @@
         b.onclick = () => removeTeammate(b.dataset.memberRemove));
       $$("#employer-team [data-invite-revoke]").forEach(b =>
         b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
+      $$("#employer-team [data-member-role]").forEach(s =>
+        s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
+      if (perms.analytics) loadTeamUsage();
+    } catch(e) { box.innerHTML = ""; }
+  }
+  const ORG_ROLE_LABEL = {owner:"Owner", admin:"Admin", manager:"Manager", recruiter:"Member"};
+  async function setMemberRole(userId, role){
+    try {
+      await patch(`/api/employers/${S.employer.employer_id}/members/${userId}`, {member_role: role});
+      toast("Role updated.", {title:"Team"});
+      loadTeam();
+    } catch(e) { toast(e.message || "Could not change the role.", {title:"Role", kind:"err"}); loadTeam(); }
+  }
+  async function loadTeamUsage(){
+    const box = $("#team-usage");
+    if (!box) return;
+    try {
+      const d = await get(`/api/employers/${S.employer.employer_id}/usage`);
+      box.innerHTML = `<div class="table-wrap"><table class="table">
+        <thead><tr><th>Member</th><th>Role</th><th>Credits</th><th>Contacts revealed</th></tr></thead>
+        <tbody>${(d.members || []).map(m => `<tr>
+          <td><div class="cell-name">${esc(m.name || m.email || "—")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
+          <td><span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.role] || m.role)}</span></td>
+          <td>${Number(m.credits).toLocaleString()}</td>
+          <td>${Number(m.reveals).toLocaleString()}</td>
+        </tr>`).join("")}</tbody></table></div>
+        <p class="team-note">${Number(d.totals.credits).toLocaleString()} credits remaining · ${Number(d.totals.reveals).toLocaleString()} contacts revealed across ${d.totals.members} member${d.totals.members === 1 ? "" : "s"}.</p>`;
     } catch(e) { box.innerHTML = ""; }
   }
   async function inviteTeammate(){
     if (!S.employer) return;
+    // Managers can invite plain members; only owners/admins can grant elevated roles.
+    const canElevate = !!(S.teamPerms && S.teamPerms.manage_roles);
+    const roleOptions = canElevate ? [
+      {value:"recruiter", label:"Member — source and submit candidates"},
+      {value:"manager", label:"Manager — also manage members"},
+      {value:"admin", label:"Admin — also manage roles & billing"},
+    ] : [{value:"recruiter", label:"Member — source and submit candidates"}];
     const v = await formDialog({
       title: "Invite a teammate",
       intro: "They'll get an email invitation to join your organisation. They don't "
@@ -1400,10 +1701,7 @@
       fields: [
         {name:"email", label:"Their email", type:"email", required:true, wide:true,
          placeholder:"colleague@youragency.com"},
-        {name:"role", label:"Role", type:"select", value:"recruiter", options:[
-          {value:"recruiter", label:"Recruiter — source and submit candidates"},
-          {value:"admin", label:"Admin — also manage the team"},
-        ]},
+        {name:"role", label:"Role", type:"select", value:"recruiter", options: roleOptions},
       ],
     });
     if (!v) return;
@@ -2716,6 +3014,20 @@
       if (aAct) adminUpdateUser(aAct.dataset.adminActivate, {status:"active"});
       const aTab = e.target.closest(".admin-tab");
       if (aTab) showAdminTab(aTab.dataset.atab);
+      const aUser = e.target.closest("[data-admin-user]");
+      if (aUser) openAdminUser(aUser.dataset.adminUser);
+      const aOrg = e.target.closest("[data-admin-org]");
+      if (aOrg) openAdminOrg(aOrg.dataset.adminOrg);
+      const jFeat = e.target.closest("[data-admin-job-feature]");
+      if (jFeat) adminModerateJob(jFeat.dataset.adminJobFeature, {is_featured:true});
+      const jUnfeat = e.target.closest("[data-admin-job-unfeature]");
+      if (jUnfeat) adminModerateJob(jUnfeat.dataset.adminJobUnfeature, {is_featured:false});
+      const jPause = e.target.closest("[data-admin-job-pause]");
+      if (jPause) adminModerateJob(jPause.dataset.adminJobPause, {status:"paused"});
+      const jAct = e.target.closest("[data-admin-job-activate]");
+      if (jAct) adminModerateJob(jAct.dataset.adminJobActivate, {status:"active"});
+      const jDel = e.target.closest("[data-admin-job-delete]");
+      if (jDel) adminDeleteJob(jDel.dataset.adminJobDelete);
       if (e.target.closest("[data-close-modal]") || e.target.classList.contains("modal")) $("#modal-root").innerHTML = "";
     });
     // Admin: role dropdown change → update the user's role.
@@ -2739,6 +3051,16 @@
       clearTimeout(adminOrgT);
       adminOrgT = setTimeout(() => { ADMIN.oOffset = 0; loadAdminOrgs(); }, 300);
     });
+    const aOrgNew = $("#admin-org-new");
+    if (aOrgNew) aOrgNew.onclick = adminNewOrg;
+    let adminJobT;
+    const ajq = $("#admin-job-q");
+    if (ajq) ajq.addEventListener("input", () => {
+      clearTimeout(adminJobT);
+      adminJobT = setTimeout(() => { ADMIN.jOffset = 0; loadAdminJobs(); }, 300);
+    });
+    const ajs = $("#admin-job-status");
+    if (ajs) ajs.onchange = () => { ADMIN.jOffset = 0; loadAdminJobs(); };
     const poolNew = $("#pool-new");
     if (poolNew) poolNew.onclick = createPool;
     const matchBack = $("#match-back");

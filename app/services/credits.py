@@ -184,6 +184,42 @@ def grant(db: Session, user_id: str, amount: int, *, reason: str = "grant",
     return {"granted": amount, "balance": account.balance}
 
 
+def admin_adjust(db: Session, user_id: str, delta: int, *, note: str | None = None,
+                 by: str | None = None) -> dict:
+    """Admin manual adjustment: grant when delta>0, deduct when delta<0.
+
+    Deductions are floored at a zero balance (you can't drive an account
+    negative), and every movement is written to the ledger with reason
+    'adjustment' so a support query can always be explained. Caller commits.
+    """
+    if delta == 0:
+        return {"adjusted": 0, "balance": balance(db, user_id)}
+    # Create the account at ZERO if it doesn't exist yet, so an admin grant is
+    # exact — the recruiter signup bonus must not silently inflate a manual
+    # adjustment (grant 50 should read 50, not 50 + bonus).
+    account = get_account(db, user_id, create=False)
+    if account is None:
+        account = CreditAccount(user_id=user_id, balance=0)
+        db.add(account)
+        db.flush()
+    if delta > 0:
+        res = grant(db, user_id, delta, reason="adjustment", note=note, granted_by=by)
+        return {"adjusted": delta, "balance": res["balance"]}
+    take = min(-delta, account.balance)          # clamp — never go below zero
+    if take <= 0:
+        return {"adjusted": 0, "balance": account.balance}
+    db.execute(
+        text("UPDATE credit_accounts SET balance = balance - :n, updated_at = :now "
+             "WHERE user_id = :uid AND balance >= :n"),
+        {"n": take, "uid": user_id, "now": utcnow()})
+    db.refresh(account)
+    db.add(CreditTransaction(
+        account_id=account.account_id, user_id=user_id, delta=-take,
+        balance_after=account.balance, reason="adjustment",
+        note=note or (f"Adjusted by {by}" if by else None)))
+    return {"adjusted": -take, "balance": account.balance}
+
+
 def refund(db: Session, user_id: str, amount: int, *, action: str | None = None,
            entity_id: str | None = None, note: str | None = None) -> dict:
     account = get_account(db, user_id)
