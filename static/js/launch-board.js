@@ -1579,7 +1579,7 @@
                  <h2 class="emp-org-name">${esc(d.employer.org_name)}</h2>
                  ${d.employer.is_verified ? `<span class="emp-verified"><i class="fas fa-circle-check"></i>Verified</span>` : ""}
                </div>
-               <button class="btn ghost small" id="org-edit"><i class="fas fa-pen"></i>Edit organization</button>
+               <button class="btn ghost small" id="org-manage"><i class="fas fa-building-user"></i>Manage organization</button>
              </div>
              <div class="emp-kpis">
                ${[["Open orders", d.kpis.jobs], ["Applications", d.kpis.applications],
@@ -1593,75 +1593,12 @@
            <button class="btn primary" id="org-create"><i class="fas fa-plus"></i>Create organization</button></div>`;
       const oc = $("#org-create");
       if (oc) oc.onclick = createOrg;
-      const oe = $("#org-edit");
-      if (oe) oe.onclick = () => editOrg(d.employer);
+      const om = $("#org-manage");
+      if (om) om.onclick = () => showPage("orgadmin");
       renderEmployerJobs(d.jobs || []);
-      loadTeam();
     } catch(e) { $("#employer-panel").innerHTML = errorState("Could not load the employer dashboard"); }
   }
 
-  async function loadTeam(){
-    const box = $("#employer-team");
-    if (!box) return;
-    if (!S.employer || !S.employer.employer_id){ box.innerHTML = ""; return; }
-    box.innerHTML = loading("Loading your team...");
-    try {
-      const d = await get(`/api/employers/${S.employer.employer_id}/members`);
-      const perms = d.permissions || {manage_members: d.can_manage, manage_roles: d.can_manage,
-                                      analytics: d.can_manage};
-      S.teamPerms = perms;
-      let invites = [];
-      if (perms.manage_members){
-        try { invites = (await get(`/api/employers/${S.employer.employer_id}/invites`)).items || []; }
-        catch(_){}
-      }
-      const roleCell = m => m.is_owner
-        ? `<span class="badge accent">Owner</span>`
-        : perms.manage_roles
-          ? `<select class="tm-role" data-member-role="${esc(m.user_id)}">${
-              ["recruiter","manager","admin"].map(r =>
-                `<option value="${r}"${r === m.member_role ? " selected" : ""}>${ORG_ROLE_LABEL[r]}</option>`).join("")
-            }</select>`
-          : `<span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.member_role] || m.member_role)}</span>`;
-      const rows = (d.items || []).map(m => `<tr>
-        <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div>
-            <div class="cell-sub">${esc(m.email || "")}</div></td>
-        <td>${roleCell(m)}</td>
-        <td class="td-actions">${(perms.manage_members && !m.is_owner)
-          ? `<button class="btn small" data-member-remove="${esc(m.user_id)}" title="Remove from team"><i class="fas fa-user-minus"></i></button>`
-          : ""}</td>
-      </tr>`).join("");
-      const inviteRows = invites.map(i => `<tr>
-        <td><div class="cell-name">${esc(i.email)}</div><div class="cell-sub">Invitation pending</div></td>
-        <td><span class="badge">${esc(ORG_ROLE_LABEL[i.role] || i.role)}</span></td>
-        <td class="td-actions"><button class="btn small" data-invite-revoke="${esc(i.invite_id)}" title="Revoke invitation"><i class="fas fa-xmark"></i></button></td>
-      </tr>`).join("");
-      box.innerHTML = `<div class="an-section">
-        <div class="team-head"><h2>Team</h2>${perms.manage_members
-          ? `<button class="btn ghost small" id="team-invite"><i class="fas fa-user-plus"></i>Invite teammate</button>` : ""}</div>
-        <p class="team-note">Everyone here shares this organisation's talent pools, submissions and jobs.
-          ${perms.manage_roles ? "Admins manage roles &amp; billing; managers manage members; members use the tools." : ""}</p>
-        <div class="table-wrap"><table class="table">
-          <thead><tr><th>Member</th><th>Role</th><th class="th-actions"></th></tr></thead>
-          <tbody>${rows}</tbody></table></div>
-        ${invites.length ? `<div class="team-head" style="margin-top:24px"><h2>Pending invitations</h2></div>
-          <div class="table-wrap"><table class="table">
-            <thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
-            <tbody>${inviteRows}</tbody></table></div>` : ""}
-        ${perms.analytics ? `<div class="team-head" style="margin-top:24px"><h2>Team usage</h2></div>
-          <div id="team-usage">${loading("Loading usage…")}</div>` : ""}
-        </div>`;
-      const inv = $("#team-invite");
-      if (inv) inv.onclick = inviteTeammate;
-      $$("#employer-team [data-member-remove]").forEach(b =>
-        b.onclick = () => removeTeammate(b.dataset.memberRemove));
-      $$("#employer-team [data-invite-revoke]").forEach(b =>
-        b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
-      $$("#employer-team [data-member-role]").forEach(s =>
-        s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
-      if (perms.analytics) loadTeamUsage();
-    } catch(e) { box.innerHTML = ""; }
-  }
   const ORG_ROLE_LABEL = {owner:"Owner", admin:"Admin", manager:"Manager", recruiter:"Member"};
   async function setMemberRole(userId, role){
     try {
@@ -1670,27 +1607,9 @@
       afterTeamChange();
     } catch(e) { toast(e.message || "Could not change the role.", {title:"Role", kind:"err"}); afterTeamChange(); }
   }
-  async function loadTeamUsage(){
-    const box = $("#team-usage");
-    if (!box) return;
-    try {
-      const d = await get(`/api/employers/${S.employer.employer_id}/usage`);
-      box.innerHTML = `<div class="table-wrap"><table class="table">
-        <thead><tr><th>Member</th><th>Role</th><th>Credits</th><th>Contacts revealed</th></tr></thead>
-        <tbody>${(d.members || []).map(m => `<tr>
-          <td><div class="cell-name">${esc(m.name || m.email || "—")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
-          <td><span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.role] || m.role)}</span></td>
-          <td>${Number(m.credits).toLocaleString()}</td>
-          <td>${Number(m.reveals).toLocaleString()}</td>
-        </tr>`).join("")}</tbody></table></div>
-        <p class="team-note">${Number(d.totals.credits).toLocaleString()} credits remaining · ${Number(d.totals.reveals).toLocaleString()} contacts revealed across ${d.totals.members} member${d.totals.members === 1 ? "" : "s"}.</p>`;
-    } catch(e) { box.innerHTML = ""; }
-  }
-  // Refresh whichever team surface is visible after a membership change.
+  // Team management lives on the Organization page; refresh it after any change.
   function afterTeamChange(){
-    const oa = $("#page-orgadmin");
-    if (oa && oa.classList.contains("active")) loadOrgAdmin();
-    if ($("#employer-team") && S.employer) loadTeam();
+    if (S.employer) loadOrgAdmin();
   }
 
   // Dedicated organization-admin page: org info, members & roles, usage/billing —
