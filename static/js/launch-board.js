@@ -282,7 +282,7 @@
   // ---- Admin console (platform super-admin) --------------------------------
   const ADMIN = { tab: "overview", uOffset: 0, uLimit: 25, oOffset: 0, oLimit: 25,
                   lOffset: 0, lLimit: 50, jOffset: 0, jLimit: 25, auOffset: 0, auLimit: 50 };
-  const ADMIN_COLS = 8, ADMIN_ORG_COLS = 8, ADMIN_LOGIN_COLS = 5, ADMIN_JOB_COLS = 7, ADMIN_AUDIT_COLS = 5;
+  const ADMIN_COLS = 8, ADMIN_ORG_COLS = 9, ADMIN_LOGIN_COLS = 5, ADMIN_JOB_COLS = 7, ADMIN_AUDIT_COLS = 5;
   const ROLE_LABEL = {job_seeker:"Job seeker", recruiter:"Recruiter", employer:"Employer", admin:"Admin"};
   const STATUS_LABEL = {active:"Active", suspended:"Suspended", pending_verify:"Pending", deleted:"Deleted"};
   const adminDate = iso => iso ? new Date(iso).toLocaleDateString([], {year:"numeric", month:"short", day:"numeric"}) : "—";
@@ -462,6 +462,7 @@
           <td>${esc(o.org_type || "—")}</td>
           <td>${esc(loc)}</td>
           <td class="admin-sub">${esc(o.owner_email || "—")}</td>
+          <td><b>${Number(o.credits || 0).toLocaleString()}</b></td>
           <td>${Number(o.members).toLocaleString()}</td>
           <td>${Number(o.jobs).toLocaleString()} <span class="admin-sub">(${Number(o.jobs_active).toLocaleString()} active)</span></td>
           <td>${adminDate(o.created_at)}</td>

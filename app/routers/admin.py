@@ -395,9 +395,14 @@ def list_organizations(
         .where(JobPosting.employer_id.in_(ids), JobPosting.status == JobStatus.active)
         .group_by(JobPosting.employer_id)
     ).all()) if ids else {}
+    owner_ids = [o.owner_user_id for o in orgs]
     owner_emails = dict(db.execute(
-        select(User.user_id, User.email)
-        .where(User.user_id.in_([o.owner_user_id for o in orgs]))
+        select(User.user_id, User.email).where(User.user_id.in_(owner_ids))
+    ).all()) if orgs else {}
+    # An org's credit balance is its owner's seat — where org credits are applied.
+    owner_credits = dict(db.execute(
+        select(CreditAccount.user_id, CreditAccount.balance)
+        .where(CreditAccount.user_id.in_(owner_ids))
     ).all()) if orgs else {}
 
     rows = [{
@@ -408,6 +413,7 @@ def list_organizations(
         "state_code": o.state_code,
         "is_verified": o.is_verified,
         "owner_email": owner_emails.get(o.owner_user_id),
+        "credits": owner_credits.get(o.owner_user_id) or 0,
         "members": (members.get(o.employer_id) or 0) + 1,   # +1 for the owner
         "jobs": jobs.get(o.employer_id) or 0,
         "jobs_active": active_jobs.get(o.employer_id) or 0,
