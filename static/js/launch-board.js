@@ -244,7 +244,7 @@
     if (id === "community") id = "dashboard";
     if ((id === "providers" || id === "ai" || id === "extension" || id === "pools"
          || id === "matching" || id === "outreach" || id === "credits" || id === "submissions"
-         || id === "applicants" || id === "calculator" || id === "clients"
+         || id === "applicants" || id === "calculator" || id === "clients" || id === "orgadmin"
          || id === "placements") && !isRecruiter()) id = "dashboard";
     // Seeker-only pages: a staffing agency sources candidates, it doesn't find
     // jobs, apply, or keep a résumé.
@@ -267,6 +267,7 @@
     if (id === "messages") loadMessages();
     if (id === "pools") loadPools();
     if (id === "employer") loadEmployer();
+    if (id === "orgadmin") loadOrgAdmin();
     if (id === "analytics") loadAnalytics();
     if (id === "calculator") loadPayCalculator();
     if (id === "outreach") loadOutreach();
@@ -1666,8 +1667,8 @@
     try {
       await patch(`/api/employers/${S.employer.employer_id}/members/${userId}`, {member_role: role});
       toast("Role updated.", {title:"Team"});
-      loadTeam();
-    } catch(e) { toast(e.message || "Could not change the role.", {title:"Role", kind:"err"}); loadTeam(); }
+      afterTeamChange();
+    } catch(e) { toast(e.message || "Could not change the role.", {title:"Role", kind:"err"}); afterTeamChange(); }
   }
   async function loadTeamUsage(){
     const box = $("#team-usage");
@@ -1685,6 +1686,122 @@
         <p class="team-note">${Number(d.totals.credits).toLocaleString()} credits remaining · ${Number(d.totals.reveals).toLocaleString()} contacts revealed across ${d.totals.members} member${d.totals.members === 1 ? "" : "s"}.</p>`;
     } catch(e) { box.innerHTML = ""; }
   }
+  // Refresh whichever team surface is visible after a membership change.
+  function afterTeamChange(){
+    const oa = $("#page-orgadmin");
+    if (oa && oa.classList.contains("active")) loadOrgAdmin();
+    if ($("#employer-team") && S.employer) loadTeam();
+  }
+
+  // Dedicated organization-admin page: org info, members & roles, usage/billing —
+  // all scoped to the user's own organization and gated by their org role.
+  async function loadOrgAdmin(){
+    const box = $("#orgadmin-panel");
+    if (!box) return;
+    box.innerHTML = loading("Loading your organization…");
+    try {
+      let kpis = {};
+      try {
+        const dash = await get("/api/employers/me/dashboard");
+        S.employer = dash.employer || S.employer;
+        kpis = dash.kpis || {};
+      } catch(_){}
+      const emp = S.employer;
+      if (!emp || !emp.employer_id){
+        $("#orgadmin-sub").textContent = "";
+        box.innerHTML = `<div class="match-empty"><i class="fas fa-building"></i><h3>No organization yet</h3>
+          <p>Create one from Job Orders to manage members, roles and usage.</p>
+          <button class="btn primary" data-page="employer"><i class="fas fa-arrow-right"></i>Go to Job Orders</button></div>`;
+        return;
+      }
+      const mem = await get(`/api/employers/${emp.employer_id}/members`);
+      const perms = mem.permissions || {manage_members:false, manage_roles:false, analytics:false, settings:false};
+      S.teamPerms = perms;
+      const myRole = mem.my_role || "recruiter";
+      let invites = [];
+      if (perms.manage_members){
+        try { invites = (await get(`/api/employers/${emp.employer_id}/invites`)).items || []; } catch(_){}
+      }
+      let usage = null;
+      if (perms.analytics){
+        try { usage = await get(`/api/employers/${emp.employer_id}/usage`); } catch(_){}
+      }
+      $("#orgadmin-sub").textContent = emp.org_name;
+
+      const kpiCards = [["Members", (mem.items || []).length],
+                        ["Open jobs", kpis.jobs || 0],
+                        ["Applications", kpis.applications || 0]];
+      if (usage) kpiCards.push(["Team credits", usage.totals.credits],
+                               ["Contacts revealed", usage.totals.reveals]);
+
+      const roleCell = m => m.is_owner
+        ? `<span class="badge accent">Owner</span>`
+        : perms.manage_roles
+          ? `<select class="tm-role" data-member-role="${esc(m.user_id)}">${
+              ["recruiter","manager","admin"].map(r =>
+                `<option value="${r}"${r === m.member_role ? " selected" : ""}>${ORG_ROLE_LABEL[r]}</option>`).join("")
+            }</select>`
+          : `<span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.member_role] || m.member_role)}</span>`;
+      const memberRows = (mem.items || []).map(m => `<tr>
+        <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
+        <td>${roleCell(m)}</td>
+        <td class="td-actions">${(perms.manage_members && !m.is_owner)
+          ? `<button class="btn small" data-member-remove="${esc(m.user_id)}" title="Remove from organization"><i class="fas fa-user-minus"></i></button>` : ""}</td>
+      </tr>`).join("");
+      const inviteRows = invites.map(i => `<tr>
+        <td><div class="cell-name">${esc(i.email)}</div><div class="cell-sub">Invitation pending</div></td>
+        <td><span class="badge">${esc(ORG_ROLE_LABEL[i.role] || i.role)}</span></td>
+        <td class="td-actions"><button class="btn small" data-invite-revoke="${esc(i.invite_id)}" title="Revoke"><i class="fas fa-xmark"></i></button></td>
+      </tr>`).join("");
+
+      box.innerHTML = `
+        <div class="oa-head">
+          <div class="oa-org">
+            <span class="oa-label">Organization</span>
+            <h2>${esc(emp.org_name)} ${emp.is_verified ? `<span class="emp-verified"><i class="fas fa-circle-check"></i>Verified</span>` : ""}</h2>
+            <div class="oa-meta">${esc([emp.org_type, [emp.city, emp.state_code].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "—")}</div>
+          </div>
+          <div class="oa-roleplate">
+            <span class="oa-label">Your access</span>
+            <div><span class="badge accent">${esc(ORG_ROLE_LABEL[myRole] || myRole)}</span>
+              ${perms.settings ? `<button class="btn ghost small" id="oa-edit"><i class="fas fa-pen"></i>Edit organization</button>` : ""}</div>
+          </div>
+        </div>
+        <div class="emp-kpis" style="margin:16px 0 4px">${kpiCards.map(([l, n]) =>
+          `<div class="emp-kpi"><b>${Number(n || 0).toLocaleString()}</b><span>${esc(l)}</span></div>`).join("")}</div>
+
+        <div class="an-section" style="margin-top:22px">
+          <div class="team-head"><h2>Members &amp; roles</h2>${perms.manage_members
+            ? `<button class="btn ghost small" id="oa-invite"><i class="fas fa-user-plus"></i>Invite teammate</button>` : ""}</div>
+          <p class="team-note">${perms.manage_roles
+            ? "Admins manage roles &amp; billing; managers manage members; members use the tools."
+            : "The people in your organization. Talent pools, submissions and jobs are shared across the team."}</p>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Member</th><th>Role</th><th class="th-actions"></th></tr></thead>
+            <tbody>${memberRows}</tbody></table></div>
+          ${invites.length ? `<div class="team-head" style="margin-top:20px"><h2>Pending invitations</h2></div>
+            <div class="table-wrap"><table class="table"><thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
+            <tbody>${inviteRows}</tbody></table></div>` : ""}
+        </div>
+
+        ${usage ? `<div class="an-section" style="margin-top:22px"><h2>Usage &amp; billing</h2>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Member</th><th>Role</th><th>Credits left</th><th>Contacts revealed</th></tr></thead>
+            <tbody>${usage.members.map(m => `<tr>
+              <td><div class="cell-name">${esc(m.name || m.email || "—")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
+              <td><span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.role] || m.role)}</span></td>
+              <td><b>${Number(m.credits).toLocaleString()}</b></td>
+              <td>${Number(m.reveals).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
+          <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your HealthBoard administrator.</p></div>` : ""}
+      `;
+      const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
+      const iv = $("#oa-invite"); if (iv) iv.onclick = inviteTeammate;
+      $$("#orgadmin-panel [data-member-remove]").forEach(b => b.onclick = () => removeTeammate(b.dataset.memberRemove));
+      $$("#orgadmin-panel [data-invite-revoke]").forEach(b => b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
+      $$("#orgadmin-panel [data-member-role]").forEach(s => s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
+    } catch(e) { box.innerHTML = errorState("Could not load your organization.", e.message || ""); }
+  }
+
   async function inviteTeammate(){
     if (!S.employer) return;
     // Managers can invite plain members; only owners/admins can grant elevated roles.
@@ -1710,7 +1827,7 @@
       await post(`/api/employers/${S.employer.employer_id}/invites`,
                  {email: v.email.trim(), role: v.role || "recruiter"});
       toast(`Invitation sent to ${v.email.trim()}.`, {title:"Teammate invited"});
-      loadTeam();
+      afterTeamChange();
     } catch(e) {
       toast(e.status === 409 ? "They're already on your team."
           : (e.message || "Could not send the invitation."),
@@ -1718,7 +1835,7 @@
     }
   }
   async function revokeInvite(inviteId){
-    try { await del(`/api/employers/${S.employer.employer_id}/invites/${inviteId}`); loadTeam(); }
+    try { await del(`/api/employers/${S.employer.employer_id}/invites/${inviteId}`); afterTeamChange(); }
     catch(e){ toast(e.message || "That did not work.", {kind:"err"}); }
   }
   async function removeTeammate(userId){
@@ -1727,7 +1844,7 @@
       body: "They lose access to this organisation's shared pools, submissions and "
           + "jobs. Their own account is not affected.",
       confirm: "Remove", danger: true})) return;
-    try { await del(`/api/employers/${S.employer.employer_id}/members/${userId}`); loadTeam(); }
+    try { await del(`/api/employers/${S.employer.employer_id}/members/${userId}`); afterTeamChange(); }
     catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
   }
   function jobStatusPill(status){
@@ -1881,6 +1998,8 @@
       });
       toast("Your organization is updated.", {title:"Saved"});
       loadEmployer();
+      const oa = $("#page-orgadmin");
+      if (oa && oa.classList.contains("active")) loadOrgAdmin();
     } catch(e) { toast(e.message, {title:"Could not save", kind:"err"}); }
   }
   const JOB_TYPE_OPTIONS = [["travel","Travel"],["staff","Staff"],["per_diem","Per diem"],["contract","Contract"]];

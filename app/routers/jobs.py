@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import Integer, and_, delete, func, select
+from sqlalchemy import Integer, and_, delete, func, or_, select
 
 from ..config import settings
 from ..deps import CurrentUser, DbSession
@@ -441,8 +441,10 @@ _JOB_COPILOT_INSTR = (
     "'peds'->'pediatric'; 'er'/'ed'->'emergency'. null if none.\n"
     "- profession_type: 'Nursing','Physician','Allied','APP', or 'Others' when clearly "
     "implied ('nurse'/'RN'->'Nursing'), else null.\n"
-    "- job_type: one of 'travel','staff','per_diem','contract' when stated "
-    "('permanent'/'full-time'->'staff'; 'prn'/'per diem'->'per_diem'), else null.\n"
+    "- job_type: one of 'travel','staff','per_diem','contract' ONLY when the "
+    "arrangement is explicitly named ('permanent'/'full-time'->'staff'; "
+    "'prn'/'per diem'->'per_diem'). Do NOT infer it from pay phrasing like "
+    "'per week' or 'weekly' — that describes pay, not job type. null if unstated.\n"
     "- state_code: 2-letter US state code the job is in ('in Texas'->'TX'). null if none.\n"
     "- city: the city name only, no state ('near Dallas'->'Dallas'). null if none.\n"
     "- pay_min: minimum pay as a plain number when a floor is given ('over $2500/week',"
@@ -453,6 +455,20 @@ _JOB_COPILOT_INSTR = (
     "qualifiers). Lowercase, space-separated. null if none.\n"
     "IGNORE words like 'find','show me','jobs','roles','looking for','I want'."
 )
+
+
+# The LLM classifies a query's profession into a broad category; the imported
+# job feed stores specific profession titles. Map category -> the title
+# fragments that belong to it, so a "nursing" search actually hits RN/LPN jobs.
+_PROFESSION_MATCH = {
+    "nursing": ["RN", "LPN", "LVN", "Nurse"],
+    "nurse": ["RN", "LPN", "LVN", "Nurse"],
+    "physician": ["Physician", "MD", "DO"],
+    "app": ["Nurse Practitioner", "CRNA", "Physician Assistant", "Anesthetist"],
+    "allied": ["Physical Therapy", "Occupational Therapy", "Speech", "Radiology",
+               "Imaging", "Respiratory", "Pharmacy", "Lab", "Medical Assistant",
+               "Sonographer", "Tech", "Dietary", "Social"],
+}
 
 
 class JobCopilotQuery(BaseModel):
@@ -639,12 +655,27 @@ def job_copilot(body: JobCopilotQuery, user: CurrentUser, db: DbSession):
         stmt = stmt.where(JobPosting.state_code == filters["state_code"])
     if filters.get("city"):
         stmt = stmt.where(JobPosting.city.ilike(f"%{filters['city']}%"))
+    # Profession: the LLM emits a broad category ("Nursing"), but the feed uses
+    # specific titles ("RN", "LPN/LVN", "Physician"…). Map the category to those
+    # so it narrows correctly instead of matching nothing. Unknown categories are
+    # ignored (better a broad result than zero), and NULL professions are kept.
+    prof_pats = _PROFESSION_MATCH.get(str(filters.get("profession_type") or "").lower())
+    if prof_pats:
+        stmt = stmt.where(or_(
+            JobPosting.profession_type.is_(None),
+            *[JobPosting.profession_type.ilike(f"%{p}%") for p in prof_pats]))
+    # Pay and shift are SOFT preferences: most of the feed lists no pay and some
+    # no shift, so a seeker who mentions either must not be shown zero jobs. Only
+    # exclude a job that EXPLICITLY falls short; a job with no value still shows.
     if filters.get("pay_min"):
-        stmt = stmt.where(JobPosting.pay_rate_max >= filters["pay_min"])
+        stmt = stmt.where(or_(JobPosting.pay_rate_max.is_(None),
+                              JobPosting.pay_rate_max >= filters["pay_min"]))
     if filters.get("job_type"):
         stmt = stmt.where(JobPosting.job_type == JobType(filters["job_type"]))
     if filters.get("shift_type"):
-        stmt = stmt.where(JobPosting.shift_type.ilike(f"%{str(filters['shift_type']).rstrip('s')}%"))
+        sh = str(filters["shift_type"]).rstrip("s")
+        stmt = stmt.where(or_(JobPosting.shift_type.is_(None),
+                              JobPosting.shift_type.ilike(f"%{sh}%")))
     if filters.get("is_urgent"):
         stmt = stmt.where(JobPosting.is_urgent.is_(True))
 
