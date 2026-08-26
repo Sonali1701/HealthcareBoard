@@ -1287,3 +1287,76 @@ tr.is-selected{background:var(--accent-soft)}
   .auth-stats{gap:22px}
   .auth-panel{width:430px;flex:0 0 430px;padding:40px 34px}
 }
+
+/* --- Admin console ------------------------------------------------------ */
+.admin-tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.admin-tab{border:0;background:transparent;padding:10px 16px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px}
+.admin-tab i{font-size:13px}
+.admin-tab:hover{color:var(--ink)}
+.admin-tab.active{color:var(--accent-strong);border-bottom-color:var(--accent)}
+.admin-panel{display:none}
+.admin-panel.active{display:block}
+
+.admin-stat-group{margin-bottom:26px}
+.admin-stat-group h3{margin:0 0 12px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.admin-stat-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
+.admin-stat{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);padding:18px 20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:3px}
+.admin-stat-val{font-size:28px;font-weight:600;color:var(--ink);letter-spacing:-.02em;line-height:1.15}
+.admin-stat-label{font-size:13px;font-weight:500;color:var(--muted)}
+.admin-stat-sub{font-size:12px;color:var(--faint)}
+
+.admin-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.admin-search{flex:1 1 260px;min-width:200px;display:flex;align-items:center;gap:8px;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:0 12px;min-height:40px;box-shadow:var(--shadow);color:var(--dim)}
+.admin-search input{border:0;background:transparent;outline:0;width:100%;color:var(--ink);font-size:14px}
+.admin-toolbar .input{flex:0 0 auto;min-width:150px}
+
+.admin-table-wrap{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow);overflow-x:auto}
+.admin-table{width:100%;border-collapse:collapse;font-size:14px}
+.admin-table thead th{background:var(--soft);border-bottom:1px solid var(--line);padding:11px 16px;text-align:left;font-size:12px;font-weight:600;color:var(--faint);white-space:nowrap}
+.admin-table tbody td{border-bottom:1px solid var(--line);padding:12px 16px;color:var(--muted);vertical-align:middle}
+.admin-table tbody tr:last-child td{border-bottom:0}
+.admin-table tbody tr:hover{background:var(--soft)}
+.admin-user-cell{color:var(--ink)}
+.admin-user-cell b{display:block;font-weight:600;color:var(--ink)}
+.admin-sub{display:block;font-size:12px;color:var(--faint);font-weight:400}
+.admin-ip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--faint)}
+.admin-flag{color:var(--amber)}
+.admin-verified{color:var(--accent)}
+.admin-you{font-size:12px;color:var(--dim);font-weight:500}
+.admin-mini-sel{border:1px solid var(--line);border-radius:6px;background:var(--white);padding:5px 8px;font-size:13px;color:var(--ink);outline:0;cursor:pointer}
+.admin-mini-sel:hover{border-color:var(--line-2)}
+.admin-badge{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;border:1px solid var(--line);background:var(--white);color:var(--muted);white-space:nowrap}
+.admin-badge.ok{background:#e9f9ef;border-color:#bfe8cd;color:#127a3e}
+.admin-badge.err{background:#fdeaef;border-color:#f5c2ce;color:var(--rose)}
+.admin-badge.warn{background:#fdf3e5;border-color:#f3ddb8;color:var(--amber)}
+.btn.ghost.small.danger{color:var(--rose);border-color:#f0cdd6}
+.btn.ghost.small.danger:hover{background:#fdeaef;border-color:#e79fb0}
+
+.admin-pager{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-top:14px}
+.admin-pager-info{font-size:13px;color:var(--faint);margin-right:auto}
+.admin-pager .btn[disabled]{opacity:.45;cursor:default;pointer-events:none}
+
+/* --- Job AI: seeker result cards ---------------------------------------- */
+.jai-results{display:flex;flex-direction:column;gap:10px}
+.jai-job{display:flex;align-items:center;gap:14px;background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow)}
+.jai-job-main{flex:1;min-width:0}
+.jai-job-title{font-weight:600;color:var(--ink);font-size:15px}
+.jai-job-meta{font-size:13px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jai-job-pay{font-weight:700;color:var(--accent-strong);font-size:15px;white-space:nowrap;flex:0 0 auto}
+.jai-job .btn{flex:0 0 auto}
+
+/* --- Outreach: starter templates ---------------------------------------- */
+.starter-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.starter-card{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:6px}
+.starter-name{font-weight:600;color:var(--ink);font-size:14px}
+.starter-desc{font-size:12.5px;color:var(--muted);line-height:1.45}
+.starter-subj{font-size:12px;color:var(--faint);display:flex;align-items:center;gap:6px;background:var(--soft);border-radius:6px;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.starter-subj i{color:var(--dim);flex:0 0 auto}
+.starter-card .btn{align-self:flex-start;margin-top:2px}
+
+/* --- Job Orders: bulk toolbar ------------------------------------------- */
+.emp-jobs-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.emp-jobs-head h2{margin:0}
+.emp-jobs-tools{display:flex;gap:8px;flex-wrap:wrap}
+.btn.small.danger{color:var(--rose);border-color:#f0cdd6;background:#fff1f4}
+.btn.small.danger:hover{background:var(--rose);border-color:var(--rose);color:#fff}

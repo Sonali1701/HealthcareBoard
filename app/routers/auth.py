@@ -10,9 +10,10 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 
 from ..config import settings
-from ..database import utcnow
+from ..database import new_uuid, utcnow
 from ..deps import CurrentUser, DbSession
 from ..ratelimit import auth_rate_limit
+from ..services.session_control import activate_session
 from ..models import (
     EmailVerificationToken,
     PasswordResetToken,
@@ -53,18 +54,36 @@ from ..security import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def client_ip(request: Request | None) -> str | None:
+    """The visitor's real IP. Behind Render's proxy, request.client.host is the
+    load balancer, so prefer the left-most hop of X-Forwarded-For (the original
+    client) when present."""
+    if not request:
+        return None
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()[:64]
+    return request.client.host if request.client else None
+
+
 def _issue_tokens(db: DbSession, user: User, request: Request | None = None) -> TokenPair:
-    access = create_access_token(user.user_id, user.role.value)
+    # Generate the session id up front so it can be stamped into the access token
+    # as its `sid` claim — that claim is what single-session enforcement checks.
+    session_id = new_uuid()
+    access = create_access_token(user.user_id, user.role.value, session_id=session_id)
     refresh = create_refresh_token(user.user_id)
     session = Session(
+        session_id=session_id,
         user_id=user.user_id,
         refresh_token_hash=sha256(refresh),
         device_info={"user_agent": request.headers.get("user-agent")} if request else {},
-        ip_address=request.client.host if request and request.client else None,
+        ip_address=client_ip(request),
         expires_at=utcnow() + timedelta(days=settings.refresh_token_expire_days),
     )
     db.add(session)
     user.last_login_at = utcnow()
+    # Claim the active-session slot and (when enforced) evict the other devices.
+    activate_session(db, user, session_id)
     db.commit()
     return TokenPair(
         access_token=access,
@@ -163,6 +182,19 @@ def refresh_token(body: RefreshRequest, db: DbSession, request: Request):
     user = db.get(User, payload["sub"])
     if not user or user.deleted_at is not None:
         raise HTTPException(status_code=401, detail="User not found")
+
+    # Single active session: only the account's current active session may rotate
+    # forward. This closes a race where two near-simultaneous logins could each
+    # leave the other's refresh row un-revoked — the active-session pointer is the
+    # single source of truth, so a superseded refresh token is rejected here too.
+    if (settings.enforces_single_session(user.role.value)
+            and user.active_session_id
+            and session.session_id != user.active_session_id):
+        raise HTTPException(
+            status_code=401,
+            detail="This account was signed in on another device.",
+            headers={"X-Session-Superseded": "1"},
+        )
 
     # Rotate: revoke the old session, issue a fresh pair.
     session.revoked_at = utcnow()

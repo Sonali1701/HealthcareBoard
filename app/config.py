@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
 
+    # --- Single active session (anti account-sharing) ---
+    # When on, logging in on a new device signs the account out everywhere else,
+    # so one paid seat can't be used by several people at once. Scoped to the
+    # paid/agency roles by default; set to "*" to enforce for every account, or a
+    # comma-separated list of roles (e.g. "recruiter,employer,admin").
+    single_session_enabled: bool = True
+    single_session_roles: str = "recruiter,employer"
+
     # --- CORS ---
     # Comma-separated origins, or "*" for all (dev default).
     cors_origins: str = "*"
@@ -184,6 +192,13 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """True for production-like environments (robust to 'prod'/'release')."""
         return self.environment.strip().lower() in {"production", "prod", "release"}
+
+    def enforces_single_session(self, role_value: str) -> bool:
+        """Whether single-active-session is enforced for a user of this role."""
+        if not self.single_session_enabled:
+            return False
+        roles = {r.strip() for r in self.single_session_roles.split(",") if r.strip()}
+        return "*" in roles or role_value in roles
 
     @model_validator(mode="after")
     def _guard_production(self):

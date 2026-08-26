@@ -13,6 +13,7 @@ from .database import get_db
 from .models import User, UserStatus
 from .models.enums import UserRole
 from .security import ACCESS_TOKEN, decode_token
+from .services.session_control import session_ok
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -45,6 +46,16 @@ def get_current_user(
         raise credentials_exc
     if user.status == UserStatus.suspended:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
+    # Single active session: reject a token whose login was superseded by a newer
+    # one on another device. The user is already loaded, so this costs no extra
+    # query. The header lets the client show a specific "signed in elsewhere"
+    # message rather than a generic auth error.
+    if not session_ok(user, payload.get("sid")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account was signed in on another device.",
+            headers={"WWW-Authenticate": "Bearer", "X-Session-Superseded": "1"},
+        )
     return user
 
 
@@ -72,7 +83,15 @@ def get_ingest_user(
     x_capture_token: Annotated[Optional[str], Header()] = None,
 ) -> User:
     """Authenticate a capture request by a normal Bearer JWT OR the extension's
-    long-lived X-Capture-Token header."""
+    long-lived X-Capture-Token header.
+
+    Single-active-session (the sid check in get_current_user) deliberately does
+    NOT apply to the X-Capture-Token path: it is a per-user API key for the
+    browser extension, scoped to the two write-only /api/ingest/* endpoints
+    (candidate/résumé capture) — it grants no read access to the paid directory,
+    reveals, or messaging. Rotating it on every login would break the owner's own
+    extension, so it stays exempt; treat it like an API key, not a login session.
+    """
     if token:
         return get_current_user(db=db, token=token)
     if x_capture_token:
@@ -101,3 +120,7 @@ def require_roles(*roles: UserRole):
         return user
 
     return checker
+
+
+# Platform super-admin: the owner of the job board. Gates the admin console.
+AdminUser = Annotated[User, Depends(require_roles(UserRole.admin))]

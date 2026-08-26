@@ -1,11 +1,16 @@
 """Job posting search/CRUD + applications + saved jobs."""
 from __future__ import annotations
 
+import io
+import re
+from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import Integer, and_, func, select
+from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile, status
+from pydantic import BaseModel
+from sqlalchemy import Integer, and_, delete, func, select
 
+from ..config import settings
 from ..deps import CurrentUser, DbSession
 from ..models import (
     Application,
@@ -15,11 +20,12 @@ from ..models import (
     JobPosting,
     JobStatus,
     Notification,
+    Offer,
     Profile,
     SavedJob,
     User,
 )
-from ..models.enums import ApplicationStatus, NotificationType
+from ..models.enums import ApplicationStatus, JobType, NotificationType
 from ..services.email import send_new_application
 from ..schemas.common import Message, Page
 from ..schemas.job import (
@@ -170,6 +176,481 @@ def create_job(employer_id: str, body: JobCreate, user: CurrentUser, db: DbSessi
     db.commit()
     db.refresh(job)
     return job
+
+
+# --- Bulk upload / delete-all (Job Orders) --------------------------------
+# Columns the Excel/CSV importer understands (header row, case-insensitive,
+# spaces or underscores). Only `title` is required; everything else is optional.
+_BULK_COLUMNS = (
+    "title", "specialty", "profession_type", "job_type", "shift_type",
+    "pay_rate_min", "pay_rate_max", "pay_unit", "housing_stipend",
+    "signing_bonus", "city", "state_code", "years_exp_min", "is_urgent",
+    "start_date", "description",
+)
+_BULK_FLOATS = {"pay_rate_min", "pay_rate_max", "housing_stipend", "signing_bonus"}
+_BULK_MAX_ROWS = 1000
+
+_STATE_CODES = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+    "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+    "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+    "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
+    "wisconsin": "WI", "wyoming": "WY", "district of columbia": "DC",
+    "washington dc": "DC", "d.c.": "DC",
+}
+
+
+def _norm_state(value) -> Optional[str]:
+    """Normalise a state cell to a 2-letter code: accepts 'TX', 'texas', 'Texas'."""
+    s = str(value).strip()
+    if not s:
+        return None
+    if len(s) == 2 and s.isalpha():
+        return s.upper()
+    return _STATE_CODES.get(s.lower())  # None if unrecognised full name
+
+
+def _require_employer_manager(db: DbSession, employer_id: str, user: CurrentUser) -> Employer:
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(status_code=404, detail="Employer not found")
+    if employer.owner_user_id != user.user_id and user.role.value != "admin":
+        member = db.scalar(select(EmployerMember).where(
+            EmployerMember.employer_id == employer_id,
+            EmployerMember.user_id == user.user_id))
+        if not member:
+            raise HTTPException(status_code=403, detail="Cannot manage this employer")
+    return employer
+
+
+def _parse_upload(data: bytes, filename: str) -> list[tuple[int, dict]]:
+    """Read an .xlsx or .csv into ``(spreadsheet_row_number, {column: value})``
+    tuples keyed by the header row. Unknown columns and empty cells are dropped;
+    fully-blank rows are skipped but the real row numbers are preserved so error
+    messages point at the right line in the user's file."""
+    name = (filename or "").lower()
+    rows: list[list] = []
+    if name.endswith(".csv"):
+        import csv
+        text = data.decode("utf-8-sig", "replace")
+        rows = [r for r in csv.reader(text.splitlines())]
+    else:  # treat everything else as an Excel workbook
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        ws = wb.active
+        for r in ws.iter_rows(values_only=True):
+            rows.append(list(r))
+    if not rows:
+        return []
+    headers = [str(h or "").strip().lower().replace(" ", "_") for h in rows[0]]
+    out = []
+    for n, raw in enumerate(rows[1:], start=2):  # start=2 → row 1 is the header
+        row = {}
+        for h, v in zip(headers, raw):
+            if h in _BULK_COLUMNS and v not in (None, ""):
+                row[h] = v
+        if row:
+            out.append((n, row))
+    return out
+
+
+def _row_to_job(row: dict) -> tuple[Optional[dict], Optional[str]]:
+    """Validate one parsed row into JobPosting kwargs, or (None, error)."""
+    title = str(row.get("title") or "").strip()
+    if not title:
+        return None, None  # blank row → silently skipped, not an error
+    job: dict = {"title": title[:300]}
+
+    for col in ("specialty", "profession_type", "shift_type", "pay_unit",
+                "city", "description"):
+        if row.get(col) not in (None, ""):
+            job[col] = str(row[col]).strip()
+    if row.get("state_code") not in (None, ""):
+        code = _norm_state(row["state_code"])
+        if code is None:
+            return None, f"state_code '{row['state_code']}' isn't a US state or 2-letter code"
+        job["state_code"] = code
+
+    jt = str(row.get("job_type") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if jt:
+        valid = {t.value for t in JobType}
+        if jt not in valid:
+            return None, f"job_type '{row['job_type']}' must be one of {', '.join(sorted(valid))}"
+        job["job_type"] = JobType(jt)
+
+    for col in _BULK_FLOATS:
+        if row.get(col) not in (None, ""):
+            try:
+                job[col] = float(str(row[col]).replace("$", "").replace(",", "").strip())
+            except ValueError:
+                return None, f"{col} '{row[col]}' is not a number"
+    if row.get("years_exp_min") not in (None, ""):
+        try:
+            job["years_exp_min"] = int(float(row["years_exp_min"]))
+        except ValueError:
+            return None, f"years_exp_min '{row['years_exp_min']}' is not a whole number"
+    if row.get("is_urgent") not in (None, ""):
+        job["is_urgent"] = str(row["is_urgent"]).strip().lower() in {"true", "yes", "1", "y"}
+    if row.get("start_date") not in (None, ""):
+        sd = row["start_date"]
+        if isinstance(sd, datetime):
+            job["start_date"] = sd.date()
+        elif isinstance(sd, date):
+            job["start_date"] = sd
+        else:
+            try:
+                job["start_date"] = datetime.fromisoformat(str(sd)[:10]).date()
+            except ValueError:
+                return None, f"start_date '{sd}' must be YYYY-MM-DD"
+    return job, None
+
+
+@router.post("/bulk")
+async def bulk_create_jobs(employer_id: str, user: CurrentUser, db: DbSession,
+                           file: UploadFile = File(...)) -> dict:
+    """Create many job orders at once from an uploaded Excel (.xlsx) or CSV."""
+    _require_employer_manager(db, employer_id, user)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="The file is empty.")
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 5 MB).")
+    try:
+        rows = _parse_upload(data, file.filename or "")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail=f"Could not read the file: {exc}")
+    if not rows:
+        raise HTTPException(status_code=422,
+                            detail="No rows found. Make sure row 1 has column headers "
+                                   "(at least 'title') and jobs start on row 2.")
+    if len(rows) > _BULK_MAX_ROWS:
+        raise HTTPException(status_code=413,
+                            detail=f"Too many rows ({len(rows)}). Limit is {_BULK_MAX_ROWS} per upload.")
+
+    created, skipped, errors = 0, 0, []
+    for rownum, row in rows:
+        kwargs, err = _row_to_job(row)
+        if err:
+            errors.append(f"Row {rownum}: {err}")
+            continue
+        if not kwargs:
+            skipped += 1
+            continue
+        job = JobPosting(employer_id=employer_id, posted_by_user_id=user.user_id, **kwargs)
+        job.rebuild_search_text()
+        db.add(job)
+        created += 1
+    if created:
+        db.commit()
+    return {"created": created, "skipped": skipped,
+            "failed": len(errors), "errors": errors[:25]}
+
+
+@router.get("/template")
+def jobs_template(user: CurrentUser) -> Response:
+    """Download a ready-to-fill Excel template for the bulk uploader."""
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Jobs"
+    ws.append(list(_BULK_COLUMNS))
+    ws.append([
+        "ICU Registered Nurse", "ICU", "Nursing", "travel", "nights",
+        2400, 2800, "weekly", 1200, 1500, "Dallas", "TX", 2, "TRUE",
+        "2026-09-15", "13-week ICU travel contract, nights, 36 hrs/wk.",
+    ])
+    for i in range(1, len(_BULK_COLUMNS) + 1):
+        ws.column_dimensions[get_column_letter(i)].width = 18
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=healthboard-jobs-template.xlsx"},
+    )
+
+
+@router.delete("/all")
+def delete_all_jobs(employer_id: str, user: CurrentUser, db: DbSession) -> dict:
+    """Permanently delete every job order for an employer, plus dependent rows
+    (applications, their events, saved jobs, offers). Manager-only. This cannot
+    be undone — the UI confirms before calling it."""
+    _require_employer_manager(db, employer_id, user)
+    job_ids = select(JobPosting.job_id).where(JobPosting.employer_id == employer_id)
+    n = db.scalar(select(func.count()).select_from(job_ids.subquery())) or 0
+    if n:
+        app_ids = select(Application.application_id).where(Application.job_id.in_(job_ids))
+        db.execute(delete(ApplicationEvent).where(ApplicationEvent.application_id.in_(app_ids)))
+        db.execute(delete(Application).where(Application.job_id.in_(job_ids)))
+        db.execute(delete(SavedJob).where(SavedJob.job_id.in_(job_ids)))
+        db.execute(delete(Offer).where(Offer.job_id.in_(job_ids)))
+        db.execute(delete(JobPosting).where(JobPosting.employer_id == employer_id))
+        db.commit()
+    return {"deleted": n}
+
+
+# --- Job AI: natural-language job search (job seekers) ---------------------
+
+_VALID_STATE_CODES = set(_STATE_CODES.values()) | {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID",
+    "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+    "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
+    "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+    "WI", "WY", "DC",
+}
+_JOB_SHIFTS = {"night": "nights", "nights": "nights", "day": "days", "days": "days",
+               "evening": "evenings", "evenings": "evenings", "rotating": "rotating"}
+_JOB_TYPES = {"travel": "travel", "staff": "staff", "permanent": "staff",
+              "full-time": "staff", "fulltime": "staff", "per diem": "per_diem",
+              "perdiem": "per_diem", "prn": "per_diem", "contract": "contract"}
+_JOB_FILLER = {"find", "show", "me", "jobs", "job", "roles", "role", "looking",
+               "for", "want", "need", "search", "a", "an", "the", "in", "near",
+               "with", "and", "or", "of", "to", "at", "on", "any", "some", "please",
+               "positions", "position", "opening", "openings", "work", "working",
+               # generic profession words → not useful as required keywords
+               "nurse", "nursing", "rn", "lpn", "clinician",
+               # pay / distance words handled elsewhere or noise
+               "over", "above", "least", "paying", "pay", "min", "minimum", "per",
+               "week", "weekly", "wk", "hour", "hourly", "hr", "month", "year",
+               "yr", "salary", "rate", "that", "who", "are", "is", "my",
+               # refinement / conversational filler
+               "only", "just", "also", "more", "prefer", "rather", "instead",
+               "actually", "really", "maybe", "give", "around", "about"}
+
+_JOB_COPILOT_SYSTEM = (
+    "You turn a healthcare job seeker's plain-English search into structured "
+    "job-board filters. Output ONLY a JSON object, nothing else."
+)
+_JOB_COPILOT_INSTR = (
+    "Return JSON with exactly these keys (use null when not specified):\n"
+    '{"q":null,"specialty":null,"profession_type":null,"job_type":null,'
+    '"state_code":null,"city":null,"pay_min":null,"shift_type":null,"is_urgent":null}\n\n'
+    "- specialty: the clinical specialty as a short phrase ('ICU','telemetry',"
+    "'med surg','emergency','labor delivery'). Normalise informal terms: "
+    "'medsurg'/'medsurgian'->'med surg'; 'tele'->'telemetry'; 'l&d'->'labor delivery'; "
+    "'peds'->'pediatric'; 'er'/'ed'->'emergency'. null if none.\n"
+    "- profession_type: 'Nursing','Physician','Allied','APP', or 'Others' when clearly "
+    "implied ('nurse'/'RN'->'Nursing'), else null.\n"
+    "- job_type: one of 'travel','staff','per_diem','contract' when stated "
+    "('permanent'/'full-time'->'staff'; 'prn'/'per diem'->'per_diem'), else null.\n"
+    "- state_code: 2-letter US state code the job is in ('in Texas'->'TX'). null if none.\n"
+    "- city: the city name only, no state ('near Dallas'->'Dallas'). null if none.\n"
+    "- pay_min: minimum pay as a plain number when a floor is given ('over $2500/week',"
+    "'at least 2500','2500+','paying 2500'). Digits only, no symbols. null if none.\n"
+    "- shift_type: 'days','nights','evenings', or 'rotating' when stated. null if none.\n"
+    "- is_urgent: true only if they explicitly want urgent/ASAP roles, else null.\n"
+    "- q: any remaining useful keywords not captured above (certifications, extra "
+    "qualifiers). Lowercase, space-separated. null if none.\n"
+    "IGNORE words like 'find','show me','jobs','roles','looking for','I want'."
+)
+
+
+class JobCopilotQuery(BaseModel):
+    message: str
+    context: Optional[dict] = None
+
+
+def _job_rule_filters(message: str) -> dict:
+    """Lightweight fallback extractor so Job AI still works with the LLM off."""
+    text = " " + message.lower() + " "
+    out: dict = {}
+
+    m = re.search(r"\$?\s*(\d{3,6})\s*(?:\+|/?\s*(?:wk|week|weekly|hr|hour|hourly|k))",
+                  text)
+    if not m:
+        m = re.search(r"(?:over|above|at least|paying|pay|min(?:imum)?)\s*\$?\s*(\d{3,6})",
+                      text)
+    if m:
+        val = int(m.group(1))
+        out["pay_min"] = float(val * 1000 if val < 100 else val)  # "2k" style guard
+
+    for word, canon in _JOB_SHIFTS.items():
+        if re.search(rf"\b{word}\b", text):
+            out["shift_type"] = canon
+            break
+    for word, canon in _JOB_TYPES.items():
+        if word in text:
+            out["job_type"] = canon
+            break
+    if re.search(r"\b(urgent|asap|immediate(?:ly)?)\b", text):
+        out["is_urgent"] = True
+
+    # State: full names first (may be two words), then bare 2-letter codes.
+    for name, code in _STATE_CODES.items():
+        if re.search(rf"\b{re.escape(name)}\b", text):
+            out["state_code"] = code
+            break
+    if "state_code" not in out:
+        for raw in re.findall(r"\b([a-z]{2})\b", message.lower()):
+            if raw.upper() in _VALID_STATE_CODES and raw not in ("in", "or", "me", "hi", "so", "no"):
+                out["state_code"] = raw.upper()
+                break
+
+    # Keywords: scrub out everything already captured as a structured filter so
+    # words like 'texas', 'over', '$2500/week' or 'travel' never become required
+    # search terms (which would AND-match to zero results).
+    scrub = " " + message.lower() + " "
+    scrub = re.sub(r"\$?\s*\d[\d,]*\s*(?:\+|/?\s*(?:wk|week|weekly|hr|hour|hourly|k|month|yr|year))?",
+                   " ", scrub)
+    for name in _STATE_CODES:
+        scrub = re.sub(rf"\b{re.escape(name)}\b", " ", scrub)
+    if out.get("state_code"):
+        scrub = re.sub(rf"\b{out['state_code'].lower()}\b", " ", scrub)
+    for w in list(_JOB_SHIFTS) + list(_JOB_TYPES) + ["urgent", "asap", "immediate", "immediately"]:
+        scrub = re.sub(rf"\b{re.escape(w)}\b", " ", scrub)
+    kw = [t for t in re.findall(r"[a-z][a-z&/-]+", scrub)
+          if len(t) >= 2 and t not in _JOB_FILLER][:6]
+    if kw:
+        out["q"] = " ".join(kw)
+    return out
+
+
+def _job_copilot_filters(raw: dict) -> dict:
+    """Validate/clean an LLM (or rule) filter dict into safe job filters."""
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+
+    def s(key, cap=80):
+        v = raw.get(key)
+        if v in (None, "", "null"):
+            return None
+        return str(v).strip()[:cap]
+
+    for key in ("q", "specialty", "profession_type", "city"):
+        v = s(key)
+        if v:
+            out[key] = v
+    sc = s("state_code", 20)
+    if sc:
+        code = _norm_state(sc)
+        if code:
+            out["state_code"] = code
+    jt = (s("job_type", 20) or "").lower().replace("-", "_").replace(" ", "_")
+    if jt in {t.value for t in JobType}:
+        out["job_type"] = jt
+    sh = (s("shift_type", 20) or "").lower()
+    for word, canon in _JOB_SHIFTS.items():
+        if word in sh:
+            out["shift_type"] = canon
+            break
+    pay = raw.get("pay_min")
+    if pay not in (None, "", "null"):
+        try:
+            out["pay_min"] = float(re.sub(r"[^\d.]", "", str(pay)) or 0) or None
+            if out["pay_min"] is None:
+                out.pop("pay_min")
+        except ValueError:
+            pass
+    if str(raw.get("is_urgent")).lower() in ("true", "1", "yes"):
+        out["is_urgent"] = True
+    return out
+
+
+_JOB_MERGE_FIELDS = ("q", "specialty", "profession_type", "job_type",
+                     "state_code", "city", "pay_min", "shift_type", "is_urgent")
+_JOB_RESET_RE = re.compile(r"\b(start over|reset|new search|clear|never mind)\b", re.I)
+
+
+def _merge_job_filters(prior: dict, delta: dict) -> dict:
+    out = dict(prior)
+    for k in _JOB_MERGE_FIELDS:
+        if k in delta:
+            if delta[k] in (None, ""):
+                out.pop(k, None)
+            else:
+                out[k] = delta[k]
+    return out
+
+
+def _job_copilot_summary(f: dict, total: int) -> str:
+    bits = []
+    if f.get("specialty"):
+        bits.append(f["specialty"])
+    elif f.get("q"):
+        bits.append(f"“{f['q']}”")
+    if f.get("profession_type") and not f.get("specialty"):
+        bits.append(f["profession_type"])
+    if f.get("job_type"):
+        bits.append(str(f["job_type"]).replace("_", " "))
+    place = ", ".join(x for x in ((f.get("city") or "").title() or None,
+                                  f.get("state_code")) if x)
+    if place:
+        bits.append(place)
+    if f.get("pay_min"):
+        bits.append(f"${int(f['pay_min']):,}+")
+    if f.get("shift_type"):
+        bits.append(str(f["shift_type"]))
+    if f.get("is_urgent"):
+        bits.append("urgent")
+    label = " · ".join(bits)
+    if not label:
+        return ("Tell me what you're looking for — e.g. “ICU night travel jobs in "
+                "Texas paying over $2,500/week”.")
+    if total:
+        return f"Found {total:,} job{'' if total == 1 else 's'} matching {label}."
+    return (f"No jobs matched {label} right now. Try widening the pay, area, "
+            "or shift.")
+
+
+@router.post("/copilot")
+def job_copilot(body: JobCopilotQuery, user: CurrentUser, db: DbSession):
+    """Natural-language job search for job seekers (the 'Job AI' assistant)."""
+    message = (body.message or "").strip()
+    if not message:
+        return {"answer": _job_copilot_summary({}, 0), "filters": {}, "items": [], "total": 0}
+
+    rule_delta = _job_rule_filters(message)
+    llm_delta: dict = {}
+    if settings.llm_enabled and settings.llm_api_key and settings.llm_model:
+        from ..clean_names_llm import _llm
+        try:
+            raw = _llm(message, system=_JOB_COPILOT_SYSTEM, instr=_JOB_COPILOT_INSTR,
+                       max_chars=500, retries=1, timeout=8)
+            llm_delta = _job_copilot_filters(raw or {})
+        except Exception:  # noqa: BLE001
+            llm_delta = {}
+    delta = {**rule_delta, **llm_delta}
+    if llm_delta:
+        delta["q"] = llm_delta.get("q")  # LLM is authority on free-text keywords
+
+    prior = {} if _JOB_RESET_RE.search(message) else _job_copilot_filters(body.context or {})
+    filters = _merge_job_filters(prior, delta)
+
+    stmt = select(JobPosting).where(JobPosting.status == JobStatus.active)
+    tokens = []
+    if filters.get("specialty"):
+        tokens += filters["specialty"].lower().split()
+    if filters.get("q"):
+        tokens += filters["q"].lower().split()
+    for tok in [t for t in tokens if len(t) >= 2][:6]:
+        stmt = stmt.where(JobPosting.search_text.like(f"%{tok}%"))
+    if filters.get("state_code"):
+        stmt = stmt.where(JobPosting.state_code == filters["state_code"])
+    if filters.get("city"):
+        stmt = stmt.where(JobPosting.city.ilike(f"%{filters['city']}%"))
+    if filters.get("pay_min"):
+        stmt = stmt.where(JobPosting.pay_rate_max >= filters["pay_min"])
+    if filters.get("job_type"):
+        stmt = stmt.where(JobPosting.job_type == JobType(filters["job_type"]))
+    if filters.get("shift_type"):
+        stmt = stmt.where(JobPosting.shift_type.ilike(f"%{str(filters['shift_type']).rstrip('s')}%"))
+    if filters.get("is_urgent"):
+        stmt = stmt.where(JobPosting.is_urgent.is_(True))
+
+    page = _grouped_page(db, stmt, limit=12, offset=0)
+    return {"answer": _job_copilot_summary(filters, page.total),
+            "filters": filters, "items": page.items, "total": page.total}
 
 
 @router.get("/recommended", response_model=Page[JobOut])

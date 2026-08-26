@@ -7,10 +7,11 @@ from fastapi import APIRouter, Depends, Form, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...database import get_db, utcnow
+from ...database import get_db, new_uuid, utcnow
 from ...models import Profile, User, UserStatus
 from ...models.enums import ProfileSource, UserRole
 from ...security import create_web_session_token, hash_password, verify_password
+from ...services.session_control import activate_session
 from ..core import clear_session, current_user, redirect, render, set_session
 
 router = APIRouter(tags=["web-auth"])
@@ -59,11 +60,13 @@ def signup(
                           source=ProfileSource.signup)
         profile.rebuild_search_text()
         db.add(profile)
+    session_id = new_uuid()
+    activate_session(db, user, session_id)
     db.commit()
 
     dest = "/recruiter" if user_role == UserRole.recruiter else "/dashboard"
     resp = redirect(dest, flash=f"Welcome to HealthBoard, {first_name or email}!")
-    set_session(resp, create_web_session_token(user.user_id, user.role.value))
+    set_session(resp, create_web_session_token(user.user_id, user.role.value, session_id=session_id))
     return resp
 
 
@@ -93,12 +96,14 @@ def login(
                       {"active": "login", "error": "This account is not active.",
                        "email": email, "next": next}, status_code=403)
     user.last_login_at = utcnow()
+    session_id = new_uuid()
+    activate_session(db, user, session_id)
     db.commit()
 
     dest = next if next and next.startswith("/") else (
         "/recruiter" if user.role.value in ("recruiter", "employer", "admin") else "/dashboard")
     resp = redirect(dest, flash="Signed in.")
-    set_session(resp, create_web_session_token(user.user_id, user.role.value))
+    set_session(resp, create_web_session_token(user.user_id, user.role.value, session_id=session_id))
     return resp
 
 

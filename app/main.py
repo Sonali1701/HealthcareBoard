@@ -25,6 +25,7 @@ from .database import SessionLocal, init_db
 from .deps import CurrentUser
 from .ratelimit import limiter
 from .routers import (
+    admin,
     admin_import,
     analytics,
     applications,
@@ -101,6 +102,8 @@ app.add_middleware(
     allow_credentials=not _cors_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
+    # So a split-origin frontend can still read the single-session sign-out signal.
+    expose_headers=["X-Session-Superseded"],
 )
 
 
@@ -158,7 +161,7 @@ for module in (
     auth, profiles, employers, jobs, applications, social,
     messaging, notifications, matching, gsa, analytics, uploads,
     integrations, admin_import, ingest, extension, pools, saved_searches,
-    duplicates, outreach, credits, privacy, submissions, clients,
+    duplicates, outreach, credits, privacy, submissions, clients, admin,
 ):
     app.include_router(module.router)
 

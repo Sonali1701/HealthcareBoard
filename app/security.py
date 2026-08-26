@@ -46,24 +46,28 @@ def _create_token(subject: str, token_type: str, expires: timedelta, **extra: An
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(user_id: str, role: str) -> str:
+def create_access_token(user_id: str, role: str, session_id: str | None = None) -> str:
+    extra = {"role": role, "jti": secrets.token_hex(8)}
+    if session_id:
+        extra["sid"] = session_id   # ties the token to one login for single-session
     return _create_token(
         user_id,
         ACCESS_TOKEN,
         timedelta(minutes=settings.access_token_expire_minutes),
-        role=role,
-        jti=secrets.token_hex(8),
+        **extra,
     )
 
 
-def create_web_session_token(user_id: str, role: str) -> str:
+def create_web_session_token(user_id: str, role: str, session_id: str | None = None) -> str:
     """Longer-lived access token for server-rendered cookie sessions."""
+    extra = {"role": role, "jti": secrets.token_hex(8)}
+    if session_id:
+        extra["sid"] = session_id
     return _create_token(
         user_id,
         ACCESS_TOKEN,
         timedelta(days=settings.refresh_token_expire_days),
-        role=role,
-        jti=secrets.token_hex(8),
+        **extra,
     )
 
 

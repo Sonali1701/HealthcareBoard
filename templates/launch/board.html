@@ -246,6 +246,7 @@
       <div class="nav-label">Main</div>
       <button class="nav-item active" data-page="dashboard"><i class="fas fa-table-cells-large"></i>Dashboard</button>
       <button class="nav-item seeker-only" data-page="jobs"><i class="fas fa-search"></i>Find Jobs</button>
+      <button class="nav-item seeker-only" data-page="jobai"><i class="fas fa-wand-magic-sparkles"></i>Job AI</button>
       <button class="nav-item seeker-only" data-page="paytools"><i class="fas fa-money-bill-trend-up"></i>Pay Tools</button>
       <!-- Community Feed hidden pre-launch: it is read-only with seeded demo
            content. The page markup, social.py API and loadFeed() are kept; to
@@ -272,6 +273,8 @@
       <button class="nav-item recruiter-only" data-page="employer"><i class="fas fa-clipboard-list"></i>Job Orders</button>
       <button class="nav-item recruiter-only" data-page="calculator"><i class="fas fa-calculator"></i>Pay Calculator</button>
       <button class="nav-item recruiter-only" data-page="analytics"><i class="fas fa-chart-line"></i>Analytics</button>
+      <div class="nav-label admin-only">Admin</div>
+      <button class="nav-item admin-only" data-page="admin"><i class="fas fa-shield-halved"></i>Admin Console</button>
     </nav>
     <div class="user-mini">
       <div id="mini-avatar" class="avatar">H</div>
@@ -344,6 +347,29 @@
         </div>
       </div>
       <div class="ai-thread" id="ai-thread"></div>
+    </section>
+
+    <section id="page-jobai" class="page ai-page">
+      <div class="ai-stage" id="jai-stage">
+        <div class="ai-hero">
+          <div class="ai-hero-badge"><i class="fas fa-wand-magic-sparkles"></i>Job AI</div>
+          <h1>What job are you looking for?</h1>
+          <p>Describe it in plain English — specialty, shift, state, pay. Job AI reads your request and searches every open role on the spot. No filters, no forms.</p>
+        </div>
+        <form class="ai-search" id="jai-form">
+          <i class="fas fa-wand-magic-sparkles ai-search-icon"></i>
+          <input id="jai-input" autocomplete="off" placeholder="Try: ICU night travel jobs in Texas paying over $2,500/week">
+          <button class="ai-send" id="jai-send" type="submit" aria-label="Search"><i class="fas fa-arrow-up"></i></button>
+        </form>
+        <button class="ai-new" id="jai-new" type="button" title="Start a fresh search"><i class="fas fa-rotate-left"></i>New search</button>
+        <div class="ai-suggestions" id="jai-suggestions">
+          <button class="ai-chip">ICU night travel jobs in Texas over $2,500/week</button>
+          <button class="ai-chip">ER nurse jobs in Florida</button>
+          <button class="ai-chip">Med surg staff positions in California</button>
+          <button class="ai-chip">Telemetry travel contracts, nights</button>
+        </div>
+      </div>
+      <div class="ai-thread" id="jai-thread"></div>
     </section>
 
     <section id="page-providers" class="page">
@@ -759,6 +785,76 @@
             <div id="ext-platforms" class="ext-plat-list"></div>
           </div>
         </aside>
+      </div>
+    </section>
+
+    <section id="page-admin" class="page">
+      <div class="section-head">
+        <div><h1>Admin Console</h1><p>Platform overview, users and organizations — visible only to platform admins.</p></div>
+      </div>
+      <div class="admin-tabs">
+        <button class="admin-tab active" data-atab="overview"><i class="fas fa-gauge-high"></i>Overview</button>
+        <button class="admin-tab" data-atab="users"><i class="fas fa-users"></i>Users</button>
+        <button class="admin-tab" data-atab="orgs"><i class="fas fa-hospital"></i>Organizations</button>
+        <button class="admin-tab" data-atab="logins"><i class="fas fa-network-wired"></i>IP &amp; Logins</button>
+      </div>
+
+      <div class="admin-panel active" id="admin-overview">
+        <div class="admin-stat-grid" id="admin-stats"></div>
+      </div>
+
+      <div class="admin-panel" id="admin-users">
+        <div class="admin-toolbar">
+          <div class="admin-search"><i class="fas fa-search"></i><input id="admin-user-q" placeholder="Search by email or name"></div>
+          <select id="admin-user-role" class="input">
+            <option value="">All roles</option>
+            <option value="job_seeker">Job seekers</option>
+            <option value="recruiter">Recruiters</option>
+            <option value="employer">Employers</option>
+            <option value="admin">Admins</option>
+          </select>
+          <select id="admin-user-status" class="input">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+            <option value="pending_verify">Pending verify</option>
+          </select>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr>
+              <th>User</th><th>Role</th><th>Status</th><th>Credits</th><th>Last login</th><th>Last IP</th><th>Joined</th><th></th>
+            </tr></thead>
+            <tbody id="admin-user-rows"></tbody>
+          </table>
+        </div>
+        <div class="admin-pager" id="admin-user-pager"></div>
+      </div>
+
+      <div class="admin-panel" id="admin-logins">
+        <p class="muted" style="font-size:13px;margin:0 0 14px">Every login is logged with the visitor's IP address. On the live site these are real visitor IPs (read from the proxy's forwarded header).</p>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>User</th><th>IP address</th><th>Device</th><th>When</th><th>Session</th></tr></thead>
+            <tbody id="admin-login-rows"></tbody>
+          </table>
+        </div>
+        <div class="admin-pager" id="admin-login-pager"></div>
+      </div>
+
+      <div class="admin-panel" id="admin-orgs">
+        <div class="admin-toolbar">
+          <div class="admin-search"><i class="fas fa-search"></i><input id="admin-org-q" placeholder="Search organizations"></div>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr>
+              <th>Organization</th><th>Type</th><th>Location</th><th>Owner</th><th>Members</th><th>Jobs</th><th>Joined</th>
+            </tr></thead>
+            <tbody id="admin-org-rows"></tbody>
+          </table>
+        </div>
+        <div class="admin-pager" id="admin-org-pager"></div>
       </div>
     </section>
   </main>

@@ -15,6 +15,7 @@ from ..config import settings
 from ..database import get_db
 from ..models import User, UserStatus
 from ..security import ACCESS_TOKEN, decode_token
+from ..services.session_control import session_ok
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 templates = Jinja2Templates(directory=str(PROJECT_ROOT / "templates"))
@@ -64,6 +65,10 @@ def _user_from_request(request: Request, db: Session) -> Optional[User]:
         return None
     user = db.get(User, payload.get("sub"))
     if not user or user.deleted_at is not None or user.status == UserStatus.suspended:
+        return None
+    # Single active session: a cookie whose login was superseded elsewhere is
+    # treated as signed out (the web guard then redirects to /login).
+    if not session_ok(user, payload.get("sid")):
         return None
     return user
 

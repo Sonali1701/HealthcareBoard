@@ -42,6 +42,7 @@
   const setToken = v => v ? localStorage.setItem("hb_token", v) : localStorage.removeItem("hb_token");
   const setRefresh = v => v ? localStorage.setItem("hb_refresh", v) : localStorage.removeItem("hb_refresh");
   const isRecruiter = () => S.user && ["recruiter","employer","admin"].includes(S.user.role);
+  const isAdmin = () => S.user && S.user.role === "admin";
   const initials = (f,l) => ((f||" ")[0] + (l||" ")[0]).toUpperCase();
   // Provider identity is withheld until the recruiter deliberately reveals the
   // contact, so the directory shows initials only ("T. H.") up to that point.
@@ -107,6 +108,12 @@
     // no-store: this data (threads, pools, counts) changes constantly, and a
     // cached GET would silently render stale state after a write.
     const res = await fetch(path, {method, headers, cache:"no-store", body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined});
+    // Single active session: the server signals (via header) that this login was
+    // superseded by one on another device. Sign out locally and say why.
+    if (res.status === 401 && token() && res.headers.get("X-Session-Superseded") === "1"){
+      handleSuperseded();
+      const err = new Error("Signed out"); err.status = 401; err.superseded = true; throw err;
+    }
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch(e) { data = text; }
@@ -117,6 +124,15 @@
       throw err;
     }
     return data;
+  }
+  // Clear local auth and reload to the signed-out screen, leaving a one-shot
+  // flag so the reason can be shown once on the landing page.
+  function handleSuperseded(){
+    if (S._superseded) return;
+    S._superseded = true;
+    setToken(""); setRefresh("");
+    try { localStorage.setItem("hb_signout_reason", "superseded"); } catch(e){}
+    location.reload();
   }
   const get = p => api("GET", p);
   const post = (p,b={}) => api("POST", p, b);
@@ -134,7 +150,9 @@
   function applyRole(){
     $$(".recruiter-only").forEach(el => el.classList.toggle("hidden", !isRecruiter()));
     $$(".seeker-only").forEach(el => el.classList.toggle("hidden", isRecruiter()));
+    $$(".admin-only").forEach(el => el.classList.toggle("hidden", !isAdmin()));
     if (!isRecruiter() && $("#page-providers").classList.contains("active")) showPage("dashboard");
+    if (!isAdmin() && $("#page-admin").classList.contains("active")) showPage("dashboard");
   }
 
   async function loadMe(){
@@ -231,6 +249,8 @@
     // Seeker-only pages: a staffing agency sources candidates, it doesn't find
     // jobs, apply, or keep a résumé.
     if ((id === "resume" || id === "applications" || id === "jobs") && isRecruiter()) id = "dashboard";
+    // The admin console is for platform admins only.
+    if (id === "admin" && !isAdmin()) id = "dashboard";
     if (id !== "messages") stopMessagePolling();
     try { localStorage.setItem("hb_page", id); } catch(e) {}   // restored on refresh
     $$(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + id));
@@ -239,6 +259,7 @@
     if (id === "jobs") loadJobs();
     if (id === "providers") { if (!S.facetsLoaded) loadProviderFacets(); loadProviders(); loadSavedSearches(); }
     if (id === "ai") setTimeout(() => { const el = $("#ai-input"); if (el) el.focus(); }, 60);
+    if (id === "jobai") setTimeout(() => { const el = $("#jai-input"); if (el) el.focus(); }, 60);
     if (id === "extension") loadExtensionPage();
     if (id === "profile") loadProfile();
     if (id === "community") loadFeed();
@@ -255,6 +276,207 @@
     if (id === "clients") loadClients();
     if (id === "placements") loadPlacements();
     if (id === "credentials") loadWallet();
+    if (id === "admin") loadAdmin();
+  }
+
+  // ---- Admin console (platform super-admin) --------------------------------
+  const ADMIN = { tab: "overview", uOffset: 0, uLimit: 25, oOffset: 0, oLimit: 25, lOffset: 0, lLimit: 50 };
+  const ADMIN_COLS = 8, ADMIN_ORG_COLS = 7, ADMIN_LOGIN_COLS = 5;
+  const ROLE_LABEL = {job_seeker:"Job seeker", recruiter:"Recruiter", employer:"Employer", admin:"Admin"};
+  const STATUS_LABEL = {active:"Active", suspended:"Suspended", pending_verify:"Pending", deleted:"Deleted"};
+  const adminDate = iso => iso ? new Date(iso).toLocaleDateString([], {year:"numeric", month:"short", day:"numeric"}) : "—";
+
+  function loadAdmin(){
+    if (!isAdmin()) return;
+    showAdminTab(ADMIN.tab || "overview");
+  }
+  function showAdminTab(name){
+    ADMIN.tab = name;
+    $$(".admin-tab").forEach(t => t.classList.toggle("active", t.dataset.atab === name));
+    $$(".admin-panel").forEach(p => p.classList.toggle("active", p.id === "admin-" + (name === "orgs" ? "orgs" : name)));
+    if (name === "overview") loadAdminOverview();
+    if (name === "users") loadAdminUsers();
+    if (name === "orgs") loadAdminOrgs();
+    if (name === "logins") loadAdminLogins();
+  }
+
+  async function loadAdminLogins(){
+    const tb = $("#admin-login-rows");
+    tb.innerHTML = loadingRow(ADMIN_LOGIN_COLS, "Loading login activity…");
+    const params = new URLSearchParams({limit:ADMIN.lLimit, offset:ADMIN.lOffset});
+    try {
+      const data = await get("/api/admin/logins?" + params.toString());
+      if (!data.logins.length){
+        tb.innerHTML = emptyRow(ADMIN_LOGIN_COLS, "No logins recorded yet.", "", "fa-network-wired");
+        renderPager("#admin-login-pager", data, () => loadAdminLogins(), "lOffset");
+        return;
+      }
+      tb.innerHTML = data.logins.map(l => {
+        const who = l.name ? `<b>${esc(l.name)}</b><span class="admin-sub">${esc(l.email || "")}</span>`
+                           : `<b>${esc((l.email || "unknown").split("@")[0])}</b><span class="admin-sub">${esc(l.email || "")}</span>`;
+        const when = l.created_at ? new Date(l.created_at).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "—";
+        const sess = l.active ? `<span class="admin-badge ok">Active</span>` : `<span class="admin-badge">Expired</span>`;
+        return `<tr>
+          <td class="admin-user-cell">${who}</td>
+          <td class="admin-ip">${esc(l.ip || "—")}</td>
+          <td>${esc(l.device || "—")}</td>
+          <td>${esc(when)}</td>
+          <td>${sess}</td>
+        </tr>`;
+      }).join("");
+      renderPager("#admin-login-pager", data, () => loadAdminLogins(), "lOffset");
+    } catch(e) {
+      tb.innerHTML = errorRow(ADMIN_LOGIN_COLS, "Could not load login activity.");
+    }
+  }
+
+  const statCard = (label, value, sub="") =>
+    `<div class="admin-stat"><span class="admin-stat-val">${esc(value)}</span>`
+    + `<span class="admin-stat-label">${esc(label)}</span>`
+    + (sub ? `<span class="admin-stat-sub">${esc(sub)}</span>` : "") + `</div>`;
+  const statGroup = (title, cards) =>
+    `<div class="admin-stat-group"><h3>${esc(title)}</h3><div class="admin-stat-row">${cards.join("")}</div></div>`;
+
+  async function loadAdminOverview(){
+    const box = $("#admin-stats");
+    box.innerHTML = loading("Loading platform overview…");
+    try {
+      const o = await get("/api/admin/overview");
+      const u = o.users, c = o.content, b = o.billing;
+      const nf = n => (n == null ? "—" : Number(n).toLocaleString());
+      box.innerHTML =
+        statGroup("Users", [
+          statCard("Total users", nf(u.total), `${nf(u.active)} active`),
+          statCard("Job seekers", nf(u.job_seekers)),
+          statCard("Recruiters", nf(u.recruiters)),
+          statCard("Admins", nf(u.admins)),
+          statCard("Suspended", nf(u.suspended)),
+          statCard("New this week", nf(u.new_7d), `${nf(u.new_24h)} today · ${nf(u.new_30d)}/30d`),
+        ])
+        + statGroup("Content", [
+          statCard("Providers", nf(c.profiles), `${nf(c.profiles_listable)} listable`),
+          statCard("Jobs", nf(c.jobs), `${nf(c.jobs_active)} active`),
+          statCard("Organizations", nf(c.organizations)),
+          statCard("Applications", nf(c.applications)),
+          statCard("Messages", nf(c.messages)),
+        ])
+        + statGroup("Billing · credits", [
+          statCard("Credits in circulation", nf(b.credit_balance)),
+          statCard("Credits spent", nf(b.credit_spent), "lifetime reveals"),
+          statCard("Credits granted", nf(b.credit_granted), "lifetime"),
+        ]);
+    } catch(e) {
+      box.innerHTML = errorState("Could not load the overview.", e.message || "");
+    }
+  }
+
+  async function loadAdminUsers(){
+    const tb = $("#admin-user-rows");
+    tb.innerHTML = loadingRow(ADMIN_COLS, "Loading users…");
+    const q = clean($("#admin-user-q").value);
+    const role = $("#admin-user-role").value;
+    const status = $("#admin-user-status").value;
+    const params = new URLSearchParams({limit:ADMIN.uLimit, offset:ADMIN.uOffset});
+    if (q) params.set("q", q);
+    if (role) params.set("role", role);
+    if (status) params.set("status", status);
+    try {
+      const data = await get("/api/admin/users?" + params.toString());
+      if (!data.users.length){
+        tb.innerHTML = emptyRow(ADMIN_COLS, "No users match.", "Try clearing the filters.", "fa-user-slash");
+        renderPager("#admin-user-pager", data, () => loadAdminUsers(), "uOffset");
+        return;
+      }
+      tb.innerHTML = data.users.map(adminUserRow).join("");
+      renderPager("#admin-user-pager", data, () => loadAdminUsers(), "uOffset");
+    } catch(e) {
+      tb.innerHTML = errorRow(ADMIN_COLS, "Could not load users.");
+    }
+  }
+
+  function adminUserRow(u){
+    const name = u.name ? `<b>${esc(u.name)}</b><span class="admin-sub">${esc(u.email)}</span>`
+                        : `<b>${esc(u.email.split("@")[0])}</b><span class="admin-sub">${esc(u.email)}</span>`;
+    const verified = u.email_verified ? "" : ` <span class="admin-flag" title="Email not verified"><i class="fas fa-circle-exclamation"></i></span>`;
+    const statusCls = u.status === "active" ? "ok" : (u.status === "suspended" ? "err" : "warn");
+    const roleSel = u.is_self ? ROLE_LABEL[u.role] || u.role
+      : `<select class="admin-mini-sel" data-admin-role="${esc(u.user_id)}">`
+        + ["job_seeker","recruiter","employer","admin"].map(r =>
+            `<option value="${r}"${r === u.role ? " selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")
+        + `</select>`;
+    let action;
+    if (u.is_self) action = `<span class="admin-you">You</span>`;
+    else if (u.status === "suspended")
+      action = `<button class="btn ghost small" data-admin-activate="${esc(u.user_id)}"><i class="fas fa-unlock"></i>Reactivate</button>`;
+    else
+      action = `<button class="btn ghost small danger" data-admin-suspend="${esc(u.user_id)}"><i class="fas fa-ban"></i>Suspend</button>`;
+    return `<tr>
+      <td class="admin-user-cell">${name}${verified}</td>
+      <td>${roleSel}</td>
+      <td><span class="admin-badge ${statusCls}">${STATUS_LABEL[u.status] || u.status}</span></td>
+      <td>${u.credit_balance == null ? "—" : Number(u.credit_balance).toLocaleString()}</td>
+      <td>${u.last_login_at ? adminDate(u.last_login_at) : "Never"}</td>
+      <td class="admin-ip">${esc(u.last_ip || "—")}</td>
+      <td>${adminDate(u.created_at)}</td>
+      <td class="td-actions">${action}</td>
+    </tr>`;
+  }
+
+  async function adminUpdateUser(userId, body){
+    try {
+      await patch(`/api/admin/users/${userId}`, body);
+      toast("User updated.", {title:"Admin"});
+      loadAdminUsers();
+    } catch(e) {
+      toast(e.message || "Could not update the user.", {title:"Update failed", kind:"err"});
+      loadAdminUsers();   // revert any optimistic select change
+    }
+  }
+
+  async function loadAdminOrgs(){
+    const tb = $("#admin-org-rows");
+    tb.innerHTML = loadingRow(ADMIN_ORG_COLS, "Loading organizations…");
+    const q = clean($("#admin-org-q").value);
+    const params = new URLSearchParams({limit:ADMIN.oLimit, offset:ADMIN.oOffset});
+    if (q) params.set("q", q);
+    try {
+      const data = await get("/api/admin/organizations?" + params.toString());
+      if (!data.organizations.length){
+        tb.innerHTML = emptyRow(ADMIN_ORG_COLS, "No organizations yet.", "", "fa-hospital");
+        renderPager("#admin-org-pager", data, () => loadAdminOrgs(), "oOffset");
+        return;
+      }
+      tb.innerHTML = data.organizations.map(o => {
+        const loc = [o.city, o.state_code].filter(Boolean).join(", ") || "—";
+        const verified = o.is_verified ? ` <i class="fas fa-circle-check admin-verified" title="Verified"></i>` : "";
+        return `<tr>
+          <td><b>${esc(o.org_name)}</b>${verified}</td>
+          <td>${esc(o.org_type || "—")}</td>
+          <td>${esc(loc)}</td>
+          <td class="admin-sub">${esc(o.owner_email || "—")}</td>
+          <td>${Number(o.members).toLocaleString()}</td>
+          <td>${Number(o.jobs).toLocaleString()} <span class="admin-sub">(${Number(o.jobs_active).toLocaleString()} active)</span></td>
+          <td>${adminDate(o.created_at)}</td>
+        </tr>`;
+      }).join("");
+      renderPager("#admin-org-pager", data, () => loadAdminOrgs(), "oOffset");
+    } catch(e) {
+      tb.innerHTML = errorRow(ADMIN_ORG_COLS, "Could not load organizations.");
+    }
+  }
+
+  function renderPager(sel, data, reload, offsetKey){
+    const el = $(sel);
+    if (!el) return;
+    const {total, limit, offset} = data;
+    const from = total ? offset + 1 : 0, to = Math.min(offset + limit, total);
+    const prevDis = offset <= 0 ? " disabled" : "";
+    const nextDis = offset + limit >= total ? " disabled" : "";
+    el.innerHTML = `<span class="admin-pager-info">${from}–${to} of ${total.toLocaleString()}</span>`
+      + `<button class="btn ghost small" data-pg="prev"${prevDis}><i class="fas fa-chevron-left"></i>Prev</button>`
+      + `<button class="btn ghost small" data-pg="next"${nextDis}>Next<i class="fas fa-chevron-right"></i></button>`;
+    el.querySelector('[data-pg="prev"]').onclick = () => { ADMIN[offsetKey] = Math.max(0, offset - limit); reload(); };
+    el.querySelector('[data-pg="next"]').onclick = () => { if (offset + limit < total){ ADMIN[offsetKey] = offset + limit; reload(); } };
   }
 
   function jobRow(j){
@@ -1221,7 +1443,16 @@
     if (!S.employer){ box.innerHTML = ""; return; }
     // Register titles so the applicant/detail views can label themselves.
     jobs.forEach(j => S.jobsById.set(j.job_id, j));
-    box.innerHTML = `<div class="an-section"><h2>Your job orders</h2>${
+    box.innerHTML = `<div class="an-section">
+      <div class="emp-jobs-head">
+        <h2>Your job orders</h2>
+        <div class="emp-jobs-tools">
+          <button class="btn ghost small" id="jobs-template" title="Download an Excel template to fill in"><i class="fas fa-file-arrow-down"></i>Template</button>
+          <button class="btn ghost small" id="jobs-upload" title="Post many jobs at once from Excel or CSV"><i class="fas fa-file-excel"></i>Upload Excel</button>
+          ${jobs.length ? `<button class="btn ghost small danger" id="jobs-delete-all" title="Delete every job order"><i class="fas fa-trash"></i>Delete all</button>` : ""}
+          <input type="file" id="jobs-file" accept=".xlsx,.xls,.csv" hidden>
+        </div>
+      </div>${
       jobs.length
         ? `<div class="table-wrap"><table class="table">
             <thead><tr><th>Role</th><th>Type</th><th>Location</th><th>Pay</th><th title="Inbound applicants, if you post this order publicly">Applied</th><th>Status</th><th class="th-actions"></th></tr></thead>
@@ -1247,6 +1478,67 @@
         : `<p class="muted" style="font-size:13px">No job orders yet — create one to start sourcing candidates against it.</p>`}</div>`;
     $$("#employer-jobs [data-job-edit]").forEach(b => b.onclick = () => editJob(b.dataset.jobEdit));
     $$("#employer-jobs [data-job-close]").forEach(b => b.onclick = () => closeJob(b.dataset.jobClose));
+    const jt = $("#jobs-template");
+    if (jt) jt.onclick = downloadJobTemplate;
+    const ju = $("#jobs-upload"), jf = $("#jobs-file");
+    if (ju && jf){
+      ju.onclick = () => jf.click();
+      jf.onchange = () => { if (jf.files[0]) bulkUploadJobs(jf.files[0]); jf.value = ""; };
+    }
+    const jda = $("#jobs-delete-all");
+    if (jda) jda.onclick = deleteAllJobs;
+  }
+
+  async function downloadJobTemplate(){
+    try {
+      const res = await fetch("/api/jobs/template", {headers:{Authorization:"Bearer " + token()}, cache:"no-store"});
+      if (!res.ok) throw new Error("Could not generate the template");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "healthboard-jobs-template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch(e){ toast(e.message || "Download failed.", {title:"Template", kind:"err"}); }
+  }
+
+  async function bulkUploadJobs(file){
+    if (!file || !S.employer) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    toast(`Reading ${file.name}…`, {title:"Bulk upload"});
+    try {
+      const r = await api("POST", `/api/jobs/bulk?employer_id=${S.employer.employer_id}`, fd);
+      let msg = `${r.created} job order${r.created === 1 ? "" : "s"} created`;
+      if (r.skipped) msg += ` · ${r.skipped} blank row${r.skipped === 1 ? "" : "s"} skipped`;
+      if (r.failed) msg += ` · ${r.failed} with errors`;
+      toast(msg, {title:"Bulk upload", kind: r.failed ? "err" : "ok"});
+      loadEmployer();
+      if (r.errors && r.errors.length)
+        infoDialog("Some rows couldn't be imported",
+          [["Created", r.created], ["Skipped", r.skipped], ["Errors", r.failed],
+           ...r.errors.map((e, i) => [`Problem ${i + 1}`, e])]);
+    } catch(e){
+      toast(e.message || "Upload failed.", {title:"Bulk upload", kind:"err"});
+    }
+  }
+
+  async function deleteAllJobs(){
+    if (!S.employer) return;
+    const ok = await confirmDialog({
+      title: "Delete all job orders?",
+      body: "This permanently deletes every job order for " + (S.employer.org_name || "your organization")
+          + ", along with their applications and saved-job records. This cannot be undone.",
+      confirm: "Delete everything", danger: true,
+    });
+    if (!ok) return;
+    try {
+      const r = await del(`/api/jobs/all?employer_id=${S.employer.employer_id}`);
+      toast(`Deleted ${r.deleted} job order${r.deleted === 1 ? "" : "s"}.`, {title:"Job orders cleared"});
+      loadEmployer();
+    } catch(e){
+      toast(e.message || "Could not delete the jobs.", {title:"Delete failed", kind:"err"});
+    }
   }
   async function createOrg(){
     const v = await formDialog({
@@ -1800,6 +2092,91 @@
     const fab = $("#copilot-fab");
     if (fab) fab.onclick = () => showPage("ai");
   }
+
+  // ---- Job AI: natural-language job search for job seekers -----------------
+  function jaiPay(j){
+    if (!j.pay_rate_max) return "";
+    const unit = j.pay_unit === "hourly" ? "/hr" : (j.pay_unit === "weekly" ? "/wk" : "");
+    const lo = j.pay_rate_min, hi = j.pay_rate_max;
+    return (lo && Math.round(lo) !== Math.round(hi))
+      ? `$${Math.round(lo)}–$${Math.round(hi)}${unit}`
+      : `$${Math.round(hi)}${unit}`;
+  }
+  function jaiJobCard(j){
+    const loc = [j.city, j.state_code].filter(Boolean).join(", ") || "Flexible";
+    const type = (j.job_type || "").replace("_", " ");
+    const seats = (j.openings || 1) > 1 ? ` · ${j.openings} openings` : "";
+    const sub = [j.specialty || j.profession_type, loc, type].filter(Boolean).join(" · ");
+    const pay = jaiPay(j);
+    return `<div class="jai-job">
+      <div class="jai-job-main">
+        <div class="jai-job-title">${esc(j.title)}</div>
+        <div class="jai-job-meta">${esc(sub)}${esc(seats)}</div>
+      </div>
+      ${pay ? `<div class="jai-job-pay">${esc(pay)}</div>` : ""}
+      <button class="btn small primary" data-jobview="${esc(j.job_id)}"><i class="fas fa-arrow-right"></i>View</button>
+    </div>`;
+  }
+  async function jobAiSearch(message){
+    message = (message || "").trim();
+    if (!message || S.jaiBusy) return;
+    const fresh = !$("#page-jobai").classList.contains("has-results")
+               || !$("#jai-thread").children.length;
+    if (fresh) S.jaiContext = null;
+    S.jaiBusy = true;
+    $("#page-jobai").classList.add("has-results");
+    $("#jai-input").value = "";
+    const thread = $("#jai-thread");
+    const turn = document.createElement("div");
+    turn.className = "ai-turn";
+    turn.innerHTML = `<div class="ai-q">${esc(message)}</div>
+      <div class="ai-answer"><i class="fas fa-wand-magic-sparkles ai-spark"></i>
+        <div class="ai-answer-body">Searching<span class="copilot-dots"><i></i><i></i><i></i></span></div></div>`;
+    thread.appendChild(turn);
+    turn.scrollIntoView({behavior:"smooth", block:"start"});
+    const body = turn.querySelector(".ai-answer-body");
+    try {
+      const r = await post("/api/jobs/copilot", {message, context: S.jaiContext || null});
+      S.jaiContext = r.filters || {};
+      $("#jai-input").placeholder = "Refine — e.g. only nights, under $2,600, or add California";
+      body.textContent = r.answer || "Here's what I found.";
+      const items = r.items || [];
+      items.forEach(j => S.jobsById.set(j.job_id, j));
+      if (items.length){
+        const results = document.createElement("div");
+        results.className = "jai-results";
+        results.innerHTML = items.map(jaiJobCard).join("");
+        turn.appendChild(results);
+        if ((r.total || 0) > items.length){
+          const more = document.createElement("button");
+          more.className = "ai-viewall";
+          more.innerHTML = `<i class="fas fa-list"></i>See all ${r.total.toLocaleString()} in Find Jobs`;
+          more.onclick = () => showPage("jobs");
+          turn.appendChild(more);
+        }
+      }
+    } catch(e) {
+      body.textContent = "Sorry — I couldn't complete that search. Please try again.";
+    } finally {
+      S.jaiBusy = false;
+      $("#jai-input").focus();
+    }
+  }
+  function jobAiNew(){
+    S.jaiContext = null;
+    $("#jai-thread").innerHTML = "";
+    $("#page-jobai").classList.remove("has-results");
+    $("#jai-input").value = "";
+    $("#jai-input").focus();
+  }
+  function wireJobAi(){
+    const form = $("#jai-form");
+    if (!form) return;
+    form.addEventListener("submit", e => { e.preventDefault(); jobAiSearch($("#jai-input").value); });
+    $$("#jai-suggestions .ai-chip").forEach(c => c.onclick = () => jobAiSearch(c.textContent));
+    $("#jai-new").onclick = jobAiNew;
+  }
+
   // Push the AI-understood filters onto the real Providers directory, so results
   // render in the main table (full pagination + filter chips), not just cards.
   function applyCopilotFilters(f){
@@ -2333,7 +2710,34 @@
       const save = e.target.closest("[data-pool-save]");
       if (save){ e.stopPropagation(); openPoolMenu(save, save.dataset.poolSave); }
       else if (!e.target.closest(".pool-menu")) closePoolMenu();
+      const aSusp = e.target.closest("[data-admin-suspend]");
+      if (aSusp) adminUpdateUser(aSusp.dataset.adminSuspend, {status:"suspended"});
+      const aAct = e.target.closest("[data-admin-activate]");
+      if (aAct) adminUpdateUser(aAct.dataset.adminActivate, {status:"active"});
+      const aTab = e.target.closest(".admin-tab");
+      if (aTab) showAdminTab(aTab.dataset.atab);
       if (e.target.closest("[data-close-modal]") || e.target.classList.contains("modal")) $("#modal-root").innerHTML = "";
+    });
+    // Admin: role dropdown change → update the user's role.
+    document.body.addEventListener("change", e => {
+      const rs = e.target.closest("[data-admin-role]");
+      if (rs) adminUpdateUser(rs.dataset.adminRole, {role: rs.value});
+    });
+    // Admin: search + filter controls (debounced search, immediate selects).
+    let adminUserT, adminOrgT;
+    const auq = $("#admin-user-q");
+    if (auq) auq.addEventListener("input", () => {
+      clearTimeout(adminUserT);
+      adminUserT = setTimeout(() => { ADMIN.uOffset = 0; loadAdminUsers(); }, 300);
+    });
+    const aur = $("#admin-user-role");
+    if (aur) aur.onchange = () => { ADMIN.uOffset = 0; loadAdminUsers(); };
+    const aus = $("#admin-user-status");
+    if (aus) aus.onchange = () => { ADMIN.uOffset = 0; loadAdminUsers(); };
+    const aoq = $("#admin-org-q");
+    if (aoq) aoq.addEventListener("input", () => {
+      clearTimeout(adminOrgT);
+      adminOrgT = setTimeout(() => { ADMIN.oOffset = 0; loadAdminOrgs(); }, 300);
     });
     const poolNew = $("#pool-new");
     if (poolNew) poolNew.onclick = createPool;
@@ -2383,13 +2787,14 @@
     const credShare = $("#cred-share");
     if (credShare) credShare.onclick = copyCredentialSummary;
     const tmplNew = $("#tmpl-new");
-    if (tmplNew) tmplNew.onclick = newTemplate;
+    if (tmplNew) tmplNew.onclick = () => newTemplate();
     const campNew = $("#camp-new");
     if (campNew) campNew.onclick = newCampaign;
     wireMessages();
     $("#resume-drop").onclick = () => $("#resume-file").click();
     $("#resume-file").onchange = () => { if ($("#resume-file").files[0]) uploadResume($("#resume-file").files[0]); };
     wireAi();
+    wireJobAi();
     wireExtension();
     wirePayCalculator();
     wirePayTools();
@@ -2423,7 +2828,8 @@
         const val = f.value == null ? "" : String(f.value);
         if (f.type === "select")
           return `<select ${common}>${(f.options || []).map(o => {
-            const v = Array.isArray(o) ? o[0] : o, label = Array.isArray(o) ? o[1] : o;
+            const v = Array.isArray(o) ? o[0] : (o && typeof o === "object" ? o.value : o);
+            const label = Array.isArray(o) ? o[1] : (o && typeof o === "object" ? o.label : o);
             return `<option value="${esc(v)}"${String(val) === String(v) ? " selected" : ""}>${esc(label)}</option>`;
           }).join("")}</select>`;
         if (f.type === "textarea") return `<textarea ${common} rows="3">${esc(val)}</textarea>`;
@@ -3460,6 +3866,17 @@
             : `<p class="muted" style="font-size:13px">No templates yet.</p>`}
           <div class="merge-hint">Merge fields: ${(tmpls.merge_fields || []).map(f => `<code>{{${f}}}</code>`).join(" ")}</div>
         </div>
+        <div class="an-section"><h2>Starter templates</h2>
+          <p class="muted" style="font-size:13px;margin:0 0 12px">Proven outreach messages — click <b>Use</b> to add one to your templates, then tweak it.</p>
+          <div class="starter-grid">
+            ${BUILTIN_TEMPLATES.map((t, i) => `<div class="starter-card">
+              <div class="starter-name">${esc(t.name)}</div>
+              <div class="starter-desc">${esc(t.desc)}</div>
+              <div class="starter-subj"><i class="fas fa-envelope"></i>${esc(t.subject)}</div>
+              <button class="btn ghost small" data-builtin="${i}"><i class="fas fa-plus"></i>Use</button>
+            </div>`).join("")}
+          </div>
+        </div>
         <div class="an-section"><h2>Campaigns</h2>
           ${camps.items.length ? camps.items.map(campCard).join("")
             : `<div class="match-empty"><i class="fas fa-paper-plane"></i><h3>No campaigns yet</h3>
@@ -3471,25 +3888,28 @@
         try { await del(`/api/outreach/templates/${b.dataset.tmplDel}`); loadOutreach(); }
         catch(err) { toast(err.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
+      $$("#outreach-body [data-builtin]").forEach(b => b.onclick = () =>
+        newTemplate(BUILTIN_TEMPLATES[+b.dataset.builtin]));
       $$("#outreach-body .camp-card").forEach(c => c.onclick = () => openCampaign(c.dataset.camp));
     } catch(e) { box.innerHTML = errorState("Could not load outreach"); }
   }
-  async function newTemplate(){
+  async function newTemplate(preset){
     const DEFAULT_BODY = ["Hi {{first_name}},", "",
       "I'm recruiting for {{specialty}} roles near {{city}}. With your "
       + "{{years_experience}} years of experience I thought it might be a fit.", "",
       "Would you be open to a quick chat?"].join("\n");
     const v = await formDialog({
-      title: "New email template",
+      title: preset ? "Use starter template" : "New email template",
       intro: "Merge fields like {{first_name}}, {{specialty}} and {{city}} are filled "
-           + "per recipient when the campaign sends.",
+           + "per recipient when the campaign sends. Edit anything before saving.",
       submit: "Save template",
       fields: [
-        {name:"name", label:"Template name", required:true, wide:true, placeholder:"ICU intro"},
+        {name:"name", label:"Template name", required:true, wide:true, placeholder:"ICU intro",
+         value: preset ? preset.name : ""},
         {name:"subject", label:"Subject line", required:true, wide:true,
-         value:"{{specialty}} roles near {{city}}"},
+         value: preset ? preset.subject : "{{specialty}} roles near {{city}}"},
         {name:"body", label:"Message", type:"textarea", required:true, wide:true,
-         value:DEFAULT_BODY},
+         value: preset ? preset.body : DEFAULT_BODY},
       ],
     });
     if (!v) return;
@@ -3502,6 +3922,63 @@
             {title:"Could not save", kind:"err"});
     }
   }
+
+  // Built-in starter templates recruiters can drop in and tweak. Merge fields
+  // ({{first_name}}, {{specialty}}, {{city}}, {{state_code}}, {{years_experience}},
+  // {{profession_type}}) are filled per recipient when a campaign sends.
+  const BUILTIN_TEMPLATES = [
+    {name: "First-touch intro",
+     desc: "Warm opener for a candidate you've just sourced.",
+     subject: "{{specialty}} roles near {{city}}",
+     body: ["Hi {{first_name}},", "",
+       "I'm a healthcare recruiter working with facilities near {{city}}, {{state_code}}, "
+       + "and your {{specialty}} background stood out. With {{years_experience}} years in, "
+       + "you'd be a strong fit for a few roles I'm filling right now.", "",
+       "Open to a quick chat this week to hear the details?", "",
+       "Best,"].join("\n")},
+    {name: "Travel contract offer",
+     desc: "Pitch a specific travel assignment with pay.",
+     subject: "13-week {{specialty}} travel contract — great pay",
+     body: ["Hi {{first_name}},", "",
+       "I have a 13-week {{specialty}} travel contract opening up near {{city}} with "
+       + "competitive weekly pay plus a housing stipend. Given your experience, I can "
+       + "likely fast-track you.", "",
+       "Want me to send the full pay package and details?", "",
+       "Thanks,"].join("\n")},
+    {name: "Gentle follow-up",
+     desc: "Second touch when your first note went quiet.",
+     subject: "Following up — {{specialty}} roles",
+     body: ["Hi {{first_name}},", "",
+       "Just floating this back to the top of your inbox. I'm still working on {{specialty}} "
+       + "roles near {{city}} and would love to share what's open.", "",
+       "Even if the timing isn't right now, happy to keep you posted on the best ones.", "",
+       "Best,"].join("\n")},
+    {name: "Compact / multi-state",
+     desc: "For clinicians who can work across states.",
+     subject: "Multi-state {{specialty}} opportunities",
+     body: ["Hi {{first_name}},", "",
+       "If you hold a compact license, I have {{specialty}} roles across several states — "
+       + "including some well beyond {{city}} — with quick starts and strong pay.", "",
+       "Would you like me to line up options that match where you'd want to go next?", "",
+       "Thanks,"].join("\n")},
+    {name: "Referral ask",
+     desc: "Ask a candidate to refer peers.",
+     subject: "Know any great {{profession_type}} pros?",
+     body: ["Hi {{first_name}},", "",
+       "You clearly know the {{specialty}} world well. I'm filling several roles near "
+       + "{{city}} and many of the best hires come through referrals.", "",
+       "If a colleague comes to mind who'd want to hear about them, I'd be grateful for "
+       + "an intro — and happy to return the favor.", "",
+       "Cheers,"].join("\n")},
+    {name: "Re-engage past candidate",
+     desc: "Reconnect with someone you spoke to before.",
+     subject: "New {{specialty}} openings since we last talked",
+     body: ["Hi {{first_name}},", "",
+       "It's been a while! Some new {{specialty}} roles near {{city}} just landed on my "
+       + "desk, and I immediately thought of you.", "",
+       "Are you open to hearing what's changed? Even a quick catch-up would be great.", "",
+       "Best,"].join("\n")},
+  ];
   async function newCampaign(){
     if (!S.pools.length){
       try { S.pools = (await get("/api/pools")).items || []; } catch(e) { S.pools = []; }
@@ -4358,6 +4835,16 @@
     try {
       const it = new URLSearchParams(location.search).get("invite");
       if (it) sessionStorage.setItem("hb_invite", it);
+    } catch(_){}
+    // If we were signed out because the account was used elsewhere, say so once.
+    try {
+      if (localStorage.getItem("hb_signout_reason") === "superseded"){
+        localStorage.removeItem("hb_signout_reason");
+        setTimeout(() => toast(
+          "You were signed out because this account was signed in somewhere else. "
+          + "Only one active session is allowed per account.",
+          {title:"Signed out", kind:"err", ms:9000}), 400);
+      }
     } catch(_){}
     // A splash covers the screen while we validate an existing token, so a
     // logged-in user never sees the login form flash on refresh.

@@ -29,6 +29,10 @@ class User(Base):
     # Long-lived personal token the browser extension uses to push captures to
     # /api/ingest/* as this recruiter (issued on the "Get the Extension" page).
     capture_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
+    # The session id of the account's current active login. When single-session
+    # is enforced for the user's role, any access token / cookie whose "sid" does
+    # not match this is rejected — so a new login signs every other device out.
+    active_session_id: Mapped[Optional[str]] = mapped_column(String(36))
     last_login_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime, index=True)
     created_at: Mapped[datetime] = created_col()
     updated_at: Mapped[datetime] = updated_col()
