@@ -811,17 +811,17 @@
     if (rec) {
       // Everything a recruiter is measured on comes back in one call.
       $("#dash-metrics").innerHTML =
-        metricTile(total.toLocaleString(), "Open roles", "jobs")
+        metricTile(total.toLocaleString(), "Open roles", "providers")
         + metricTile("—", "Contacts revealed", "credits")
         + metricTile("—", "Shortlisted", "pools")
-        + metricTile("—", "In submission", "submissions");
+        + metricTile("—", "Conversations", "messages");
       try {
         const a = await get("/api/analytics/sourcing?days=30");
         $("#dash-metrics").innerHTML =
-          metricTile(total.toLocaleString(), "Open roles", "jobs")
+          metricTile(total.toLocaleString(), "Open roles", "providers")
           + metricTile(a.contacts.released_total, "Contacts revealed", "credits")
           + metricTile(a.pools.shortlisted, "Shortlisted", "pools")
-          + metricTile(a.pools.worked, "In submission", "submissions");
+          + metricTile(a.messaging.threads, "Conversations", "messages");
       } catch(e) { /* the tiles keep their placeholders */ }
       return;
     }
@@ -4324,15 +4324,6 @@
        + "including some well beyond {{city}} — with quick starts and strong pay.", "",
        "Would you like me to line up options that match where you'd want to go next?", "",
        "Thanks,"].join("\n")},
-    {name: "Referral ask",
-     desc: "Ask a candidate to refer peers.",
-     subject: "Know any great {{profession_type}} pros?",
-     body: ["Hi {{first_name}},", "",
-       "You clearly know the {{specialty}} world well. I'm filling several roles near "
-       + "{{city}} and many of the best hires come through referrals.", "",
-       "If a colleague comes to mind who'd want to hear about them, I'd be grateful for "
-       + "an intro — and happy to return the favor.", "",
-       "Cheers,"].join("\n")},
     {name: "Re-engage past candidate",
      desc: "Reconnect with someone you spoke to before.",
      subject: "New {{specialty}} openings since we last talked",
@@ -4518,16 +4509,23 @@
       const supplyBody = mk.supply.length
         ? hbars(mk.supply.map(x => ({label: x.label, value: x.count})), {fmt: cn})
         : emptyState("No providers yet", "", "fa-user-doctor");
+      // Specialty demand as a composition donut (with an "Other" remainder).
+      const specSegs = mk.demand_specialty.map((x, i) => ({label: x.label, value: x.count, color: VIZ_CAT[i % 7]}));
+      const specShown = specSegs.reduce((a, s) => a + s.value, 0);
+      if (mk.jobs_active - specShown > 0)
+        specSegs.push({label: "Other", value: mk.jobs_active - specShown, color: "#c3d0e6"});
       const specBody = mk.demand_specialty.length
-        ? hbars(mk.demand_specialty.map(x => ({label: x.label, value: x.count})))
+        ? `<div class="viz-donut-wrap">${svgDonut(specSegs, {centerValue: mk.jobs_active, centerLabel: "open roles"})}${vizLegend(specSegs)}</div>`
         : emptyState("No open roles yet", "", "fa-briefcase");
       const stateBody = mk.demand_state.length
         ? hbars(mk.demand_state.map(x => ({label: x.label, value: x.count})))
         : emptyState("No open roles yet", "", "fa-map-location-dot");
+      // Two circular charts on top (reach + specialty mix), two bar sets below
+      // (supply + state) — a balanced, scannable 2×2.
       const marketGrid = `<div class="viz-grid">
-        ${vizCard("Directory reach", reachBody, "of the screened directory")}
-        ${vizCard("Talent supply", supplyBody, "providers by profession")}
+        ${vizCard("Directory reach", reachBody, "reachable share")}
         ${vizCard("Open roles by specialty", specBody, `${mk.jobs_active} live roles`)}
+        ${vizCard("Talent supply", supplyBody, "providers by profession")}
         ${vizCard("Open roles by state", stateBody, "top locations hiring")}
       </div>`;
 
