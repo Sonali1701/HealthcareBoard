@@ -242,6 +242,8 @@
     // page, social.py API and loadFeed() are kept — remove this line and restore
     // the nav button in board.html to bring it back.
     if (id === "community") id = "dashboard";
+    // Retired from the product — keep the code/pages but make them unreachable.
+    if (["submissions", "clients", "placements", "extension", "paytools"].includes(id)) id = "dashboard";
     if ((id === "providers" || id === "ai" || id === "extension" || id === "pools"
          || id === "matching" || id === "outreach" || id === "credits" || id === "submissions"
          || id === "applicants" || id === "calculator" || id === "clients" || id === "orgadmin"
@@ -4407,8 +4409,67 @@
   }
 
   // --- Analytics -----------------------------------------------------------
-  const STAGE_COLORS = {sourced:"#94a3b8", contacted:"#0ea5e9", screening:"#6366f1",
-                        submitted:"#8b5cf6", hired:"#059669", rejected:"#e11d48"};
+  // Validated categorical palette (dataviz skill reference order — passes the
+  // adjacent-pair CVD gates in light mode). Fixed order, never cycled.
+  const VIZ_CAT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+  // Blue ordinal ramp for ordered funnel stages (steps 250→700; light end ≥2:1).
+  const VIZ_FUNNEL = ["#86b6ef", "#5598e7", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+  const POOL_STAGE_ORDER = ["sourced", "contacted", "screening", "submitted", "hired", "rejected"];
+  const STAGE_COLORS = Object.fromEntries(POOL_STAGE_ORDER.map((s, i) => [s, VIZ_CAT[i % VIZ_CAT.length]]));
+
+  // --- SVG chart primitives (self-contained, no library) -------------------
+  function svgDonut(segs, opt = {}){
+    const size = opt.size || 172, thick = opt.thick || 26;
+    const clean = segs.filter(s => s.value > 0);
+    const total = clean.reduce((a, s) => a + s.value, 0);
+    const r = (size - thick) / 2, cx = size / 2, cy = size / 2, C = 2 * Math.PI * r;
+    let angle = 0;
+    const arcs = clean.map(s => {
+      const frac = s.value / total, len = frac * C;
+      const gap = clean.length > 1 ? Math.min(3.5, len * 0.4) : 0;
+      const dash = Math.max(0.5, len - gap);
+      const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${thick}"
+        stroke-dasharray="${dash} ${C - dash}" transform="rotate(${angle - 90} ${cx} ${cy})"><title>${esc(s.label)}: ${s.value.toLocaleString()} (${Math.round(frac * 100)}%)</title></circle>`;
+      angle += frac * 360;
+      return seg;
+    }).join("");
+    const centerVal = opt.centerValue != null ? opt.centerValue : total;
+    return `<svg viewBox="0 0 ${size} ${size}" class="viz-donut" role="img" aria-label="${esc(opt.centerLabel || "donut")}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--line)" stroke-width="${thick}"/>
+      ${arcs}
+      <text x="${cx}" y="${cy - 1}" text-anchor="middle" class="viz-big">${Number(centerVal).toLocaleString()}</text>
+      <text x="${cx}" y="${cy + 18}" text-anchor="middle" class="viz-cap">${esc(opt.centerLabel || "total")}</text>
+    </svg>`;
+  }
+  const vizLegend = segs => `<div class="viz-legend">${segs.filter(s => s.value > 0).map(s =>
+    `<span class="viz-leg"><i style="background:${s.color}"></i>${esc(s.label)}<b>${s.value.toLocaleString()}</b></span>`).join("")}</div>`;
+
+  function hbars(items, opt = {}){
+    const max = Math.max(1, ...items.map(i => i.value));
+    return `<div class="viz-bars">${items.map((it, idx) => {
+      const color = it.color || (opt.ramp ? opt.ramp[Math.min(idx, opt.ramp.length - 1)] : "var(--accent)");
+      const pct = 100 * it.value / max;
+      return `<div class="viz-brow" title="${esc(it.label)}: ${it.value.toLocaleString()}">
+        <span class="viz-blbl">${esc(it.label)}</span>
+        <span class="viz-btrack"><i class="viz-bfill" style="width:${it.value ? Math.max(3, pct) : 0}%;background:${color}"></i></span>
+        <span class="viz-bval">${it.value.toLocaleString()}</span></div>`;
+    }).join("")}</div>`;
+  }
+
+  function svgGauge(pct, opt = {}){
+    const size = opt.size || 156, thick = 15, r = (size - thick) / 2, cx = size / 2, cy = size / 2, C = 2 * Math.PI * r;
+    const frac = Math.max(0, Math.min(100, pct)) / 100;
+    return `<svg viewBox="0 0 ${size} ${size}" class="viz-gauge" role="img" aria-label="${esc((opt.label || "") + " " + Math.round(pct) + "%")}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--line)" stroke-width="${thick}"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${opt.color || "var(--accent)"}" stroke-width="${thick}" stroke-linecap="round"
+        stroke-dasharray="${frac * C} ${C}" transform="rotate(-90 ${cx} ${cy})"/>
+      <text x="${cx}" y="${cy - 1}" text-anchor="middle" class="viz-big">${Math.round(pct)}%</text>
+      <text x="${cx}" y="${cy + 18}" text-anchor="middle" class="viz-cap">${esc(opt.label || "")}</text>
+    </svg>`;
+  }
+  const vizCard = (title, body, sub = "") =>
+    `<div class="viz-card"><div class="viz-head"><h3>${esc(title)}</h3>${sub ? `<span class="viz-sub">${esc(sub)}</span>` : ""}</div>${body}</div>`;
+
   function stat(value, label, sub, accent){
     return `<div class="an-stat"><b${accent ? ' class="accent"' : ""}>${esc(value)}</b>
       <span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
@@ -4429,36 +4490,55 @@
         get("/api/analytics/funnel").catch(() => null),
         get("/api/analytics/conversations").catch(() => null),
       ]);
-      const dir = d.directory, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging;
+      const dir = d.directory, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
       const stages = pools.by_stage || {};
-      const totalStaged = Object.values(stages).reduce((a,b) => a+b, 0);
-      const bar = totalStaged
-        ? `<div class="an-bar">${Object.entries(stages).map(([s,n]) =>
-             `<i style="width:${(100*n/totalStaged).toFixed(1)}%;background:${STAGE_COLORS[s] || "#94a3b8"}"></i>`).join("")}</div>
-           <div class="an-legend">${Object.entries(stages).map(([s,n]) =>
-             `<span><i class="an-dot" style="background:${STAGE_COLORS[s] || "#94a3b8"}"></i>${esc(s)} ${n}</span>`).join("")}</div>`
-        : `<p class="muted" style="font-size:12.5px">No candidates shortlisted yet.</p>`;
+      const poolSegs = POOL_STAGE_ORDER.map(s => ({
+        label: s.charAt(0).toUpperCase() + s.slice(1), value: stages[s] || 0, color: STAGE_COLORS[s]}));
+      const totalStaged = poolSegs.reduce((a, s) => a + s.value, 0);
 
-      // Top-line CRM KPIs.
-      const kpiSection = kpis
-        ? `<div class="an-section"><h2>At a glance</h2><div class="an-grid">
-            ${stat(kpis.active_conversations, "Active conversations")}
-            ${stat(kpis.in_interview, "In interview")}
-            ${stat(kpis.offers_out, "Offers out")}
-            ${stat(kpis.hired, "Hired", "", true)}
-          </div></div>` : "";
+      // Headline figures.
+      const kpiSection = `<div class="an-section"><h2>At a glance</h2><div class="an-grid">
+        ${stat(con.released_total, "Contacts revealed", `${con.released_recent} in ${d.window_days} days`, true)}
+        ${stat(pools.shortlisted, "Shortlisted")}
+        ${stat(runs.candidates_ranked.toLocaleString(), "Candidates ranked", `avg score ${runs.avg_match_score}`)}
+        ${kpis ? stat(kpis.active_conversations, "Active conversations") : stat(msg.threads, "Conversations")}
+        ${kpis ? stat(kpis.offers_out, "Offers out") : stat(pools.pools, "Talent pools")}
+        ${kpis ? stat(kpis.hired, "Hired", "", true) : stat(d.saved_searches, "Saved searches")}
+      </div></div>`;
 
-      // Hiring funnel — meaningful now that jobs can receive applications.
-      const funnelSection = (funnel && funnel.total)
-        ? `<div class="an-section"><h2>Hiring funnel</h2><div class="an-grid">
-            ${FUNNEL_ORDER.map(([k,label]) => stat(funnel.stages[k] || 0, label)).join("")}
-            ${stat(funnel.stages.rejected || 0, "Rejected")}
-          </div></div>`
-        : `<div class="an-section"><h2>Hiring funnel</h2>
-            <p class="muted" style="font-size:12.5px">No applications yet — when candidates
-             apply to your posted jobs, the funnel appears here.</p></div>`;
+      // Pie / donut — where the shortlist sits (validated categorical colors).
+      const donutBody = totalStaged
+        ? `<div class="viz-donut-wrap">${svgDonut(poolSegs, {centerValue: totalStaged, centerLabel: "shortlisted"})}${vizLegend(poolSegs)}</div>`
+        : emptyState("No candidates shortlisted yet", "Shortlist candidates into a talent pool to see the pipeline.", "fa-layer-group");
 
-      // Per-thread CRM table.
+      // Hiring funnel — horizontal bars, blue ordinal ramp.
+      const funnelItems = FUNNEL_ORDER.map(([k, l]) => ({label: l, value: (funnel && funnel.stages[k]) || 0}));
+      funnelItems.push({label: "Rejected", value: (funnel && funnel.stages.rejected) || 0, color: "#c3d0e6"});
+      const funnelBody = (funnel && funnel.total)
+        ? hbars(funnelItems, {ramp: VIZ_FUNNEL})
+        : emptyState("No applications yet", "When candidates apply to your posted jobs, the funnel appears here.", "fa-filter");
+
+      // Directory reach — radial gauge + figures.
+      const reachBody = `<div class="viz-gauge-wrap">${svgGauge(dir.reachable_pct, {label: "reachable"})}
+        <div class="viz-side">
+          <div class="viz-fig"><b>${dir.listable.toLocaleString()}</b><span>listable providers</span></div>
+          <div class="viz-fig"><b>${dir.reachable.toLocaleString()}</b><span>have email or phone</span></div>
+        </div></div>`;
+
+      // Outreach — paired bars.
+      const outBody = hbars([
+        {label: "Messages sent", value: msg.sent, color: VIZ_CAT[0]},
+        {label: "Messages received", value: msg.received, color: VIZ_CAT[1]},
+        {label: "Conversations", value: msg.threads, color: VIZ_CAT[2]},
+      ]);
+
+      const chartGrid = `<div class="viz-grid">
+        ${vizCard("Talent-pool pipeline", donutBody, "where your shortlist sits")}
+        ${vizCard("Hiring funnel", funnelBody, (funnel && funnel.total) ? `${funnel.total} applications` : "")}
+        ${vizCard("Directory reach", reachBody, "of the screened directory")}
+        ${vizCard("Outreach", outBody, `${d.saved_searches} saved searches`)}
+      </div>`;
+
       const convoRows = (convo && convo.conversations || []);
       const convoSection = convoRows.length
         ? `<div class="an-section"><h2>Conversations</h2>
@@ -4473,28 +4553,7 @@
                 <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "—"}</td>
               </tr>`).join("")}</tbody></table></div></div>` : "";
 
-      box.innerHTML = kpiSection + funnelSection + `
-        <div class="an-section"><h2>Directory reach</h2><div class="an-grid">
-          ${stat(dir.listable.toLocaleString(), "Listable providers", "after screening")}
-          ${stat(dir.reachable.toLocaleString(), "Reachable", "have an email or phone", true)}
-          ${stat(dir.reachable_pct + "%", "Reachable share", "of the listed directory")}
-        </div></div>
-        <div class="an-section"><h2>Your sourcing</h2><div class="an-grid">
-          ${stat(d.contacts.released_total, "Contacts released", `${d.contacts.released_recent} in ${d.window_days} days`, true)}
-          ${stat(pools.pools, "Talent pools")}
-          ${stat(pools.shortlisted, "Candidates shortlisted")}
-          ${stat(pools.worked_pct + "%", "Shortlist worked", `${pools.worked} moved past sourced`)}
-          ${stat(runs.runs, "Sourcing runs")}
-          ${stat(runs.candidates_ranked.toLocaleString(), "Candidates ranked", `avg score ${runs.avg_match_score}`)}
-        </div></div>
-        <div class="an-section"><h2>Pipeline</h2>${bar}</div>
-        <div class="an-section"><h2>Outreach</h2><div class="an-grid">
-          ${stat(msg.threads, "Conversations")}
-          ${stat(msg.sent, "Messages sent")}
-          ${stat(msg.received, "Messages received")}
-          ${stat(d.saved_searches, "Saved searches")}
-          ${stat(d.notifications, "Notifications")}
-        </div></div>` + convoSection;
+      box.innerHTML = kpiSection + `<div class="an-section"><h2>Activity</h2>${chartGrid}</div>` + convoSection;
       $("#analytics-sub").textContent = `Last ${d.window_days} days · ${dir.listable.toLocaleString()} providers listed`;
     } catch(e) { box.innerHTML = errorState("Could not load analytics"); }
   }

@@ -1441,3 +1441,31 @@ tr.is-selected{background:var(--accent-soft)}
 .emp-jobs-tools{display:flex;gap:8px;flex-wrap:wrap}
 .btn.small.danger{color:var(--rose);border-color:#f0cdd6;background:#fff1f4}
 .btn.small.danger:hover{background:var(--rose);border-color:var(--rose);color:#fff}
+
+/* --- Analytics charts (dataviz: thin marks, ink-token text, direct labels) --- */
+.viz-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.viz-card{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px 22px;box-shadow:var(--shadow)}
+.viz-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:16px}
+.viz-head h3{font-size:14px;font-weight:600;color:var(--ink);margin:0}
+.viz-sub{font-size:12px;color:var(--faint);white-space:nowrap}
+.viz-card .loading-state{min-height:150px}
+.viz-big{font-size:27px;font-weight:700;fill:var(--ink-strong);letter-spacing:-.02em}
+.viz-cap{font-size:11px;fill:var(--faint)}
+.viz-donut-wrap{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.viz-donut{width:172px;height:172px;flex:0 0 auto}
+.viz-legend{display:flex;flex-direction:column;gap:9px;flex:1;min-width:150px}
+.viz-leg{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+.viz-leg i{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+.viz-leg b{margin-left:auto;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.viz-bars{display:flex;flex-direction:column;gap:12px}
+.viz-brow{display:grid;grid-template-columns:98px 1fr auto;align-items:center;gap:12px}
+.viz-blbl{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.viz-btrack{height:12px;background:var(--soft);border-radius:6px;overflow:hidden}
+.viz-bfill{display:block;height:100%;border-radius:6px;min-width:3px;transition:width .55s var(--ease)}
+.viz-bval{font-size:13px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;min-width:34px;text-align:right}
+.viz-gauge-wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.viz-gauge{width:156px;height:156px;flex:0 0 auto}
+.viz-side{display:flex;flex-direction:column;gap:16px}
+.viz-fig b{display:block;font-size:23px;font-weight:700;color:var(--ink-strong);letter-spacing:-.02em;line-height:1}
+.viz-fig span{font-size:12px;color:var(--faint)}
+@media(max-width:900px){.viz-grid{grid-template-columns:1fr}}
