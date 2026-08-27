@@ -5,11 +5,12 @@ Backs the analytics view in healthboard-chat-platform.html.
 from __future__ import annotations
 
 from fastapi import APIRouter
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from ..deps import CurrentUser, DbSession
 from ..models import (
     Application,
+    CreditAccount,
     Employer,
     EmployerMember,
     JobPosting,
@@ -19,7 +20,7 @@ from ..models import (
     Profile,
     User,
 )
-from ..models.enums import ApplicationStatus, OfferStatus
+from ..models.enums import ApplicationStatus, JobStatus, OfferStatus
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -233,4 +234,74 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
                                 .where(SavedSearch.owner_user_id == uid)),
         "notifications": count(select(func.count()).select_from(Notification)
                                .where(Notification.user_id == uid)),
+    }
+
+
+# Real US state codes — the imported directory carries junk state values, so a
+# plain distinct count over-reports; constrain to the 50 states + DC.
+_US_STATES = (
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL",
+    "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT",
+    "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI",
+    "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+)
+
+
+@router.get("/market")
+def market(user: CurrentUser, db: DbSession):
+    """Marketplace supply & demand — the real, populated data every recruiter can
+    use: the size and shape of the talent directory (supply) and the open roles
+    on the board (demand). Platform-wide figures plus this recruiter's credits.
+    """
+    def top(rows):
+        return [{"label": str(k), "count": int(c)} for k, c in rows if k]
+
+    listable = db.scalar(select(func.count()).select_from(Profile)
+                         .where(Profile.is_listable.is_(True))) or 0
+    reachable = db.scalar(select(func.count()).select_from(Profile).where(
+        Profile.is_listable.is_(True),
+        # trim() (not btrim) so this also works on SQLite in dev.
+        or_((Profile.email.isnot(None)) & (func.length(func.trim(Profile.email)) > 0),
+            (Profile.phone.isnot(None)) & (func.length(func.trim(Profile.phone)) > 0)))) or 0
+    states = db.scalar(
+        select(func.count(func.distinct(func.upper(Profile.state_code))))
+        .where(Profile.is_listable.is_(True),
+               func.upper(Profile.state_code).in_(_US_STATES))) or 0
+    jobs_active = db.scalar(select(func.count()).select_from(JobPosting)
+                            .where(JobPosting.status == JobStatus.active)) or 0
+
+    supply = top(db.execute(
+        select(Profile.profession_type, func.count())
+        .where(Profile.is_listable.is_(True),
+               Profile.profession_type.isnot(None),
+               func.length(func.trim(Profile.profession_type)) > 0)
+        .group_by(Profile.profession_type)
+        .order_by(func.count().desc()).limit(7)).all())
+    demand_specialty = top(db.execute(
+        select(JobPosting.specialty, func.count())
+        .where(JobPosting.status == JobStatus.active, JobPosting.specialty.isnot(None))
+        .group_by(JobPosting.specialty)
+        .order_by(func.count().desc()).limit(7)).all())
+    demand_state = top(db.execute(
+        select(JobPosting.state_code, func.count())
+        .where(JobPosting.status == JobStatus.active, JobPosting.state_code.isnot(None))
+        .group_by(JobPosting.state_code)
+        .order_by(func.count().desc()).limit(8)).all())
+
+    acct = db.scalar(select(CreditAccount).where(CreditAccount.user_id == user.user_id))
+    return {
+        "providers": {
+            "listable": listable,
+            "reachable": reachable,
+            "reachable_pct": round(100 * reachable / listable, 1) if listable else 0.0,
+            "states": states,
+        },
+        "jobs_active": jobs_active,
+        "supply": supply,
+        "demand_specialty": demand_specialty,
+        "demand_state": demand_state,
+        "credits": {
+            "balance": acct.balance if acct else 0,
+            "spent": acct.lifetime_spent if acct else 0,
+        },
     }

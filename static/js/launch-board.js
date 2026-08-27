@@ -4444,15 +4444,18 @@
   const vizLegend = segs => `<div class="viz-legend">${segs.filter(s => s.value > 0).map(s =>
     `<span class="viz-leg"><i style="background:${s.color}"></i>${esc(s.label)}<b>${s.value.toLocaleString()}</b></span>`).join("")}</div>`;
 
+  const compactNum = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M"
+    : n >= 1000 ? (n / 1000).toFixed(n >= 1e5 ? 0 : 1) + "k" : String(n);
   function hbars(items, opt = {}){
+    const fmt = opt.fmt || (v => v.toLocaleString());
     const max = Math.max(1, ...items.map(i => i.value));
     return `<div class="viz-bars">${items.map((it, idx) => {
       const color = it.color || (opt.ramp ? opt.ramp[Math.min(idx, opt.ramp.length - 1)] : "var(--accent)");
       const pct = 100 * it.value / max;
       return `<div class="viz-brow" title="${esc(it.label)}: ${it.value.toLocaleString()}">
-        <span class="viz-blbl">${esc(it.label)}</span>
+        <span class="viz-blbl" title="${esc(it.label)}">${esc(it.label)}</span>
         <span class="viz-btrack"><i class="viz-bfill" style="width:${it.value ? Math.max(3, pct) : 0}%;background:${color}"></i></span>
-        <span class="viz-bval">${it.value.toLocaleString()}</span></div>`;
+        <span class="viz-bval">${fmt(it.value)}</span></div>`;
     }).join("")}</div>`;
   }
 
@@ -4482,62 +4485,73 @@
     const box = $("#analytics-panel");
     box.innerHTML = loading("Loading your activity...");
     try {
-      // Sourcing is required; the CRM endpoints degrade gracefully to null so a
-      // recruiter with no applications/threads still sees their sourcing view.
-      const [d, kpis, funnel, convo] = await Promise.all([
+      // Market = real supply/demand (impressive, populated); sourcing = this
+      // recruiter's own activity. The application funnel is intentionally not
+      // shown — with no submissions/applications yet it would be all zeros.
+      const [mk, d, convo] = await Promise.all([
+        get("/api/analytics/market"),
         get("/api/analytics/sourcing?days=30"),
-        get("/api/analytics/kpis").catch(() => null),
-        get("/api/analytics/funnel").catch(() => null),
         get("/api/analytics/conversations").catch(() => null),
       ]);
-      const dir = d.directory, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
+      const P = mk.providers, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
       const stages = pools.by_stage || {};
       const poolSegs = POOL_STAGE_ORDER.map(s => ({
         label: s.charAt(0).toUpperCase() + s.slice(1), value: stages[s] || 0, color: STAGE_COLORS[s]}));
       const totalStaged = poolSegs.reduce((a, s) => a + s.value, 0);
+      const cn = compactNum;
 
-      // Headline figures.
-      const kpiSection = `<div class="an-section"><h2>At a glance</h2><div class="an-grid">
+      const glance = `<div class="an-section"><h2>At a glance</h2><div class="an-grid">
+        ${stat(cn(P.listable), "Providers", "screened & listable", true)}
+        ${stat(mk.jobs_active.toLocaleString(), "Open roles", "live on the board")}
+        ${stat(P.states, "States covered")}
         ${stat(con.released_total, "Contacts revealed", `${con.released_recent} in ${d.window_days} days`, true)}
-        ${stat(pools.shortlisted, "Shortlisted")}
-        ${stat(runs.candidates_ranked.toLocaleString(), "Candidates ranked", `avg score ${runs.avg_match_score}`)}
-        ${kpis ? stat(kpis.active_conversations, "Active conversations") : stat(msg.threads, "Conversations")}
-        ${kpis ? stat(kpis.offers_out, "Offers out") : stat(pools.pools, "Talent pools")}
-        ${kpis ? stat(kpis.hired, "Hired", "", true) : stat(d.saved_searches, "Saved searches")}
+        ${stat(pools.shortlisted, "Shortlisted", `${pools.pools} pool${pools.pools === 1 ? "" : "s"}`)}
+        ${stat(mk.credits.spent, "Credits spent", `${mk.credits.balance} remaining`)}
       </div></div>`;
 
-      // Pie / donut — where the shortlist sits (validated categorical colors).
+      // --- Talent market (supply & demand) ---
+      const reachBody = `<div class="viz-gauge-wrap">${svgGauge(P.reachable_pct, {label: "reachable"})}
+        <div class="viz-side">
+          <div class="viz-fig"><b>${cn(P.listable)}</b><span>listable providers</span></div>
+          <div class="viz-fig"><b>${cn(P.reachable)}</b><span>have email or phone</span></div>
+        </div></div>`;
+      const supplyBody = mk.supply.length
+        ? hbars(mk.supply.map(x => ({label: x.label, value: x.count})), {fmt: cn})
+        : emptyState("No providers yet", "", "fa-user-doctor");
+      const specBody = mk.demand_specialty.length
+        ? hbars(mk.demand_specialty.map(x => ({label: x.label, value: x.count})))
+        : emptyState("No open roles yet", "", "fa-briefcase");
+      const stateBody = mk.demand_state.length
+        ? hbars(mk.demand_state.map(x => ({label: x.label, value: x.count})))
+        : emptyState("No open roles yet", "", "fa-map-location-dot");
+      const marketGrid = `<div class="viz-grid">
+        ${vizCard("Directory reach", reachBody, "of the screened directory")}
+        ${vizCard("Talent supply", supplyBody, "providers by profession")}
+        ${vizCard("Open roles by specialty", specBody, `${mk.jobs_active} live roles`)}
+        ${vizCard("Open roles by state", stateBody, "top locations hiring")}
+      </div>`;
+
+      // --- Your sourcing (personal activity) ---
       const donutBody = totalStaged
         ? `<div class="viz-donut-wrap">${svgDonut(poolSegs, {centerValue: totalStaged, centerLabel: "shortlisted"})}${vizLegend(poolSegs)}</div>`
-        : emptyState("No candidates shortlisted yet", "Shortlist candidates into a talent pool to see the pipeline.", "fa-layer-group");
-
-      // Hiring funnel — horizontal bars, blue ordinal ramp.
-      const funnelItems = FUNNEL_ORDER.map(([k, l]) => ({label: l, value: (funnel && funnel.stages[k]) || 0}));
-      funnelItems.push({label: "Rejected", value: (funnel && funnel.stages.rejected) || 0, color: "#c3d0e6"});
-      const funnelBody = (funnel && funnel.total)
-        ? hbars(funnelItems, {ramp: VIZ_FUNNEL})
-        : emptyState("No applications yet", "When candidates apply to your posted jobs, the funnel appears here.", "fa-filter");
-
-      // Directory reach — radial gauge + figures.
-      const reachBody = `<div class="viz-gauge-wrap">${svgGauge(dir.reachable_pct, {label: "reachable"})}
-        <div class="viz-side">
-          <div class="viz-fig"><b>${dir.listable.toLocaleString()}</b><span>listable providers</span></div>
-          <div class="viz-fig"><b>${dir.reachable.toLocaleString()}</b><span>have email or phone</span></div>
-        </div></div>`;
-
-      // Outreach — paired bars.
-      const outBody = hbars([
-        {label: "Messages sent", value: msg.sent, color: VIZ_CAT[0]},
-        {label: "Messages received", value: msg.received, color: VIZ_CAT[1]},
-        {label: "Conversations", value: msg.threads, color: VIZ_CAT[2]},
-      ]);
-
-      const chartGrid = `<div class="viz-grid">
-        ${vizCard("Talent-pool pipeline", donutBody, "where your shortlist sits")}
-        ${vizCard("Hiring funnel", funnelBody, (funnel && funnel.total) ? `${funnel.total} applications` : "")}
-        ${vizCard("Directory reach", reachBody, "of the screened directory")}
-        ${vizCard("Outreach", outBody, `${d.saved_searches} saved searches`)}
-      </div>`;
+        : emptyState("No candidates shortlisted yet", "Add candidates to a talent pool to see your pipeline.", "fa-layer-group");
+      const outBody = (msg.sent || msg.received || msg.threads)
+        ? hbars([
+            {label: "Messages sent", value: msg.sent, color: VIZ_CAT[0]},
+            {label: "Messages received", value: msg.received, color: VIZ_CAT[1]},
+            {label: "Conversations", value: msg.threads, color: VIZ_CAT[2]}])
+        : emptyState("No outreach yet", "Message revealed candidates to start conversations.", "fa-paper-plane");
+      const respRate = msg.sent ? Math.round(100 * msg.received / msg.sent) : 0;
+      const sourceGrid = `<div class="viz-grid">
+          ${vizCard("Your talent-pool pipeline", donutBody, "where your shortlist sits")}
+          ${vizCard("Your outreach", outBody, msg.sent ? `${respRate}% reply rate` : "")}
+        </div>
+        <div class="an-grid" style="margin-top:14px">
+          ${stat(runs.runs, "Sourcing runs")}
+          ${stat(runs.candidates_ranked.toLocaleString(), "Candidates ranked", `avg score ${runs.avg_match_score}`)}
+          ${stat(d.saved_searches, "Saved searches")}
+          ${stat(pools.worked_pct + "%", "Shortlist worked", `${pools.worked} past sourced`)}
+        </div>`;
 
       const convoRows = (convo && convo.conversations || []);
       const convoSection = convoRows.length
@@ -4553,8 +4567,11 @@
                 <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "—"}</td>
               </tr>`).join("")}</tbody></table></div></div>` : "";
 
-      box.innerHTML = kpiSection + `<div class="an-section"><h2>Activity</h2>${chartGrid}</div>` + convoSection;
-      $("#analytics-sub").textContent = `Last ${d.window_days} days · ${dir.listable.toLocaleString()} providers listed`;
+      box.innerHTML = glance
+        + `<div class="an-section"><h2>Talent market</h2>${marketGrid}</div>`
+        + `<div class="an-section"><h2>Your sourcing</h2>${sourceGrid}</div>`
+        + convoSection;
+      $("#analytics-sub").textContent = `${cn(P.listable)} providers · ${mk.jobs_active} open roles · last ${d.window_days} days`;
     } catch(e) { box.innerHTML = errorState("Could not load analytics"); }
   }
 
