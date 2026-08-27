@@ -8,15 +8,18 @@ Written to stay portable between SQLite (local dev) and PostgreSQL (prod):
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Iterator
 
-from sqlalchemy import DateTime, String, TypeDecorator, create_engine, event
+from sqlalchemy import DateTime, String, TypeDecorator, create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column, sessionmaker
 
 from .config import settings
+
+logger = logging.getLogger("healthboard.database")
 
 _is_sqlite = settings.database_url.startswith("sqlite")
 
@@ -138,8 +141,77 @@ def get_db() -> Iterator[Session]:
         db.close()
 
 
+def ensure_schema() -> list[str]:
+    """Additively bring the live schema up to the models — the deploy-time
+    migration step, run automatically on every boot.
+
+    ``create_all()`` adds missing TABLES but never missing COLUMNS on a table
+    that already exists. That gap is why every feature so far shipped with a
+    hand-written ``app/migrate_*.py`` that had to be run against the database
+    before the code that needed the column went live — miss it and the deploy
+    500s. This closes the gap: after create_all, any *optional* (nullable)
+    column the models declare but the database lacks is added in place.
+
+    Deliberately conservative and safe on the populated production database:
+      * additive only — it never drops or retypes a column;
+      * a missing NOT NULL column with no server default can't be added to a
+        table that already has rows, so those are logged for a real migration
+        (with a backfill) instead of being guessed at;
+      * every ALTER is isolated, so one problem column can't stop startup.
+
+    Returns the list of columns it added (empty when the schema is already in
+    sync, which is the normal case).
+    """
+    from . import models  # noqa: F401 — register every table on Base.metadata
+
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    is_pg = engine.dialect.name == "postgresql"
+    added: list[str] = []
+    needs_manual: list[str] = []
+
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue  # brand-new table — create_all already made it in full
+        have = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in have:
+                continue
+            # Can't add a required column to a table that already has rows
+            # unless the DB itself can fill it — leave that to a real migration.
+            if not col.nullable and col.server_default is None:
+                needs_manual.append(f"{table.name}.{col.name}")
+                continue
+            coltype = col.type.compile(dialect=engine.dialect)
+            exists_guard = "IF NOT EXISTS " if is_pg else ""
+            ddl = (f'ALTER TABLE "{table.name}" '
+                   f'ADD COLUMN {exists_guard}"{col.name}" {coltype}')
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(ddl))
+                added.append(f"{table.name}.{col.name}")
+            except Exception as exc:  # noqa: BLE001 — never let one column stop boot
+                logger.warning("ensure_schema: could not add %s.%s: %s",
+                               table.name, col.name, exc)
+
+    if added:
+        logger.info("ensure_schema: added missing columns: %s", ", ".join(added))
+    if needs_manual:
+        logger.warning(
+            "ensure_schema: these NOT NULL columns need a manual migration with a "
+            "backfill (the code expects them but the DB lacks them): %s",
+            ", ".join(needs_manual))
+    return added
+
+
 def init_db() -> None:
-    """Create all tables. Imports models so they register on Base.metadata."""
+    """Create all tables and additively sync any missing columns.
+
+    Imports models so they register on Base.metadata, creates missing tables,
+    then runs ensure_schema() so a deploy can't 500 on a column the code expects
+    but the database hasn't got yet.
+    """
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    ensure_schema()

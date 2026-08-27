@@ -101,7 +101,7 @@
     return [city, state].filter(Boolean).join(", ");
   };
 
-  async function api(method, path, body){
+  async function api(method, path, body, _retried){
     const headers = {};
     if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
     if (token()) headers.Authorization = "Bearer " + token();
@@ -113,6 +113,21 @@
     if (res.status === 401 && token() && res.headers.get("X-Session-Superseded") === "1"){
       handleSuperseded();
       const err = new Error("Signed out"); err.status = 401; err.superseded = true; throw err;
+    }
+    // The 30-minute access token expired: silently trade the refresh token for a
+    // new pair and replay the request once, so a working session isn't kicked to
+    // the login screen mid-task. Never for the auth endpoints themselves.
+    if (res.status === 401 && token() && !_retried && !path.startsWith("/api/auth/")){
+      const outcome = await refreshTokens();
+      if (outcome === "ok") return api(method, path, body, true);
+      if (outcome === "superseded"){
+        const err = new Error("Signed out"); err.status = 401; err.superseded = true; throw err;
+      }
+      if (outcome === "rejected"){
+        signOutExpired();
+        const err = new Error("Session expired"); err.status = 401; err.expired = true; throw err;
+      }
+      // "error" (network/transient): fall through and surface the original 401.
     }
     const text = await res.text();
     let data = null;
@@ -133,6 +148,47 @@
     setToken(""); setRefresh("");
     try { localStorage.setItem("hb_signout_reason", "superseded"); } catch(e){}
     location.reload();
+  }
+  // Clear a dead session and return to the signed-out screen. Used when the
+  // refresh token itself is rejected (expired after 30 days, revoked, or the
+  // password was reset) — nothing works until the user signs in again.
+  function signOutExpired(){
+    if (S._signedOut) return;
+    S._signedOut = true;
+    setToken(""); setRefresh("");
+    location.reload();
+  }
+  // Exchange the refresh token for a fresh access+refresh pair. Concurrent 401s
+  // share one in-flight refresh so we never fire several at once (each rotation
+  // revokes the previous refresh token). Returns: "ok" | "superseded" |
+  // "rejected" (refresh token no good) | "error" (transient/network).
+  let _refreshing = null;
+  function refreshTokens(){
+    if (_refreshing) return _refreshing;
+    const rt = localStorage.getItem("hb_refresh");
+    if (!rt) return Promise.resolve("rejected");
+    _refreshing = (async () => {
+      try {
+        const res = await fetch("/api/auth/refresh", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          cache:"no-store", body: JSON.stringify({refresh_token: rt}),
+        });
+        if (res.status === 401 && res.headers.get("X-Session-Superseded") === "1"){
+          handleSuperseded(); return "superseded";
+        }
+        if (res.status === 401 || res.status === 403) return "rejected";
+        if (!res.ok) return "error";
+        const data = await res.json().catch(() => null);
+        if (!data || !data.access_token) return "error";
+        setToken(data.access_token); setRefresh(data.refresh_token);
+        return "ok";
+      } catch(e) {
+        return "error";
+      } finally {
+        _refreshing = null;
+      }
+    })();
+    return _refreshing;
   }
   const get = p => api("GET", p);
   const post = (p,b={}) => api("POST", p, b);
