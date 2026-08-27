@@ -7,13 +7,15 @@ The static HTML frontends are served from the project root at /ui/<file>.html
 """
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text as sa_text
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -22,7 +24,7 @@ from . import __version__
 from .bootstrap import ensure_admin
 from .config import settings
 from .database import SessionLocal, init_db
-from .deps import CurrentUser
+from .deps import CurrentUser, DbSession
 from .ratelimit import limiter
 from .routers import (
     admin,
@@ -61,6 +63,26 @@ from .web.routes import seeker as web_seeker
 from .web.routes import tools as web_tools
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+logger = logging.getLogger("healthboard")
+
+
+# Error monitoring: initialise Sentry as early as possible when a DSN is set, so
+# unhandled exceptions are captured instead of vanishing into the logs. Guarded
+# so a missing package or bad DSN can never stop the app from booting, and
+# send_default_pii stays off — this app handles clinician PII.
+if settings.sentry_dsn:
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            traces_sample_rate=settings.sentry_traces_sample_rate,
+            send_default_pii=False,
+        )
+        logger.info("Sentry error monitoring enabled (env=%s)", settings.environment)
+    except Exception:  # noqa: BLE001 — monitoring must never break startup
+        logger.warning("Sentry initialisation failed; continuing without it", exc_info=True)
 
 
 @asynccontextmanager
@@ -200,7 +222,26 @@ def public_stats():
 
 @app.get("/api/health", tags=["meta"])
 def health():
-    return {"status": "ok", "version": __version__, "env": settings.environment}
+    """Liveness + readiness. Probes the database so a deploy whose DB is down or
+    whose schema drifted fails the check (503) instead of reporting a hollow
+    'ok' — the previous version never touched the DB."""
+    db = SessionLocal()
+    try:
+        db.execute(sa_text("SELECT 1"))
+        db_ok = True
+    except Exception as exc:  # noqa: BLE001
+        db_ok = False
+        logger.error("health check: database probe failed: %s", exc)
+    finally:
+        db.close()
+
+    payload = {
+        "status": "ok" if db_ok else "degraded",
+        "version": __version__,
+        "env": settings.environment,
+        "database": "ok" if db_ok else "error",
+    }
+    return payload if db_ok else JSONResponse(payload, status_code=503)
 
 
 # --- Launch app UI --------------------------------------------------------
@@ -277,12 +318,42 @@ def serve_ui(page: str):
     return RedirectResponse(url="/")
 
 
+def _authorized_for_file(db, user, key: str) -> bool:
+    """These files are résumés and profile photos — PII. Being logged in is not
+    enough: you may fetch a file only if it belongs to a provider you own, a
+    provider whose contact you have released (paid to reveal), a candidate who
+    applied to your job, or if you are the platform admin. Unknown keys are
+    refused so this endpoint can't be probed."""
+    from sqlalchemy import or_, select
+
+    from .models import Profile
+    from .routers.profiles import _entitled_to_resume
+
+    if getattr(user.role, "value", None) == "admin":
+        return True
+    # The key is the URL suffix in every storage form (/files/<k>,
+    # /static/uploads/<k>, <public-base>/<k>). Escape LIKE wildcards so a key
+    # can never be turned into a pattern.
+    esc = key.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pat = f"%{esc}"
+    prof = db.scalar(select(Profile).where(or_(
+        Profile.resume_url.like(pat, escape="\\"),
+        Profile.profile_photo_url.like(pat, escape="\\"),
+    )))
+    if not prof:
+        return False
+    return _entitled_to_resume(db, user, prof)
+
+
 @app.get("/files/{key:path}", include_in_schema=False)
-def serve_file(key: str, user: CurrentUser):
-    """Serve a stored file. Requires authentication — these are résumés and
-    other PII, and this used to hand out signed URLs to anyone. For a private
-    S3/R2 bucket this redirects to a short-lived signed URL; locally it points
-    at the upload fallback. (Keys are unguessable UUIDs.)"""
+def serve_file(key: str, user: CurrentUser, db: DbSession):
+    """Serve a stored file. Requires authentication AND object-level
+    authorization — these are résumés and other PII, and this used to hand out a
+    signed URL to any logged-in user. For a private S3/R2 bucket it redirects to
+    a short-lived signed URL; locally it points at the upload fallback."""
+    if not _authorized_for_file(db, user, key):
+        # Don't disclose whether the key exists.
+        raise HTTPException(status_code=404, detail="Not found")
     if settings.storage_enabled:
         from .services import storage
         return RedirectResponse(storage.presigned_url(key))

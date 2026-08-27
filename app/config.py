@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
 
+    # --- Error monitoring (Sentry) ---
+    # Empty by default: no data leaves the box until a DSN is set. In production
+    # set SENTRY_DSN so unhandled errors are captured instead of vanishing.
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.0   # 0 = errors only, no perf tracing
+
     # --- Database ---
     # SQLite for local dev; swap for a postgres URL in production (code is portable).
     database_url: str = "sqlite:///./healthboard.db"

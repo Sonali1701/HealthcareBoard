@@ -54,3 +54,7 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+      # Error monitoring (Sentry) — optional; set the DSN in the dashboard to
+      # turn it on. Left unset, no error data leaves the service.
+      - key: SENTRY_DSN
+        sync: false

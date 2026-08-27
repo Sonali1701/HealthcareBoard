@@ -9,7 +9,7 @@ from collections import OrderedDict
 from html import escape, unescape
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import and_, func, literal, or_, select, text as sa_text
 from sqlalchemy.orm import selectinload
@@ -384,10 +384,55 @@ def _released_profile_ids(db, user, profile_ids: list[str]) -> set[str]:
 
 
 def _may_see_identity(db, user, profile: Profile) -> bool:
-    """True when the caller is entitled to this provider's real name/contact."""
+    """True when the caller is entitled to this provider's real name/contact.
+
+    This governs the COLD DIRECTORY only: identity there is withheld until the
+    recruiter pays to reveal it. Résumé-file / contact access has a broader rule
+    (a candidate who applied to your job is already revealed to you) —
+    see _entitled_to_resume.
+    """
     if profile.user_id and profile.user_id == user.user_id:
         return True                       # your own profile
     return bool(_released_profile_ids(db, user, [profile.profile_id]))
+
+
+def _manages_application_from(db, user, profile: Profile) -> bool:
+    """True when this candidate applied to a job the caller owns or manages.
+
+    An applicant deliberately sent the employer their details, so the employer
+    (job owner or an employer-member) may open that résumé without a paid reveal
+    — the counterpart to jobs.list_applicants, which already returns their name
+    and contact to the job's managers.
+    """
+    if not profile.profile_id:
+        return False
+    from ..models import Application, Employer, EmployerMember, JobPosting
+    emp_ids = set(db.scalars(select(Employer.employer_id)
+                             .where(Employer.owner_user_id == user.user_id)).all())
+    emp_ids |= set(db.scalars(select(EmployerMember.employer_id)
+                              .where(EmployerMember.user_id == user.user_id)).all())
+    if not emp_ids:
+        return False
+    hit = db.scalar(
+        select(Application.application_id)
+        .join(JobPosting, JobPosting.job_id == Application.job_id)
+        .where(Application.profile_id == profile.profile_id,
+               JobPosting.employer_id.in_(emp_ids))
+        .limit(1))
+    return hit is not None
+
+
+def _entitled_to_resume(db, user, profile: Profile) -> bool:
+    """Who may open a provider's original résumé file / contact: the provider
+    themselves, a platform admin, a recruiter who has released (paid for) the
+    contact, or an employer the candidate applied to."""
+    if profile.user_id and profile.user_id == user.user_id:
+        return True
+    if user.role.value == "admin":
+        return True
+    if _released_profile_ids(db, user, [profile.profile_id]):
+        return True
+    return _manages_application_from(db, user, profile)
 
 
 def _profile_card(profile: Profile, *, released: bool) -> dict:
@@ -1740,8 +1785,21 @@ def get_profile(profile_id: str, db: DbSession, user: CurrentUser):
     detail = ProfileDetail.model_validate(profile)
     detail.first_name = masked[0] if masked else "?"
     detail.last_name = masked[1] if len(masked) > 1 else ""
+    # Withhold every identifying / directly-reachable field, not just name+email.
+    # Leaving resume_url here let a recruiter open the raw résumé (real name,
+    # phone, e-mail) without ever paying to reveal the contact; bio, exact
+    # lat/lng, NPI and the photo are identity too. City/state/specialty stay so
+    # the row is still useful while masked.
     detail.email = None
     detail.phone = None
+    detail.resume_url = None
+    detail.profile_photo_url = None
+    detail.npi_number = None
+    detail.bio = None
+    detail.lat = None
+    detail.lng = None
+    detail.contact_updated_by_email = None
+    detail.contact_updated_by_user_id = None
     return detail
 
 
@@ -1918,7 +1976,7 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
 
     # Identity stays withheld until the profile is released — including inside
     # the résumé body, where the candidate's own name usually appears.
-    revealed = can_view_contact or _may_see_identity(db, user, profile)
+    revealed = can_view_contact or _entitled_to_resume(db, user, profile)
     if revealed:
         name = _display_name(profile) or "Provider résumé"
     else:
@@ -1944,6 +2002,10 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
                     for w in profile.work_history]
     licensed_states = sorted({l["state"] for l in licenses if l["state"]})
 
+    # The original résumé file is downloadable only once the contact is revealed
+    # (or it's the provider's own profile). Expose the app endpoint, never the
+    # raw storage URL — the endpoint re-checks entitlement on every request.
+    can_download = revealed and bool(profile.resume_url)
     return {
         "name": name,
         "withheld": not revealed,
@@ -1952,6 +2014,10 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
         "location": ", ".join(b for b in (profile.city, profile.state_code) if b),
         "email": profile.email if revealed else None,
         "phone": profile.phone if revealed else None,
+        "has_resume_file": bool(profile.resume_url),
+        "can_download": can_download,
+        "download_url": (f"/api/profiles/{profile.profile_id}/resume/download"
+                         if can_download else None),
         "board": profile.american_board,
         "years_experience": profile.years_experience,
         "sections": sections,
@@ -1966,6 +2032,66 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
         "available_date": (profile.available_date.isoformat()
                            if profile.available_date else None),
     }
+
+
+_RESUME_CTYPE = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def _resume_filename(profile: Profile, ext: str) -> str:
+    """A clean, safe attachment filename like 'Jane_Smith_Resume.pdf'."""
+    base = re.sub(r"[^A-Za-z0-9]+", "_", (_display_name(profile) or "Provider")).strip("_")
+    return f"{base or 'Provider'}_Resume{ext}"
+
+
+@router.get("/{profile_id}/resume/download")
+def download_resume(profile_id: str, user: CurrentUser, db: DbSession):
+    """Download the provider's original résumé file — but only after the contact
+    has been revealed (paid for), for the provider's own résumé, or for a
+    platform admin. This is the metered PII the reveal credit buys; it streams
+    through the app so entitlement is enforced on every request rather than
+    handing out a shareable file URL."""
+    profile = db.get(Profile, profile_id)
+    if not profile or not profile.resume_url:
+        raise HTTPException(status_code=404, detail="No résumé on file")
+
+    if not _entitled_to_resume(db, user, profile):
+        raise HTTPException(
+            status_code=403,
+            detail="Reveal this candidate's contact first to download their résumé.",
+        )
+
+    key, is_local = storage.key_from_url(profile.resume_url)
+    try:
+        data = storage.download_bytes(key, prefer_local=is_local)
+    except Exception as exc:  # noqa: BLE001 — file missing / storage error
+        raise HTTPException(status_code=404, detail="Résumé file is unavailable.") from exc
+
+    tail = key.rsplit("/", 1)[-1]
+    ext = ("." + tail.rsplit(".", 1)[-1].lower()) if "." in tail else ""
+    if ext not in _RESUME_CTYPE:
+        ext = ext if ext in {".png", ".jpg", ".jpeg"} else ".pdf"
+    ctype = _RESUME_CTYPE.get(ext, "application/octet-stream")
+
+    # Trace deliberate PII egress. The contact was already charged at reveal, so
+    # downloading it again is free — this row is for the audit trail, not billing.
+    db.add(AuditLog(
+        actor_user_id=user.user_id,
+        action="provider_resume_downloaded",
+        entity_type="profile",
+        entity_id=profile.profile_id,
+    ))
+    db.commit()
+
+    filename = _resume_filename(profile, ext)
+    return Response(
+        content=data,
+        media_type=ctype,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # --- AI candidate summary --------------------------------------------------

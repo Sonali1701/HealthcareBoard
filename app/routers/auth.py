@@ -314,6 +314,12 @@ def password_reset_confirm(body: PasswordResetConfirm, db: DbSession):
         raise HTTPException(status_code=400, detail="Invalid token")
     user.password_hash = hash_password(body.new_password)
     rec.used_at = utcnow()
+    # A reset is a recovery action — assume the old sessions may be the
+    # attacker's. Revoke every refresh session and drop the active-session
+    # pointer so nothing keeps working on the strength of the old password.
+    for s in db.scalars(select(Session).where(Session.user_id == user.user_id)):
+        s.revoked_at = utcnow()
+    user.active_session_id = None
     db.commit()
     return Message(detail="Password reset successful")
 

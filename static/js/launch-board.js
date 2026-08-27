@@ -2221,6 +2221,11 @@
         <div class="rz-avatar">${esc(ini)}</div>
         <div class="rz-id"><div class="rz-name">${esc(r.name)}${r.withheld ? `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>` : ""}</div>
           <div class="rz-sub">${esc([r.role, r.location].filter(Boolean).join("  ·  ")) || "Healthcare provider"}</div></div>
+        ${r.can_download
+          ? `<button class="btn small rz-download" data-download-resume="${esc(r.download_url)}" data-resume-name="${esc(r.name || "resume")}" title="Download the original résumé file"><i class="fas fa-download"></i>Download</button>`
+          : (r.has_resume_file
+              ? `<span class="rz-download-hint" title="Reveal this contact to download the résumé file"><i class="fas fa-lock"></i>Reveal to download</span>`
+              : "")}
         <span class="rz-lock"><i class="fas fa-${r.withheld ? "user-secret" : "lock"}"></i> ${r.withheld ? "Name withheld" : "View only"}</span>
       </div>
       <div class="rz-ai" id="rz-ai-summary">
@@ -2277,6 +2282,36 @@
       wireResumeNav();
       loadResumeSummary(id);
     } catch(e) { $("#modal-root .modal-body").innerHTML = `<div style="padding:24px">${esc(e.message || "Could not load résumé.")}</div>`; }
+  }
+  // Download the original résumé file. The endpoint requires a bearer token and
+  // re-checks that the contact was revealed, so we fetch it (not a plain link),
+  // then hand the browser a blob to save — works for both local and S3 storage.
+  async function downloadResume(url, name, btn){
+    if (!url) return;
+    const original = btn ? btn.innerHTML : "";
+    if (btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span>Downloading…'; }
+    try {
+      const res = await fetch(url, {headers:{Authorization:"Bearer " + token()}});
+      if (!res.ok){
+        let msg = "Could not download the résumé.";
+        try { const j = await res.json(); if (j && j.detail) msg = j.detail; } catch(_){}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename="?([^";]+)"?/i.exec(cd);
+      const fallback = (name || "resume").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+      const fname = m ? m[1] : `${fallback || "Provider"}_Resume.pdf`;
+      const obj = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = obj; a.download = fname;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(obj), 1500);
+    } catch(e){
+      toast(e.message || "Could not download the résumé.", {title:"Download failed", kind:"err"});
+    } finally {
+      if (btn){ btn.disabled = false; btn.innerHTML = original; }
+    }
   }
   // Lazily generate the AI briefing so the résumé renders instantly and the
   // summary streams into its card a moment later.
@@ -3038,6 +3073,7 @@
     document.body.addEventListener("click", e => {
       const apply = e.target.closest("[data-apply]"); if (apply) applyJob(apply.dataset.apply);
       const resume = e.target.closest("[data-resume]"); if (resume) viewResume(resume.dataset.resume);
+      const dl = e.target.closest("[data-download-resume]"); if (dl) downloadResume(dl.dataset.downloadResume, dl.dataset.resumeName, dl);
       const release = e.target.closest("[data-release]"); if (release) releaseContact(release.dataset.release);
       const sub = e.target.closest("[data-submit]"); if (sub) submitCandidate(sub.dataset.submit);
       const message = e.target.closest("[data-message]"); if (message) messageCandidate(message.dataset.message);

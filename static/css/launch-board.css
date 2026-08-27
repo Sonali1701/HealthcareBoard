@@ -454,6 +454,9 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 .rz-sub{font-size:14px;color:var(--muted);margin-top:2px}
 .rz-lock{font-size:12px;color:var(--faint);white-space:nowrap}
 .rz-lock i{margin-right:4px}
+.rz-download{flex:0 0 auto;white-space:nowrap}
+.rz-download i{margin-right:6px}
+.rz-download-hint{flex:0 0 auto;font-size:12px;color:var(--faint);white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
 .rz-tabs{display:flex;gap:4px;padding:0 26px;border-bottom:1px solid var(--line);background:var(--white);position:sticky;top:0;z-index:2;overflow-x:auto}
 .rz-tab{border:0;background:transparent;padding:12px 14px;font-weight:500;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
 .rz-tab:hover{color:var(--ink)}

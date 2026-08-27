@@ -12,12 +12,29 @@ from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request, status
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from .config import settings
 
+
+def client_ip_key(request: Request) -> str:
+    """Rate-limit bucket key: the visitor's real IP.
+
+    Behind Render's proxy every request's ``client.host`` is the load balancer,
+    so keying on it puts the ENTIRE platform in one bucket — one abuser then
+    trips the limit for everybody. Prefer the left-most hop of X-Forwarded-For
+    (the original client) so each visitor gets their own bucket. Falls back to
+    the socket peer locally, where there is no proxy header.
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        ip = xff.split(",")[0].strip()
+        if ip:
+            return ip[:64]
+    return request.client.host if request.client else "unknown"
+
+
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=client_ip_key,
     default_limits=[settings.default_rate_limit] if settings.rate_limit_enabled else [],
     enabled=settings.rate_limit_enabled,
 )
@@ -50,7 +67,7 @@ def auth_rate_limit(request: Request) -> None:
     if not settings.rate_limit_enabled:
         return
     count, window = _parse_rate(settings.auth_rate_limit)
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip_key(request)
     now = time.time()
     hits = _auth_hits[ip]
     while hits and now - hits[0] > window:
