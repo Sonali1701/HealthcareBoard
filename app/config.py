@@ -159,6 +159,17 @@ class Settings(BaseSettings):
     # The "get-report-data" URL from the Ceipal Custom Report (the jobs report).
     ceipal_report_url: str = ""
 
+    # --- Quick Sourcer (external contact lookup) ---
+    # Finds a provider's email/phone by name + location through the Quick Sourcer
+    # Hub API. Off until a key is set: with no key the Providers tab hides the
+    # button and the endpoint answers 503, rather than calling out to nothing.
+    quick_sourcer_enabled: bool = False
+    quick_sourcer_base_url: str = "https://radixsol.net/api/quick-sourcer/external"
+    quick_sourcer_api_key: str = ""
+    # A search drives a real browser on the far side and takes 30-90s, so the
+    # read timeout has to be generous — the usual 30s would fail every lookup.
+    quick_sourcer_timeout: float = 150.0
+
     @model_validator(mode="after")
     def _prefer_gemini_key(self):
         """If GEMINI_API_KEY is set, use it as the LLM key (paid key wins)."""
@@ -193,6 +204,12 @@ class Settings(BaseSettings):
         if self.cors_origins.strip() == "*":
             return ["*"]
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def quick_sourcer_ready(self) -> bool:
+        """On only when switched on AND given a key — a missing key is off, not
+        an error, so nothing breaks in an environment that never configured it."""
+        return bool(self.quick_sourcer_enabled and self.quick_sourcer_api_key.strip())
 
     @property
     def is_production(self) -> bool:

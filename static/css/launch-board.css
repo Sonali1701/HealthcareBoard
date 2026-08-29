@@ -140,6 +140,13 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 .contact-none{display:inline-flex;align-items:center;gap:7px;color:var(--dim);font-size:13px}
 .contact-none i{font-size:10px}
 .contact-meta{display:inline-flex;align-items:center;gap:6px;color:var(--dim);font-size:11.5px;margin-top:1px}
+/* External contact search. Quieter than "Reveal contact": that one spends a
+   credit on data we already hold, this one goes looking and may find nothing. */
+.lookup-btn{color:var(--ink);font-weight:500;box-shadow:none;padding:5px 12px;font-size:12.5px}
+.lookup-btn i{color:var(--dim)}
+.lookup-btn:hover{background:var(--accent-soft);border-color:var(--accent)}
+.lookup-btn:disabled{opacity:.7}
+.contact-cell.is-revealed .lookup-btn{margin-top:2px}
 .contact-meta i{font-size:10px}
 
 /* --- Lists ------------------------------------------------------------- */

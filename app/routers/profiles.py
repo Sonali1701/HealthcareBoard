@@ -23,7 +23,7 @@ from ..importers.parsing import (
     classify_provider,
     is_real_name,
 )
-from ..services import storage
+from ..services import quick_sourcer, storage
 from ..models import (
     AuditLog,
     Certification,
@@ -1926,6 +1926,201 @@ def release_profile_contact(
         "is_released": True,
         "released_at": now.isoformat(),
         "released_by_email": user.email,
+        "credits_charged": charge_result.get("cost", 0),
+        "credits_remaining": charge_result.get("balance"),
+    }
+
+
+# --- External contact lookup (Quick Sourcer) ------------------------------
+# Most of the cold directory has a name, a credential and a city but no way to
+# reach the person. Quick Sourcer searches the public people-search sites for
+# them and hands back an email and a phone, which we write onto the profile.
+#
+# It is metered exactly like a manual reveal, and under the SAME idempotency
+# key: finding a contact this way unlocks that provider for the recruiter, and
+# a provider they already paid for is never charged twice. A search that finds
+# nothing is free — a miss is often the far-side site rate-limiting us, and
+# billing for that would be charging for our own bad luck.
+
+LOOKUP_ACTION = "provider_contact_lookup"
+
+
+def _last_lookup_candidate_id(db, profile_id: str) -> int | None:
+    """The Quick Sourcer candidate id we were given for this provider before.
+
+    Re-searching costs 30-90 seconds; re-reading a candidate id is instant. The
+    id lives in the audit row rather than a profiles column so this needs no
+    migration, and the audit trail is where the provenance belongs anyway.
+    """
+    row = db.scalar(
+        select(AuditLog)
+        .where(AuditLog.action == LOOKUP_ACTION,
+               AuditLog.entity_id == profile_id)
+        .order_by(AuditLog.created_at.desc())
+    )
+    cid = (row.meta or {}).get("candidate_id") if row else None
+    return cid if isinstance(cid, int) else None
+
+
+@router.post("/{profile_id}/contact-lookup")
+async def lookup_profile_contact(
+    profile_id: str,
+    request: Request,
+    user: CurrentUser,
+    db: DbSession,
+):
+    """Find a provider's email and phone through the external lookup service.
+
+    Slow on purpose: the far side drives a real browser, so this takes 30-90
+    seconds. It is an `async def` for that reason — a sync endpoint would hold
+    one of the worker threads for the whole search.
+    """
+    _require_provider_directory_access(user)
+    if not quick_sourcer.available():
+        raise HTTPException(
+            status_code=503,
+            detail="Contact lookup is not switched on for this deployment.")
+
+    profile = db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    name = _display_name(profile)
+    if not name or " " not in name:
+        # A single token ("Unknown", a surname on its own) matches half a state.
+        raise HTTPException(
+            status_code=400,
+            detail="This provider needs a full first and last name before a "
+                   "contact lookup can find them.")
+    location = ", ".join(b for b in (profile.city, profile.state_code) if b) or None
+    already_released = bool(_released_profile_ids(db, user, [profile.profile_id]))
+    prior_candidate_id = _last_lookup_candidate_id(db, profile.profile_id)
+
+    # Everything above is read. End the transaction before the long call so a
+    # pooled DB connection is not held open for a minute and a half; the profile
+    # is re-fetched below for the write.
+    db.rollback()
+
+    try:
+        if prior_candidate_id is not None:
+            match = await quick_sourcer.fetch_candidate(prior_candidate_id)
+            if not match.found:        # the Hub forgot the id — search again
+                match = await quick_sourcer.find(name, location)
+        else:
+            match = await quick_sourcer.find(name, location)
+    except quick_sourcer.QuickSourcerError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+
+    profile = db.get(Profile, profile_id)
+    if not profile:                     # deleted while we were searching
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    if not match.found or not (match.email or match.phone):
+        db.add(AuditLog(
+            actor_user_id=user.user_id, action=LOOKUP_ACTION,
+            entity_type="profile", entity_id=profile.profile_id,
+            meta={"found": False, "searched": name, "location": location},
+            ip_address=request.client.host if request.client else None,
+        ))
+        db.commit()
+        return {
+            "profile_id": profile.profile_id,
+            "found": False,
+            # A miss is regularly the source site blocking the search rather
+            # than an absence of data, so the UI must not say "no contact exists".
+            "detail": "No contact found this time. These searches sometimes come "
+                      "back empty when the source site is busy — worth retrying "
+                      "in a minute.",
+            "credits_charged": 0,
+        }
+
+    # Found something worth having: meter it, unless this recruiter already
+    # owns this provider (same key as a manual reveal, so never a second charge).
+    charge_result = {"charged": False, "cost": 0}
+    if settings.credits_enabled:
+        from ..models import COST_REVEAL_CONTACT
+        from ..services import credits as credit_service
+        try:
+            charge_result = credit_service.charge(
+                db, user.user_id, COST_REVEAL_CONTACT,
+                entity_type="profile", entity_id=profile.profile_id,
+                idempotency_key=f"reveal:{user.user_id}:{profile.profile_id}",
+                note="Contact lookup",
+            )
+        except credit_service.InsufficientCredits as exc:
+            raise HTTPException(
+                status_code=402,
+                detail=(f"You need {exc.needed} credit"
+                        f"{'' if exc.needed == 1 else 's'} to unlock this contact "
+                        f"and have {exc.balance}. Top up to continue."),
+            ) from exc
+
+    # Fill blanks only. A value a recruiter typed in, or one that came off the
+    # candidate's own résumé, is better evidence than a people-search hit — the
+    # alternatives come back in the response instead, for them to choose from.
+    filled: list[str] = []
+    if match.email and not profile.email:
+        profile.email = match.email
+        filled.append("email")
+    if match.phone and not profile.phone:
+        profile.phone = match.phone
+        filled.append("phone")
+    if filled:
+        profile.contact_updated_by_user_id = user.user_id
+        profile.contact_updated_by_email = user.email
+        profile.contact_updated_at = utcnow()
+        profile.rebuild_search_text()
+        profile.completion_score = _compute_completion(profile)
+
+    now = utcnow()
+    db.add(AuditLog(
+        actor_user_id=user.user_id, action=LOOKUP_ACTION,
+        entity_type="profile", entity_id=profile.profile_id,
+        meta={"found": True, "searched": name, "location": location,
+              "source": match.source, "candidate_id": match.candidate_id,
+              "filled": filled,
+              "email_found": bool(match.email), "phone_found": bool(match.phone)},
+        ip_address=request.client.host if request.client else None,
+    ))
+    # The lookup unlocks the provider the same way a manual reveal does, so it
+    # writes the same release row — otherwise the recruiter would have paid and
+    # still be looking at a masked name.
+    if not already_released:
+        db.add(AuditLog(
+            actor_user_id=user.user_id, action=RELEASE_ACTION,
+            entity_type="profile", entity_id=profile.profile_id,
+            meta={"via": "quick_sourcer", "source": match.source,
+                  "email_available": bool(profile.email),
+                  "phone_available": bool(profile.phone)},
+            ip_address=request.client.host if request.client else None,
+        ))
+    db.commit()
+    db.refresh(profile)
+
+    # Same shape as /contact-release (the UI merges it into the directory row),
+    # plus what the lookup itself turned up.
+    return {
+        "profile_id": profile.profile_id,
+        "found": True,
+        "first_name": profile.first_name,
+        "last_name": profile.last_name,
+        "name": _display_name(profile),
+        "email": profile.email,
+        "phone": profile.phone,
+        "contact_updated_by_email": profile.contact_updated_by_email,
+        "is_released": True,
+        "released_at": now.isoformat(),
+        "released_by_email": user.email,
+        "filled": filled,
+        "lookup": {
+            "source": match.source,
+            "matched_name": match.name,
+            "address": match.address,
+            "emails": match.emails[:5],
+            "phones": match.phones[:5],
+            "addresses": match.addresses[:5],
+            "also_known_as": [n for n in match.names[:6] if n.lower() != (match.name or "").lower()],
+        },
         "credits_charged": charge_result.get("cost", 0),
         "credits_remaining": charge_result.get("balance"),
     }

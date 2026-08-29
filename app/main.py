@@ -241,6 +241,20 @@ def public_stats():
     return result
 
 
+@app.get("/api/features", tags=["meta"])
+def features():
+    """Which optional integrations this deployment actually has switched on.
+
+    The UI reads this once at start-up so it can hide controls that would only
+    ever fail — the external contact lookup button is pointless (and confusing)
+    on an install with no Quick Sourcer key."""
+    return {
+        "contact_lookup": settings.quick_sourcer_ready,
+        "credits": settings.credits_enabled,
+        "payments": settings.payments_enabled,
+    }
+
+
 @app.get("/api/health", tags=["meta"])
 def health():
     """Liveness + readiness. Probes the database so a deploy whose DB is down or

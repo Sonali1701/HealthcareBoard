@@ -21,6 +21,8 @@
     searches:[],
     // Duplicates review + job orders (the recruiter's org/postings hub)
     dupes:[], employer:null, templates:[], credits:null,
+    // Which optional integrations this deployment has on (GET /api/features).
+    features:{},
     jobAlerts:[], subStatuses:[],
     // Travel pay calculator: retain the exact request/result so the comparison
     // can be saved without recomputing it with different assumptions.
@@ -1063,6 +1065,14 @@
       S.provider.min_experience = "10";
     }
   }
+  // The external contact search (Quick Sourcer). Only offered where the server
+  // says the integration is configured — on a deployment without a key the
+  // button could only ever fail, so it is not drawn at all.
+  function lookupBtn(id, label){
+    if (!S.features.contact_lookup) return "";
+    return `<button class="reveal-btn lookup-btn" data-lookup="${id}" title="Search public records for an email and phone. Takes up to 90 seconds, and costs a credit only if it finds one.">`
+      + `<i class="fas fa-magnifying-glass"></i>${esc(label)}</button>`;
+  }
   function providerContactCell(p){
     const released = S.releasedContacts.get(p.profile_id);
     if (released) {
@@ -1071,15 +1081,23 @@
       if (released.phone) lines.push(`<a href="tel:${esc(released.phone)}"><i class="fas fa-phone"></i><span>${esc(released.phone)}</span></a>`);
       // Provenance is only worth showing once the contact is revealed.
       const by = p.contact_updated_by_email ? `<span class="contact-meta"><i class="fas fa-clock-rotate-left"></i>Updated by ${esc(p.contact_updated_by_email)}</span>` : "";
+      // Already paid for, but we still hold no email (or no phone) for them —
+      // the external search is the only way left to fill that gap.
+      const gap = !released.email || !released.phone
+        ? lookupBtn(p.profile_id, lines.length ? "Find more" : "Find contact") : "";
       return `<div class="contact-cell is-revealed">
         ${lines.length ? `<div class="contact-lines">${lines.join("")}</div>` : `<span class="contact-none">No contact on file</span>`}
+        ${gap}
         ${by}
       </div>`;
     }
     // Availability comes from has_email/has_phone — the values themselves are
     // not in the payload until the profile is released.
     if (!(p.has_email || p.has_phone)) {
-      return `<div class="contact-cell"><span class="contact-none"><i class="fas fa-minus"></i>No contact on file</span></div>`;
+      // Nothing to reveal, so nothing to pay for — but this is exactly the row
+      // the external lookup exists for: a real person with no way to reach them.
+      return `<div class="contact-cell"><span class="contact-none"><i class="fas fa-minus"></i>No contact on file</span>`
+        + lookupBtn(p.profile_id, "Find contact") + `</div>`;
     }
     // Locked: one compact reveal action + a hint of which channels are on file.
     const avail = [
@@ -2386,6 +2404,25 @@
       }
     } catch(e) { card.remove(); }
   }
+  // A contact just became visible (paid reveal, or an external lookup that
+  // found one). Everything holding a copy of that row has to learn about it.
+  function applyRelease(id, released){
+    S.releasedContacts.set(id, released);
+    if (S.providerCards.has(id)) {
+      S.providerCards.set(id, {...S.providerCards.get(id), ...released});
+    }
+    // The cached page still holds the masked row, and renderProviderPage
+    // re-renders from it — merge the newly released name/contact in, or the
+    // row would keep showing initials until the next fetch.
+    if (S.providerLastData) {
+      const items = S.providerLastData.items || [];
+      const i = items.findIndex(x => x.profile_id === id);
+      if (i >= 0) items[i] = {...items[i], ...released};
+      renderProviderPage(S.providerLastData);
+    }
+    refreshAiCard(id);   // keep any AI Search result card in sync too
+    if (released.credits_remaining != null) refreshCredits();
+  }
   async function releaseContact(id){
     const btn = Array.from(document.querySelectorAll("[data-release]"))
       .find(el => el.dataset.release === id);
@@ -2396,21 +2433,7 @@
     }
     try {
       const released = await post(`/api/profiles/${id}/contact-release`, {});
-      S.releasedContacts.set(id, released);
-      if (S.providerCards.has(id)) {
-        S.providerCards.set(id, {...S.providerCards.get(id), ...released});
-      }
-      // The cached page still holds the masked row, and renderProviderPage
-      // re-renders from it — merge the newly released name/contact in, or the
-      // row would keep showing initials until the next fetch.
-      if (S.providerLastData) {
-        const items = S.providerLastData.items || [];
-        const i = items.findIndex(x => x.profile_id === id);
-        if (i >= 0) items[i] = {...items[i], ...released};
-        renderProviderPage(S.providerLastData);
-      }
-      refreshAiCard(id);   // keep any AI Search result card in sync too
-      if (released.credits_remaining != null) refreshCredits();
+      applyRelease(id, released);
       return released;
     } catch(e) {
       if (btn) {
@@ -2426,6 +2449,47 @@
               {title:"Reveal failed", kind:"err"});
       }
       return null;
+    }
+  }
+  // Search public records for a provider we have no way to reach. The far side
+  // drives a real browser, so this takes 30-90 seconds — the button says so and
+  // stays busy for the whole wait rather than looking like it did nothing.
+  async function lookupContact(id){
+    const btn = Array.from(document.querySelectorAll("[data-lookup]"))
+      .find(el => el.dataset.lookup === id);
+    const original = btn ? btn.innerHTML : "";
+    if (btn){
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner sm"></span>Searching…';
+    }
+    toast("Checking public records. This can take up to 90 seconds — you can "
+          + "keep working while it runs.", {title:"Searching", kind:"info", ms:12000});
+    try {
+      const r = await post(`/api/profiles/${id}/contact-lookup`, {});
+      if (!r.found){
+        // Deliberately not "no contact exists": a miss is regularly the source
+        // site throttling us, and retrying a minute later often works.
+        toast(r.detail || "Nothing came back this time.",
+              {title:"No match found", kind:"err", ms:7000});
+        return null;
+      }
+      applyRelease(id, r);
+      const got = [r.email ? "an email" : "", r.phone ? "a phone number" : ""]
+        .filter(Boolean).join(" and ");
+      toast(`Found ${got || "a match"}${r.lookup && r.lookup.source ? ` via ${r.lookup.source}` : ""}.`,
+            {title:"Contact found"});
+      return r;
+    } catch(e){
+      if (e.status === 402){
+        toast(e.message || "That did not work.", {title:"Out of credits", kind:"err"});
+        refreshCredits();
+      } else {
+        toast(e.message || "The lookup did not complete.",
+              {title:"Lookup failed", kind:"err", ms:7000});
+      }
+      return null;
+    } finally {
+      if (btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = original; }
     }
   }
   // --- AI Search (full-page natural-language candidate search) ------------
@@ -3131,6 +3195,7 @@
       const resume = e.target.closest("[data-resume]"); if (resume) viewResume(resume.dataset.resume);
       const dl = e.target.closest("[data-download-resume]"); if (dl) downloadResume(dl.dataset.downloadResume, dl.dataset.resumeName, dl);
       const release = e.target.closest("[data-release]"); if (release) releaseContact(release.dataset.release);
+      const lookup = e.target.closest("[data-lookup]"); if (lookup) lookupContact(lookup.dataset.lookup);
       const sub = e.target.closest("[data-submit]"); if (sub) submitCandidate(sub.dataset.submit);
       const message = e.target.closest("[data-message]"); if (message) messageCandidate(message.dataset.message);
       const pick = e.target.closest("[data-pick]");
@@ -5335,6 +5400,13 @@
 
   // Everything that runs once a verified user is in: restore their page and
   // prime the badges/searches. Shared by first load and the verify gate.
+  // Optional integrations are per-deployment. Read them once, before the
+  // Providers table first renders, so a control is never drawn for a feature
+  // this server cannot perform.
+  async function loadFeatures(){
+    try { S.features = await get("/api/features") || {}; }
+    catch(e) { S.features = {}; }   // unknown = off; nothing extra is offered
+  }
   function enterAppPages(){
     const requested = new URLSearchParams(location.search).get("page");
     const saved = localStorage.getItem("hb_page");
@@ -5347,6 +5419,7 @@
     refreshNotificationBadge();
     refreshCredits();
     if (isRecruiter()){
+      loadFeatures().then(() => { if (S.providerLastData) renderProviderPage(S.providerLastData); });
       loadProviderFacets();
       // Standing searches are re-counted on entry; anything that grew since
       // the last visit turns into a notification.
