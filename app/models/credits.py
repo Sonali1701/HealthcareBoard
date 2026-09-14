@@ -13,13 +13,13 @@ thing — revealing a contact they already paid for must not charge again.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ..database import Base, created_col, updated_col, uuid_fk, uuid_pk
+from ..database import Base, TZDateTime, created_col, updated_col, uuid_fk, uuid_pk
 
 # What each metered action costs. Kept here so pricing lives with the model
 # rather than being scattered through the routers.
@@ -76,3 +76,30 @@ class CreditTransaction(Base):
     created_at: Mapped[datetime] = created_col()
 
     account: Mapped[CreditAccount] = relationship(back_populates="transactions")
+
+
+class WeeklyUsageReportDelivery(Base):
+    """One recipient's delivery state for one organization's reporting week.
+
+    The unique key makes the scheduled sender idempotent even when several web
+    workers wake up together or the application restarts during the week.
+    """
+
+    __tablename__ = "weekly_usage_report_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "employer_id", "recipient_user_id", "period_start",
+            name="uq_weekly_usage_report_delivery",
+        ),
+    )
+
+    delivery_id: Mapped[str] = uuid_pk()
+    employer_id: Mapped[str] = uuid_fk("employers.employer_id")
+    recipient_user_id: Mapped[str] = uuid_fk("users.user_id")
+    period_start: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # Exclusive end date; a Monday-Sunday report ends at the next Monday.
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(TZDateTime)
+    created_at: Mapped[datetime] = created_col()
+    updated_at: Mapped[datetime] = updated_col()

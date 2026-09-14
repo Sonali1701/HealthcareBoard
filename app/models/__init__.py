@@ -3,7 +3,7 @@
 Importing this package registers every table on ``Base.metadata`` so that
 ``Base.metadata.create_all()`` builds the full schema.
 
-Table inventory (28):
+Table inventory (29):
   Auth:       users, oauth_accounts, sessions, password_reset_tokens,
               email_verification_tokens
   Profiles:   profiles, licenses, work_history, certifications, profile_skills
@@ -13,7 +13,8 @@ Table inventory (28):
   Messaging:  message_threads, messages, notifications, interviews, offers
   Pools:      talent_pools, talent_pool_members
   Searches:   saved_searches
-  Credits:    credit_accounts, credit_transactions
+  Credits:    credit_accounts, credit_transactions,
+              weekly_usage_report_deliveries
   Outreach:   email_templates, outreach_campaigns, outreach_messages,
               outreach_suppressions
   Analytics:  match_runs, match_results, pay_packages, audit_logs
@@ -31,6 +32,7 @@ from .credits import (
     DEFAULT_COSTS,
     CreditAccount,
     CreditTransaction,
+    WeeklyUsageReportDelivery,
 )
 from .enums import (
     ApplicationStatus,
@@ -93,7 +95,7 @@ __all__ = [
     "Client",
     # credits
     "CreditAccount", "CreditTransaction", "DEFAULT_COSTS",
-    "COST_REVEAL_CONTACT",
+    "COST_REVEAL_CONTACT", "WeeklyUsageReportDelivery",
     # outreach
     "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",
     "MERGE_FIELDS", "SEND_STATUSES",

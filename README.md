@@ -33,6 +33,24 @@ Then open:
 - **Static frontends:** http://127.0.0.1:8000/ui/healthboard-pro.html
   (any `healthboard-*.html` in the project root is served under `/ui/`)
 
+### Weekly organization credit reports
+
+When email is configured, the running app automatically emails the previous
+Monday-Sunday usage report to every organization owner and organization admin
+at 13:00 UTC each Monday. Managers and ordinary members are not recipients.
+Each email includes usage per team member, contacts revealed, and remaining
+credits. Successful deliveries are recorded so restarts and multiple workers
+cannot send the same weekly report twice.
+
+For a manual or externally scheduled check, run:
+
+```bash
+.venv\Scripts\python -m app.send_weekly_usage_reports
+```
+
+Configure it with `WEEKLY_USAGE_EMAILS_ENABLED`,
+`WEEKLY_USAGE_EMAIL_HOUR_UTC`, and `WEEKLY_USAGE_EMAIL_CHECK_SECONDS`.
+
 ### Load your own candidate data (resumes)
 
 Instead of (or in addition to) the demo seed, import a folder of real resumes:

@@ -7,8 +7,11 @@ The static HTML frontends are served from the project root at /ui/<file>.html
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
+from contextlib import suppress
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -89,7 +92,17 @@ if settings.sentry_dsn:
 async def lifespan(app: FastAPI):
     init_db()
     ensure_admin()
-    yield
+    usage_task = None
+    if settings.weekly_usage_emails_enabled:
+        from .services.weekly_usage_reports import scheduler
+        usage_task = asyncio.create_task(scheduler())
+    try:
+        yield
+    finally:
+        if usage_task:
+            usage_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await usage_task
 
 
 app = FastAPI(
@@ -279,6 +292,66 @@ def health():
     return payload if db_ok else JSONResponse(payload, status_code=503)
 
 
+def _legal_document(filename: str) -> dict:
+    '''Load a plain-text legal document into safe, structured page content.'''
+    lines = [
+        line.strip()
+        for line in (PROJECT_ROOT / filename).read_text(encoding='utf-8').splitlines()
+        if line.strip()
+    ]
+    intro: list[str] = []
+    sections: list[dict] = []
+    current: dict | None = None
+    for line in lines:
+        match = re.match(r'^(\d+)\.\s+(.+)$', line)
+        if match:
+            current = {
+                'number': int(match.group(1)),
+                'title': match.group(2),
+                'id': re.sub(r'[^a-z0-9]+', '-', match.group(2).lower()).strip('-'),
+                'lines': [],
+            }
+            sections.append(current)
+        elif current is None:
+            intro.append(line)
+        else:
+            current['lines'].append(line)
+
+    subheads = {'Candidate and Professional Information', 'User Information', 'Website Content'}
+    for section in sections:
+        nodes = []
+        body = section.pop('lines')
+        cursor = 0
+        while cursor < len(body):
+            line = body[cursor]
+            if line in subheads:
+                nodes.append({'kind': 'heading', 'text': line})
+                cursor += 1
+                continue
+            if line.endswith(':') and not re.match(r'^(Operated by|Email|Website|Address):', line):
+                nodes.append({'kind': 'paragraph', 'text': line})
+                items = []
+                cursor += 1
+                while cursor < len(body) and not body[cursor].endswith('.'):
+                    items.append(body[cursor])
+                    cursor += 1
+                if items:
+                    nodes.append({'kind': 'list', 'items': items})
+                continue
+            nodes.append({'kind': 'paragraph', 'text': line})
+            cursor += 1
+        section['nodes'] = nodes
+
+    contact = next((s for s in sections if s['title'] in {'Contact Us', 'Contact Information'}), None)
+    if contact:
+        contact['nodes'] = [
+            {'kind': 'paragraph', 'text': 'Questions, requests, or concerns may be directed to:'},
+            {'kind': 'contact', 'name': 'MedHunt', 'email': 'info@medhunt.ai',
+             'website': 'medhunt.ai', 'address': '456 Porter Road, Folsom, CA 95630'},
+        ]
+    return {'intro': intro, 'sections': sections}
+
+
 # --- Launch app UI --------------------------------------------------------
 
 @app.get("/", include_in_schema=False)
@@ -300,12 +373,20 @@ def verify_email_page(request: Request):
 
 @app.get("/terms", include_in_schema=False)
 def terms_page(request: Request):
-    return templates.TemplateResponse("legal/terms.html", {"request": request})
+    return templates.TemplateResponse(
+        'legal/terms.html',
+        {'request': request, 'page_key': 'terms',
+         'document': _legal_document('Terms and condition.txt')},
+    )
 
 
 @app.get("/privacy", include_in_schema=False)
 def privacy_page(request: Request):
-    return templates.TemplateResponse("legal/privacy.html", {"request": request})
+    return templates.TemplateResponse(
+        'legal/privacy.html',
+        {'request': request, 'page_key': 'privacy',
+         'document': _legal_document('Privacy Policy.txt')},
+    )
 
 
 @app.get("/match", include_in_schema=False)

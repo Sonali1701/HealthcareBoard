@@ -169,6 +169,7 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
         TalentPoolMember,
     )
     from .profiles import RELEASE_ACTION
+    from .extension import MEDHUNT_ATTEMPT_ACTION, MEDHUNT_ENRICHED_ACTION
 
     since = utcnow() - timedelta(days=max(1, days))
     uid = user.user_id
@@ -182,6 +183,20 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
                             .where(AuditLog.actor_user_id == uid,
                                    AuditLog.action == RELEASE_ACTION,
                                    AuditLog.created_at >= since))
+    medhunt_enriched = count(select(func.count()).select_from(AuditLog).where(
+        AuditLog.actor_user_id == uid,
+        AuditLog.action == MEDHUNT_ENRICHED_ACTION,
+    ))
+    medhunt_enriched_recent = count(select(func.count()).select_from(AuditLog).where(
+        AuditLog.actor_user_id == uid,
+        AuditLog.action == MEDHUNT_ENRICHED_ACTION,
+        AuditLog.created_at >= since,
+    ))
+    medhunt_attempts_recent = count(select(func.count()).select_from(AuditLog).where(
+        AuditLog.actor_user_id == uid,
+        AuditLog.action.in_((MEDHUNT_ENRICHED_ACTION, MEDHUNT_ATTEMPT_ACTION)),
+        AuditLog.created_at >= since,
+    ))
     pool_ids = db.scalars(select(TalentPool.pool_id)
                           .where(TalentPool.owner_user_id == uid)).all()
     shortlisted = count(select(func.count()).select_from(TalentPoolMember)
@@ -219,6 +234,11 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
             "reachable_pct": round(100 * reachable / listable, 1) if listable else 0.0,
         },
         "contacts": {"released_total": releases, "released_recent": releases_recent},
+        "medhunt": {
+            "enriched_total": medhunt_enriched,
+            "enriched_recent": medhunt_enriched_recent,
+            "attempts_recent": medhunt_attempts_recent,
+        },
         "pools": {
             "pools": len(pool_ids),
             "shortlisted": shortlisted,

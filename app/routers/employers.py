@@ -335,6 +335,7 @@ def org_usage(employer_id: str, user: CurrentUser, db: DbSession):
     manager/admin can 'track user usage' and see billing at a glance."""
     from ..models import AuditLog, CreditAccount
     from .profiles import RELEASE_ACTION
+    from .extension import MEDHUNT_ENRICHED_ACTION
 
     employer = db.get(Employer, employer_id)
     if not employer:
@@ -355,6 +356,11 @@ def org_usage(employer_id: str, user: CurrentUser, db: DbSession):
         select(AuditLog.actor_user_id, func.count())
         .where(AuditLog.actor_user_id.in_(ids), AuditLog.action == RELEASE_ACTION)
         .group_by(AuditLog.actor_user_id)).all())
+    medhunt_enriched = dict(db.execute(
+        select(AuditLog.actor_user_id, func.count())
+        .where(AuditLog.actor_user_id.in_(ids),
+               AuditLog.action == MEDHUNT_ENRICHED_ACTION)
+        .group_by(AuditLog.actor_user_id)).all())
 
     rows = []
     for uid in ids:
@@ -370,11 +376,13 @@ def org_usage(employer_id: str, user: CurrentUser, db: DbSession):
             "credits": a.balance if a else 0,
             "credits_spent": a.lifetime_spent if a else 0,
             "reveals": reveals.get(uid, 0),
+            "medhunt_enriched": medhunt_enriched.get(uid, 0),
         })
     rows.sort(key=lambda x: (-org_roles.rank(x["role"]), -x["reveals"]))
     totals = {
         "credits": sum(r["credits"] for r in rows),
         "reveals": sum(r["reveals"] for r in rows),
+        "medhunt_enriched": sum(r["medhunt_enriched"] for r in rows),
         "members": len(rows),
     }
     return {"members": rows, "totals": totals,

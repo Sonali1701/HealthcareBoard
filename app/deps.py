@@ -85,18 +85,16 @@ def get_ingest_user(
     """Authenticate a capture request by a normal Bearer JWT OR the extension's
     long-lived X-Capture-Token header.
 
-    Single-active-session (the sid check in get_current_user) deliberately does
-    NOT apply to the X-Capture-Token path: it is a per-user API key for the
-    browser extension, scoped to the two write-only /api/ingest/* endpoints
-    (candidate/résumé capture) — it grants no read access to the paid directory,
-    reveals, or messaging. Rotating it on every login would break the owner's own
-    extension, so it stays exempt; treat it like an API key, not a login session.
+    Single-active-session checks deliberately do not apply to this path. The
+    capture token is a per-user API key scoped to extension ingestion, identity,
+    and activity endpoints; it cannot reveal paid directory data or messages.
+    It remains valid until the user or an administrator rotates it.
     """
     if token:
         return get_current_user(db=db, token=token)
     if x_capture_token:
         user = db.scalar(select(User).where(User.capture_token == x_capture_token))
-        if user and user.deleted_at is None and user.status != UserStatus.suspended:
+        if user and user.deleted_at is None and user.status == UserStatus.active:
             return user
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

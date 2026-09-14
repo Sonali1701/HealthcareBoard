@@ -1727,7 +1727,8 @@
                         ["Open jobs", kpis.jobs || 0],
                         ["Applications", kpis.applications || 0]];
       if (usage) kpiCards.push(["Team credits", usage.totals.credits],
-                               ["Contacts revealed", usage.totals.reveals]);
+                               ["Contacts revealed", usage.totals.reveals],
+                               ["Medhunt enrichments", usage.totals.medhunt_enriched]);
 
       const roleCell = m => m.is_owner
         ? `<span class="badge accent">Owner</span>`
@@ -1781,12 +1782,13 @@
 
         ${usage ? `<div class="an-section" style="margin-top:22px"><h2>Usage &amp; billing</h2>
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Member</th><th>Role</th><th>Credits left</th><th>Contacts revealed</th></tr></thead>
+            <thead><tr><th>Member</th><th>Role</th><th>Credits left</th><th>Contacts revealed</th><th>Medhunt enriched</th></tr></thead>
             <tbody>${usage.members.map(m => `<tr>
               <td><div class="cell-name">${esc(m.name || m.email || "—")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
               <td><span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.role] || m.role)}</span></td>
               <td><b>${Number(m.credits).toLocaleString()}</b></td>
-              <td>${Number(m.reveals).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
+              <td>${Number(m.reveals).toLocaleString()}</td>
+              <td>${Number(m.medhunt_enriched || 0).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
           <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your HealthBoard administrator.</p></div>` : ""}
       `;
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
@@ -4642,6 +4644,7 @@
         get("/api/analytics/conversations").catch(() => null),
       ]);
       const P = mk.providers, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
+      const medhunt = d.medhunt || {enriched_total:0, enriched_recent:0, attempts_recent:0};
       const stages = pools.by_stage || {};
       const poolSegs = POOL_STAGE_ORDER.map(s => ({
         label: s.charAt(0).toUpperCase() + s.slice(1), value: stages[s] || 0, color: STAGE_COLORS[s]}));
@@ -4653,6 +4656,7 @@
         ${stat(mk.jobs_active.toLocaleString(), "Open roles", "live on the board")}
         ${stat(P.states, "States covered")}
         ${stat(con.released_total, "Contacts revealed", `${con.released_recent} in ${d.window_days} days`, true)}
+        ${stat(medhunt.enriched_total, "Medhunt enrichments", `${medhunt.enriched_recent} in ${d.window_days} days`, true)}
         ${stat(pools.shortlisted, "Shortlisted", `${pools.pools} pool${pools.pools === 1 ? "" : "s"}`)}
         ${stat(mk.credits.spent, "Credits spent", `${mk.credits.balance} remaining`)}
       </div></div>`;
@@ -4703,6 +4707,7 @@
         </div>
         <div class="an-grid" style="margin-top:14px">
           ${stat(runs.runs, "Sourcing runs")}
+          ${stat(medhunt.attempts_recent, "Medhunt checks", `last ${d.window_days} days`)}
           ${stat(runs.candidates_ranked.toLocaleString(), "Candidates ranked", `avg score ${runs.avg_match_score}`)}
           ${stat(d.saved_searches, "Saved searches")}
           ${stat(pools.worked_pct + "%", "Shortlist worked", `${pools.worked} past sourced`)}

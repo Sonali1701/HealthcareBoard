@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     sendgrid_api_key: str = ""
     email_from: str = "no-reply@healthboard.dev"
     email_from_name: str = "HealthBoard"
+    # Send the previous completed Monday-Sunday credit-usage report to each
+    # organization's owner and admins. Delivery claims make this safe across
+    # multiple web workers and application restarts.
+    weekly_usage_emails_enabled: bool = True
+    weekly_usage_email_hour_utc: int = 13
+    weekly_usage_email_check_seconds: int = 3600
     # Base URL the frontend is served from — used to build reset/verify links.
     frontend_base_url: str = "http://127.0.0.1:8000"
 

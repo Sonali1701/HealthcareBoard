@@ -1,0 +1,265 @@
+These Terms and Conditions (“Terms”) govern access to and use of the MedHunt website, Chrome extension, software platform, applications, APIs, and related services collectively referred to as the “Service.”
+MedHunt is operated by [Company Legal Name] (“MedHunt,” “we,” “us,” or “our”).
+By accessing or using MedHunt, you agree to these Terms. If you do not agree, you must not access or use the Service.
+1. About MedHunt
+MedHunt is a recruiting technology platform designed to help authorized recruiters and staffing professionals find, identify, match, organize, and connect with prospective candidates.
+MedHunt may assist users with functions such as:
+Candidate sourcing
+Candidate matching
+Contact information discovery
+Professional profile enrichment
+Resume identification and organization
+Candidate profile review
+Recruiting workflow automation
+Healthcare talent sourcing
+Candidate data organization
+Recruitment productivity tools
+MedHunt does not guarantee that any candidate will respond, accept employment, qualify for a position, or successfully complete a hiring process.
+2. Eligibility
+You must be at least 18 years old and legally capable of entering into a binding agreement to use MedHunt.
+If you use MedHunt on behalf of a company or organization, you represent that you have authority to bind that organization to these Terms.
+MedHunt is intended primarily for legitimate business, recruiting, staffing, and talent acquisition purposes.
+3. User Accounts
+Certain MedHunt features may require an account.
+You agree to:
+Provide accurate registration information
+Keep your account information current
+Maintain the confidentiality of your login credentials
+Prevent unauthorized access to your account
+Notify us if you believe your account has been compromised
+You are responsible for activity performed through your account unless prohibited by applicable law.
+You may not share account credentials with unauthorized individuals.
+4. Permitted Use
+You may use MedHunt only for lawful recruiting, staffing, workforce, employment, talent sourcing, or related professional purposes.
+Users may use MedHunt to identify and contact individuals regarding legitimate professional opportunities.
+You are responsible for ensuring that your recruiting activities comply with applicable employment, privacy, communications, anti-discrimination, and marketing laws.
+5. Prohibited Uses
+You may not use MedHunt to:
+Harass, threaten, deceive, or discriminate against individuals
+Conduct unlawful surveillance
+Send unlawful spam or unsolicited communications
+Commit fraud or identity theft
+Collect data for illegal purposes
+Sell candidate information obtained through MedHunt as a standalone data product
+Create unauthorized consumer profiles
+Determine eligibility for credit, insurance, housing, lending, or similar decisions
+Use information for purposes unrelated to recruiting or employment
+Access accounts without authorization
+Circumvent security controls
+Introduce malware or malicious code
+Reverse engineer the Service except where legally permitted
+Interfere with MedHunt's servers or infrastructure
+Attempt to exceed system limits or abuse automated features
+Violate the terms of third-party websites or services
+Use MedHunt in violation of applicable laws or regulations
+We may suspend or terminate access if we reasonably believe the Service is being misused.
+6. Candidate Information
+MedHunt may process professional and contact information relating to prospective candidates.
+Such information may include:
+Name
+Job title
+Profession
+Specialty
+Employer
+Employment history
+Education
+General location
+Professional profile information
+Email address
+Phone number
+Resume information
+Skills
+Certifications
+Licenses or professional qualifications
+Candidate information should be used only for legitimate recruiting and employment-related activities.
+Users are responsible for determining whether they have a lawful basis to contact an individual.
+7. Accuracy of Information
+MedHunt may obtain or process information from:
+User-provided information
+Publicly available sources
+Professional databases
+Recruiting platforms
+Third-party data providers
+Candidate profiles
+Other authorized sources
+We attempt to provide useful information, but we do not guarantee that all information is:
+Complete
+Accurate
+Current
+Error-free
+Verified
+Applicable to a particular recruiting decision
+Users should independently verify information before making important employment or business decisions.
+8. No Employment Decision Guarantee
+MedHunt is a recruiting productivity tool.
+MedHunt does not make hiring decisions on behalf of users unless explicitly stated in a separate agreement.
+Users remain responsible for:
+Candidate screening
+Interviews
+Background checks
+Credential verification
+Licensure verification
+Reference checks
+Employment eligibility
+Compliance requirements
+Hiring decisions
+Users must not rely solely on MedHunt information when making employment decisions.
+9. Healthcare Recruiting
+MedHunt may be used to source healthcare professionals including nurses, physicians, advanced practice providers, allied health professionals, and other healthcare workers.
+Professional information such as licenses, certifications, specialties, and employment experience should be independently verified with the appropriate licensing board, credentialing authority, employer, or other authoritative source.
+MedHunt does not guarantee that a professional license or credential displayed through the Service is current or valid.
+10. Third-Party Websites and Platforms
+MedHunt may interact with or provide functionality in connection with third-party websites or recruiting platforms.
+Those services are independently operated.
+MedHunt does not control and is not responsible for:
+Third-party website availability
+Third-party terms
+Third-party privacy practices
+Changes made by third-party platforms
+Account restrictions imposed by third parties
+Content provided by third parties
+Your use of any third-party service is also subject to that service's applicable terms and policies.
+11. Chrome Extension
+The MedHunt Chrome extension may request browser permissions necessary to perform recruiting-related functions.
+These permissions may include access to:
+Supported webpage content
+Active browser tabs
+Browser storage
+Downloads
+Extension side panels
+Scripts used for supported recruiting workflows
+Approved host websites
+MedHunt will use these permissions only as reasonably necessary to provide the disclosed functionality of the extension.
+12. Downloads and Resume Files
+MedHunt may enable users to download candidate resumes or recruiting-related files.
+Users are responsible for:
+Ensuring they are authorized to access the file
+Using downloaded information lawfully
+Protecting downloaded candidate information
+Deleting information when it is no longer required
+Complying with applicable privacy requirements
+MedHunt is not responsible for how users subsequently store or use downloaded files.
+13. Third-Party Data Providers
+MedHunt may use external service providers for functions such as:
+Candidate enrichment
+Contact discovery
+Data verification
+Hosting
+Infrastructure
+Security
+Analytics
+Email or communication functionality
+Availability and accuracy of third-party information may vary.
+MedHunt is not responsible for errors originating from third-party data providers.
+14. Privacy
+Your use of MedHunt is also governed by our Privacy Policy.
+The Privacy Policy explains how we collect, process, use, disclose, store, and protect information.
+By using MedHunt, you acknowledge that you have reviewed our Privacy Policy.
+15. User Responsibilities
+Users are responsible for ensuring their use of MedHunt complies with all applicable laws and regulations, including where applicable:
+Privacy laws
+Data protection laws
+Employment laws
+Anti-discrimination laws
+Telemarketing laws
+Electronic communication laws
+Consumer protection laws
+Professional licensing requirements
+Users should consult qualified legal counsel regarding their own compliance obligations.
+16. Intellectual Property
+MedHunt and its associated technology, software, branding, logos, interface, design, databases, documentation, and original content are owned by or licensed to [Company Legal Name].
+Except as expressly permitted, users may not:
+Copy the Service
+Resell the software
+Modify the source code
+Reverse engineer proprietary systems
+Use MedHunt branding without permission
+Reproduce proprietary documentation
+Create derivative products using proprietary MedHunt technology
+No ownership rights are transferred to users through use of the Service.
+17. Feedback
+If you provide suggestions, feature requests, ideas, or other feedback about MedHunt, you grant us the right to use that feedback to improve our products and services without obligation to compensate you.
+18. Subscription and Fees
+Certain MedHunt features may require a paid subscription.
+Applicable pricing, billing cycles, usage limits, credits, or subscription terms will be disclosed before purchase.
+Unless otherwise stated:
+Fees are charged according to the selected plan
+Users are responsible for applicable taxes
+Subscription access may be restricted for unpaid accounts
+Usage limits may vary by plan
+Additional commercial terms may be included in a separate order form or service agreement.
+19. Cancellation
+Users may cancel subscriptions according to the cancellation process associated with their plan.
+Cancellation normally prevents future renewal but does not automatically provide a refund for previously paid fees unless otherwise required by law or stated in the applicable subscription agreement.
+20. Service Availability
+We work to keep MedHunt operational but cannot guarantee uninterrupted availability.
+The Service may occasionally become unavailable due to:
+Maintenance
+System updates
+Third-party service interruptions
+Internet failures
+Security events
+Software defects
+Changes to external platforms
+Events beyond our reasonable control
+We may modify features as the product evolves.
+21. Suspension and Termination
+We may suspend, restrict, or terminate access to MedHunt if a user:
+Violates these Terms
+Misuses candidate data
+Engages in unlawful activity
+Attempts unauthorized access
+Creates security risks
+Fails to pay applicable fees
+Violates third-party rights
+Uses the Service in a manner that could harm MedHunt or other users
+Users may stop using MedHunt at any time.
+22. Disclaimer of Warranties
+To the maximum extent permitted by applicable law, MedHunt is provided “AS IS” and “AS AVAILABLE.”
+We do not warrant that:
+Candidate information will always be accurate
+Contact information will always be valid
+Every candidate will respond
+Candidates will accept employment
+The Service will always be available
+The Service will be error-free
+Third-party websites will remain compatible with MedHunt
+MedHunt will meet every user's business requirements
+Users remain responsible for independently evaluating candidates and recruiting information.
+23. Limitation of Liability
+To the maximum extent permitted by law, MedHunt and [Company Legal Name] will not be liable for indirect, incidental, special, consequential, punitive, or exemplary damages arising from use of the Service.
+This includes damages related to:
+Lost profits
+Lost business opportunities
+Candidate decisions
+Recruiting outcomes
+Loss of data
+Third-party website restrictions
+Service interruptions
+Inaccurate third-party information
+Where liability cannot legally be excluded, our total liability will be limited to the amount paid by the user for MedHunt during the 12 months preceding the event giving rise to the claim, unless applicable law requires otherwise.
+24. Indemnification
+To the extent permitted by law, you agree to indemnify and hold harmless MedHunt, [Company Legal Name], its affiliates, directors, officers, employees, and agents from claims arising from:
+Your misuse of MedHunt
+Your violation of these Terms
+Your violation of applicable law
+Your unlawful use of candidate information
+Your violation of third-party rights
+25. Changes to the Service
+MedHunt may add, modify, suspend, or discontinue features as the Service evolves.
+We may update these Terms when necessary.
+When significant changes are made, we will update the Last Updated date or provide additional notice where required.
+26. Governing Law
+These Terms will be governed by the laws of the State of [State], United States, without regard to conflict-of-law principles.
+Any disputes will be handled in the courts located in [County, State], unless another dispute procedure is established in a separate written agreement or applicable law requires otherwise.
+27. Severability
+If any provision of these Terms is held invalid or unenforceable, the remaining provisions will continue in full force and effect.
+28. Entire Agreement
+These Terms, together with the MedHunt Privacy Policy and any applicable subscription or service agreement, constitute the agreement between the user and MedHunt regarding use of the Service.
+29. Contact Information
+Questions about these Terms may be directed to:
+MedHunt
+Operated by: [Company Legal Name]
+Website: [Website URL]
+Email: [Support/Legal Email]
+Address: [Business Address]

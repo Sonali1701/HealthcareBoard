@@ -1,0 +1,148 @@
+MedHunt (“MedHunt,” “we,” “our,” or “us”) respects the privacy of our users and the individuals whose professional information may be processed through our service.
+This Privacy Policy explains how MedHunt collects, uses, processes, stores, and protects information when users access or use the MedHunt Chrome extension, website, platform, and related services.
+MedHunt is designed to help recruiters and staffing professionals find, identify, match, and connect with potential candidates for legitimate recruiting and staffing purposes.
+1. Information We May Process
+MedHunt may process information provided by users or information available through supported recruiting websites and authorized data sources.
+Candidate and Professional Information
+The information processed may include:
+First and last name
+Professional title
+Occupation or specialty
+Employer or work history
+Education information
+City, state, or other general location information
+Professional profile information
+Publicly or professionally available email addresses
+Phone numbers
+Resume information
+Skills, certifications, and professional qualifications
+Candidate profile URLs or identifiers
+MedHunt is intended to process professional and recruiting-related information.
+User Information
+When users access MedHunt, we may process limited information such as:
+Name
+Business email address
+Organization or company name
+Account information
+Extension settings and preferences
+Search or workflow information necessary to operate the service
+Website Content
+When a user initiates a MedHunt workflow on a supported recruiting website, the extension may access relevant content displayed on that webpage in order to identify candidate information, compare profiles, match candidates, or perform other recruiting-related functions requested by the user.
+MedHunt does not use website access to monitor a user's unrelated browsing activity.
+2. How We Use Information
+We use information only for MedHunt's recruiting and candidate-sourcing functionality.
+Information may be used to:
+Search for potential candidates
+Match candidate information
+Identify professional contact information
+Enrich candidate profiles
+Verify candidate identity or professional information
+Assist recruiters with candidate sourcing
+Download or organize candidate resumes when requested
+Present candidate information to the authorized user
+Improve candidate search accuracy
+Maintain user preferences and extension settings
+Troubleshoot technical problems
+Prevent misuse, fraud, or unauthorized access
+Maintain and improve the MedHunt service
+We do not use collected information to determine creditworthiness or for lending purposes.
+3. Chrome Extension Permissions
+MedHunt may request Chrome permissions that are necessary to provide its candidate-sourcing functionality.
+Depending on the version of the extension, these permissions may include:
+Side Panel: Used to display MedHunt's recruiting interface alongside supported webpages.
+Storage: Used to save extension preferences, workflow status, temporary data, and settings necessary for the extension to function.
+Active Tab / Tabs: Used to identify and interact with the supported recruiting webpage that the user is actively using.
+Scripting: Used to run MedHunt functionality on supported webpages during a user-initiated recruiting workflow.
+Downloads: Used when a user requests that candidate resumes or recruiting-related files be downloaded.
+Host Permissions: Used to interact with specifically supported recruiting websites required for MedHunt's candidate-sourcing functionality.
+If the extension requests additional permissions, they are used only where reasonably necessary to provide MedHunt's disclosed recruiting functionality.
+4. Website and Browsing Information
+MedHunt is not designed to monitor a user's general browsing history.
+The extension may identify the current webpage, URL, or page content when required to perform a user-requested action on a supported recruiting platform.
+We do not use this information to create advertising profiles or track users across unrelated websites.
+5. Data Enrichment and Third-Party Services
+MedHunt may use third-party service providers to support candidate matching, contact discovery, data enrichment, hosting, infrastructure, or other functionality required to provide the service.
+Where candidate information is submitted to a service provider, we limit the information shared to what is reasonably necessary to perform the requested function.
+Third-party providers may process information according to their own contractual obligations and privacy policies.
+MedHunt does not authorize service providers to use information received through MedHunt for unrelated advertising or marketing purposes.
+6. Sale of Personal Information
+MedHunt does not sell personal information collected through the extension.
+We also do not transfer user data to third parties for unrelated advertising, creditworthiness, lending, or other purposes unrelated to MedHunt's recruiting functionality.
+Information may be shared with service providers where necessary to provide the MedHunt service.
+7. Health Information
+Although MedHunt is designed for healthcare recruiting, professional healthcare information such as a person's occupation, specialty, license, certification, or employment history is used for recruiting purposes.
+MedHunt is not designed to collect patient medical records, diagnoses, symptoms, treatment information, or other personal medical information.
+Users should not submit protected health information or patient medical information to MedHunt.
+8. Authentication and Passwords
+MedHunt does not intentionally collect passwords or login credentials for third-party recruiting websites.
+Users should never provide third-party passwords, security answers, PINs, or similar sensitive authentication credentials through MedHunt unless a feature specifically requires and securely supports such information.
+9. Personal Communications
+MedHunt is not designed to read or monitor a user's personal emails, private text messages, or unrelated communications.
+If future functionality allows a user to send recruiting communications through MedHunt, such information will be used only to provide the requested recruiting functionality.
+10. Data Retention
+We retain information only for as long as reasonably necessary to:
+Provide MedHunt's services
+Complete recruiting workflows
+Maintain user accounts
+Meet legitimate business requirements
+Resolve disputes
+Prevent fraud or abuse
+Comply with applicable legal obligations
+Temporary extension data may be deleted automatically when it is no longer required.
+Users may contact us to request deletion of information where applicable.
+11. Data Security
+We use reasonable administrative, technical, and organizational safeguards designed to protect information against unauthorized access, disclosure, alteration, loss, or misuse.
+These safeguards may include:
+Secure network communications
+Access controls
+Authentication controls
+Restricted internal access
+Secure cloud infrastructure
+Monitoring and logging
+Encryption where appropriate
+No electronic system can guarantee absolute security, but we work to maintain safeguards appropriate to the nature of the information processed.
+12. Limited Use of Data
+Information collected or processed through MedHunt is used only for functionality related to MedHunt's disclosed purpose.
+We do not use or transfer information for purposes unrelated to candidate sourcing, recruiting, staffing, candidate matching, contact discovery, or operating and securing the MedHunt service.
+We do not use information for lending or creditworthiness decisions.
+13. Children's Privacy
+MedHunt is intended for professional business and recruiting use.
+The service is not intended for children under the age of 13, and we do not knowingly collect personal information from children.
+14. User Choices and Rights
+Depending on applicable law and the user's location, individuals may have rights relating to their personal information, including the right to:
+Request access to personal information
+Request correction of inaccurate information
+Request deletion of personal information
+Object to certain processing
+Request information about how data is used
+Requests may be submitted using the contact information below.
+We may need to verify the identity of the requester before completing certain requests.
+15. Third-Party Websites
+MedHunt may operate in connection with third-party recruiting platforms or websites.
+MedHunt does not control the privacy practices of those third-party services.
+Users should review the privacy policies and terms of any third-party service they use.
+16. International Data Processing
+MedHunt and its service providers may process information in the United States or other countries where they operate.
+Where required, we take reasonable steps to protect information consistent with applicable privacy laws.
+17. Changes to This Privacy Policy
+We may update this Privacy Policy periodically to reflect changes to:
+MedHunt functionality
+Privacy practices
+Legal requirements
+Chrome Web Store requirements
+Technology or service providers
+When we make material changes, we will update the Last Updated date above.
+Continued use of MedHunt after an updated Privacy Policy becomes effective constitutes acceptance of the revised policy where permitted by law.
+18. Contact Us
+For privacy questions, requests, or concerns regarding MedHunt, contact:
+MedHunt
+Operated by: [Company Legal Name]
+Email: [Privacy Email Address]
+Website: [Website URL]
+Address: [Business Address, if desired]
+For privacy-related requests, please include “MedHunt Privacy Request” in the subject line.
+
+Operated by: Medhunt
+Email: info@medhunt.ai
+Website: medhunt.ai
+Address:  456 Porter Road, Folsom, CA 95630

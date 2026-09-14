@@ -8,6 +8,7 @@ never break the request that triggered it.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from html import escape
 
 from ..config import settings
@@ -150,6 +151,19 @@ def send_email_verification(email: str, token: str) -> bool:
     return send_email(email, "Verify your HealthBoard email", html)
 
 
+def send_medhunt_login_code(email: str, code: str, expires_minutes: int = 10) -> bool:
+    """Send the short-lived passwordless code used by the Medhunt extension."""
+    html = _wrap(
+        "Your Medhunt sign-in code",
+        f"<p>Enter this code in the Medhunt browser extension:</p>"
+        f"<p style='font-size:28px;letter-spacing:8px;font-weight:700;color:#075fe8'>"
+        f"{escape(code)}</p>"
+        f"<p>The code expires in {int(expires_minutes)} minutes. If you did not "
+        "request it, you can safely ignore this email.</p>",
+    )
+    return send_email(email, f"{code} is your Medhunt sign-in code", html)
+
+
 # --- Activity emails (sent alongside the in-app notification) --------------
 
 def send_new_application(email: str, candidate_name: str, job_title: str) -> bool:
@@ -192,3 +206,51 @@ def send_team_invite(email: str, org_name: str, accept_link: str | None = None) 
         "Open HealthBoard", f"{_base()}/?page=employer",
     )
     return send_email(email, f"You've been added to {org_name}", html)
+
+
+def send_weekly_usage_report(email: str, *, org_name: str, period_start,
+                             period_end, members: list[dict], totals: dict) -> bool:
+    """Send an owner/admin the organization's completed weekly credit report."""
+    last_day = period_end - timedelta(days=1)
+    period_label = f"{period_start:%b %d}-{last_day:%b %d, %Y}"
+    rows = "".join(
+        "<tr>"
+        f"<td style='padding:8px;border-bottom:1px solid #e5edf8'>"
+        f"<strong>{escape(m.get('name') or m.get('email') or 'Team member')}</strong><br>"
+        f"<span style='font-size:12px;color:#7189ad'>{escape(m.get('email') or '')}</span></td>"
+        f"<td style='padding:8px;border-bottom:1px solid #e5edf8'>{escape(m.get('role_label') or '')}</td>"
+        f"<td style='padding:8px;text-align:right;border-bottom:1px solid #e5edf8'>"
+        f"<strong>{int(m.get('credits_used') or 0):,}</strong></td>"
+        f"<td style='padding:8px;text-align:right;border-bottom:1px solid #e5edf8'>"
+        f"{int(m.get('contacts_revealed') or 0):,}</td>"
+        f"<td style='padding:8px;text-align:right;border-bottom:1px solid #e5edf8'>"
+        f"{int(m.get('credits_remaining') or 0):,}</td>"
+        "</tr>"
+        for m in members
+    )
+    body = (
+        f"<p>Here is the credit usage for <strong>{escape(org_name)}</strong> "
+        f"for {escape(period_label)}.</p>"
+        "<div style='display:flex;gap:18px;margin:16px 0'>"
+        f"<div><strong style='font-size:20px'>{int(totals.get('credits_used') or 0):,}</strong>"
+        "<br><span style='font-size:12px'>credits used</span></div>"
+        f"<div><strong style='font-size:20px'>{int(totals.get('contacts_revealed') or 0):,}</strong>"
+        "<br><span style='font-size:12px'>contacts revealed</span></div>"
+        f"<div><strong style='font-size:20px'>{int(totals.get('credits_remaining') or 0):,}</strong>"
+        "<br><span style='font-size:12px'>credits remaining</span></div></div>"
+        "<div style='overflow-x:auto'><table style='border-collapse:collapse;width:100%;font-size:13px'>"
+        "<thead><tr style='background:#f3f7fd'>"
+        "<th style='padding:8px;text-align:left'>Member</th>"
+        "<th style='padding:8px;text-align:left'>Role</th>"
+        "<th style='padding:8px;text-align:right'>Used</th>"
+        "<th style='padding:8px;text-align:right'>Reveals</th>"
+        "<th style='padding:8px;text-align:right'>Left</th>"
+        f"</tr></thead><tbody>{rows}</tbody></table></div>"
+    )
+    html = _wrap(
+        "Weekly organization credit usage", body,
+        "View organization usage", f"{_base()}/?page=orgadmin",
+    )
+    return send_email(
+        email, f"Weekly credit usage - {org_name} - {period_label}", html
+    )
