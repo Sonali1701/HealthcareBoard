@@ -47,11 +47,11 @@
 
   <div class="grid cols-2 mt">
     <div class="panel">
-      <h3>Résumé</h3>
+      <h3>Resume</h3>
       {% if profile.resume_url %}<div class="small muted mb">Current: <a href="{{ profile.resume_url }}" target="_blank">view</a></div>{% endif %}
       <form method="post" action="/profile/resume" enctype="multipart/form-data">
         <input class="input" type="file" name="file" accept=".pdf,.doc,.docx" required>
-        <button class="btn btn-outline btn-sm mt" type="submit">Upload résumé</button>
+        <button class="btn btn-outline btn-sm mt" type="submit">Upload resume</button>
       </form>
     </div>
     <div class="panel">

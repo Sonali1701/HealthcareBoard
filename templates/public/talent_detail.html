@@ -14,7 +14,7 @@
         </div>
       </div>
       <div class="row" style="gap:8px;align-items:flex-start">
-        {% if profile.resume_url %}<a class="btn btn-outline" href="{{ profile.resume_url }}" target="_blank">View résumé</a>{% endif %}
+        {% if profile.resume_url %}<a class="btn btn-outline" href="{{ profile.resume_url }}" target="_blank">View resume</a>{% endif %}
         {% if user and user.role.value in ['recruiter','employer','admin'] %}
           <a class="btn btn-primary" href="/messages/start/{{ profile.profile_id }}">Message</a>
         {% endif %}

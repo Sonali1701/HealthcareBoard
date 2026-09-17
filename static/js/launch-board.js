@@ -310,7 +310,7 @@
          || id === "applicants" || id === "calculator" || id === "clients" || id === "orgadmin"
          || id === "placements") && !isRecruiter()) id = "dashboard";
     // Seeker-only pages: a staffing agency sources candidates, it doesn't find
-    // jobs, apply, or keep a résumé.
+    // jobs, apply, or keep a resume.
     if ((id === "resume" || id === "applications" || id === "jobs") && isRecruiter()) id = "dashboard";
     // The admin console is for platform admins only.
     if (id === "admin" && !isAdmin()) id = "dashboard";
@@ -1134,7 +1134,7 @@
       <td>${loc ? esc(loc) : `<span class="cell-none">—</span>`}</td>
       <td class="td-contact">${providerContactCell(p)}</td>
       <td class="td-actions">
-        <button class="btn small" data-resume="${p.profile_id}" title="View résumé"><i class="fas fa-file-lines"></i>Résumé</button>
+        <button class="btn small" data-resume="${p.profile_id}" title="View resume"><i class="fas fa-file-lines"></i>Resume</button>
         <button class="btn small" data-message="${p.profile_id}" title="Message this candidate"><i class="fas fa-comment-dots"></i></button>
         <button class="btn small${S.poolMembership.get(p.profile_id) ? " saved" : ""}" data-pool-save="${p.profile_id}" title="Save to a talent pool"><i class="fas fa-layer-group"></i>${S.poolMembership.get(p.profile_id) ? "Saved" : "Save"}</button>
       </td>
@@ -1217,7 +1217,7 @@
       ${fieldRow("Location", [p.city, p.state_code].filter(Boolean).join(", "))}
       ${fieldRow("Desired rate", p.pay_min_hourly ? `$${p.pay_min_hourly}/hr` : "")}
       ${fieldRow("Open to work", p.open_to_work ? "Yes" : "Not set")}
-      ${fieldRow("Résumé", p.resume_url ? "On file" : "", "Upload one")}
+      ${fieldRow("Resume", p.resume_url ? "On file" : "", "Upload one")}
     </div>`;
     loadCompletion();
     loadCredentials();
@@ -2194,7 +2194,7 @@
     } catch(e){ toast(e.message || "Could not message the recruiter.", {kind:"err", ms:6500}); }
   }
   async function applyJob(id){
-    // A candidate applies with their profile + résumé, so make sure they exist
+    // A candidate applies with their profile + resume, so make sure they exist
     // and let them add a note — applying used to fire silently with nothing.
     if (!S.profile){
       toast("Add your details before applying to roles.", {title:"Complete your profile", kind:"err"});
@@ -2205,8 +2205,8 @@
     const v = await formDialog({
       title: job ? `Apply — ${job.title}` : "Apply to this role",
       intro: hasResume
-        ? "Your profile and résumé on file are sent with this application. Add a note if you'd like."
-        : "Your profile is sent with this application. Upload a résumé first (Resume tab) so the employer sees your full background.",
+        ? "Your profile and resume on file are sent with this application. Add a note if you'd like."
+        : "Your profile is sent with this application. Upload a resume first (Resume tab) so the employer sees your full background.",
       submit: "Submit application",
       fields: [
         {name:"cover_letter", label:"Message to the employer", type:"textarea", wide:true,
@@ -2232,12 +2232,12 @@
       if (!res.ok) throw new Error(await res.text());
       const out = await res.json();
       await loadMe();
-      // The upload also parses the résumé and fills blank profile fields. Say
+      // The upload also parses the resume and fills blank profile fields. Say
       // which ones, so the person can see the work it saved them.
       const filled = Object.keys(out.contact_updated || {});
       $("#resume-drop span").textContent = filled.length
-        ? `Uploaded — filled in ${filled.join(", ").replace(/_/g, " ")} from your résumé.`
-        : "Résumé uploaded.";
+        ? `Uploaded — filled in ${filled.join(", ").replace(/_/g, " ")} from your resume.`
+        : "Resume uploaded.";
       if ($("#page-profile").classList.contains("active")) loadProfile();
     } catch(e) { toast(e.message || "The file could not be uploaded.",
                        {title:"Upload failed", kind:"err"}); }
@@ -2245,7 +2245,7 @@
   function renderResume(r){
     const sec = r.sections || {};
     const ini = (r.name || "?").split(/\s+/).map(w => w[0] || "").join("").slice(0, 2).toUpperCase();
-    const lines = arr => (arr && arr.length) ? `<div class="rz-lines">${arr.map(x => `<p>${esc(x)}</p>`).join("")}</div>` : `<div class="rz-empty">Not listed on this résumé.</div>`;
+    const lines = arr => (arr && arr.length) ? `<div class="rz-lines">${arr.map(x => `<p>${esc(x)}</p>`).join("")}</div>` : `<div class="rz-empty">Not listed on this resume.</div>`;
     const fact = (label, val) => val ? `<div class="rz-fact"><span>${label}</span><b>${esc(val)}</b></div>` : "";
     // Enriched, structured data (no identity in it — safe even when name withheld).
     const avail = r.available_date ? new Date(r.available_date).toLocaleDateString(undefined,{month:"short",year:"numeric"}) : "";
@@ -2274,19 +2274,19 @@
       ${(r.skills && r.skills.length) ? `<h5>Skill map</h5><div class="rz-chips">${r.skills.map(s => `<span class="rz-chip">${esc(s)}</span>`).join("")}</div>` : ""}
       ${sec["Skills"] ? `<h5>Skills</h5>${lines(sec["Skills"])}` : ""}
       ${sec["Languages"] ? `<h5>Languages</h5>${lines(sec["Languages"])}` : ""}
-      ${(!(r.skills || []).length && !sec["Skills"] && !sec["Languages"]) ? `<div class="rz-empty">Not listed on this résumé.</div>` : ""}`;
+      ${(!(r.skills || []).length && !sec["Skills"] && !sec["Languages"]) ? `<div class="rz-empty">Not listed on this resume.</div>` : ""}`;
     const certsSec = `
       ${sec["Certifications & Licensure"] ? `<h5>Certifications & Licensure</h5>${lines(sec["Certifications & Licensure"])}` : ""}
       ${sec["Professional Memberships"] ? `<h5>Memberships</h5>${lines(sec["Professional Memberships"])}` : ""}
-      ${(!sec["Certifications & Licensure"] && !sec["Professional Memberships"]) ? `<div class="rz-empty">Not listed on this résumé.</div>` : ""}`;
-    // The whole résumé renders as one scrolling document; the nav jumps to a section.
+      ${(!sec["Certifications & Licensure"] && !sec["Professional Memberships"]) ? `<div class="rz-empty">Not listed on this resume.</div>` : ""}`;
+    // The whole resume renders as one scrolling document; the nav jumps to a section.
     // Prefer the structured (enriched) work history / education; fall back to the
-    // résumé text sections when enrichment hasn't reached this candidate yet.
+    // resume text sections when enrichment hasn't reached this candidate yet.
     const expSec = workStruct
-      ? workStruct + (sec["Experience"] ? `<h5>From résumé</h5>${lines(sec["Experience"])}` : "")
+      ? workStruct + (sec["Experience"] ? `<h5>From resume</h5>${lines(sec["Experience"])}` : "")
       : lines(sec["Experience"]);
     const eduSec = eduStruct
-      ? eduStruct + (sec["Education & Training"] ? `<h5>From résumé</h5>${lines(sec["Education & Training"])}` : "")
+      ? eduStruct + (sec["Education & Training"] ? `<h5>From resume</h5>${lines(sec["Education & Training"])}` : "")
       : lines(sec["Education & Training"]);
     const sections = [
       ["overview", "Overview", overview],
@@ -2301,9 +2301,9 @@
         <div class="rz-id"><div class="rz-name">${esc(r.name)}${r.withheld ? `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>` : ""}</div>
           <div class="rz-sub">${esc([r.role, r.location].filter(Boolean).join("  ·  ")) || "Healthcare provider"}</div></div>
         ${r.can_download
-          ? `<button class="btn small rz-download" data-download-resume="${esc(r.download_url)}" data-resume-name="${esc(r.name || "resume")}" title="Download the original résumé file"><i class="fas fa-download"></i>Download</button>`
+          ? `<button class="btn small rz-download" data-download-resume="${esc(r.download_url)}" data-resume-name="${esc(r.name || "resume")}" title="Download the original resume file"><i class="fas fa-download"></i>Download</button>`
           : (r.has_resume_file
-              ? `<span class="rz-download-hint" title="Reveal this contact to download the résumé file"><i class="fas fa-lock"></i>Reveal to download</span>`
+              ? `<span class="rz-download-hint" title="Reveal this contact to download the resume file"><i class="fas fa-lock"></i>Reveal to download</span>`
               : "")}
         <span class="rz-lock"><i class="fas fa-${r.withheld ? "user-secret" : "lock"}"></i> ${r.withheld ? "Name withheld" : "View only"}</span>
       </div>
@@ -2351,18 +2351,18 @@
     }, {passive:true});
   }
   async function viewResume(id){
-    $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card resume-modal"><div class="modal-head"><strong>Résumé</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div><div class="modal-body">${loading("Loading résumé...")}</div></div></div>`;
+    $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card resume-modal"><div class="modal-head"><strong>Resume</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div><div class="modal-body">${loading("Loading resume...")}</div></div></div>`;
     try {
       // The server already withholds the name (and scrubs it from the body)
       // when the profile hasn't been released — `withheld` just tells the UI.
       const r = await get(`/api/profiles/${id}/resume`);
-      $("#modal-root .modal-head strong").textContent = r.name ? `${r.name} — Résumé` : "Résumé";
+      $("#modal-root .modal-head strong").textContent = r.name ? `${r.name} — Resume` : "Resume";
       $("#modal-root .modal-body").innerHTML = renderResume(r);
       wireResumeNav();
       loadResumeSummary(id);
-    } catch(e) { $("#modal-root .modal-body").innerHTML = `<div style="padding:24px">${esc(e.message || "Could not load résumé.")}</div>`; }
+    } catch(e) { $("#modal-root .modal-body").innerHTML = `<div style="padding:24px">${esc(e.message || "Could not load resume.")}</div>`; }
   }
-  // Download the original résumé file. The endpoint requires a bearer token and
+  // Download the original resume file. The endpoint requires a bearer token and
   // re-checks that the contact was revealed, so we fetch it (not a plain link),
   // then hand the browser a blob to save — works for both local and S3 storage.
   async function downloadResume(url, name, btn){
@@ -2372,7 +2372,7 @@
     try {
       const res = await fetch(url, {headers:{Authorization:"Bearer " + token()}});
       if (!res.ok){
-        let msg = "Could not download the résumé.";
+        let msg = "Could not download the resume.";
         try { const j = await res.json(); if (j && j.detail) msg = j.detail; } catch(_){}
         throw new Error(msg);
       }
@@ -2387,12 +2387,12 @@
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(obj), 1500);
     } catch(e){
-      toast(e.message || "Could not download the résumé.", {title:"Download failed", kind:"err"});
+      toast(e.message || "Could not download the resume.", {title:"Download failed", kind:"err"});
     } finally {
       if (btn){ btn.disabled = false; btn.innerHTML = original; }
     }
   }
-  // Lazily generate the AI briefing so the résumé renders instantly and the
+  // Lazily generate the AI briefing so the resume renders instantly and the
   // summary streams into its card a moment later.
   async function loadResumeSummary(id){
     const card = $("#rz-ai-summary"); if (!card) return;
@@ -3603,7 +3603,7 @@
   // Older history is prepended, keeping the reader where they were rather than
   // jumping them to the top of the thread.
   // Starting a conversation existed in the API and had no caller. Reachability
-  // is checked first: almost every profile is an imported résumé with no
+  // is checked first: almost every profile is an imported resume with no
   // account, and offering a button that always fails is worse than none.
   async function emailCandidate(profileId){
     // The candidate has no MedHunt account — reach them by email instead.
@@ -4179,7 +4179,7 @@
     html += `<div class="privacy-wrap danger-zone">
       <h3>Delete account</h3>
       <p>Permanently close your account and erase your personal details — your
-         profile, contact information and résumé. This cannot be undone.</p>
+         profile, contact information and resume. This cannot be undone.</p>
       <div class="privacy-actions"><span class="spacer"></span>
         <button class="btn danger small" id="account-delete"><i class="fas fa-trash"></i>Delete my account</button>
       </div>
@@ -4192,7 +4192,7 @@
     if (dl) dl.onclick = async () => {
       if (!await confirmDialog({
         title: "Remove yourself from the directory",
-        body: "Your email, phone and résumé are erased and "
+        body: "Your email, phone and resume are erased and "
             + "recruiters stop seeing you in search. Your account stays open — "
             + "you can list yourself again later.",
         confirm: "Erase my details", danger: true})) return;
@@ -4300,7 +4300,7 @@
           <div class="pipe-card">${Object.entries(c.costs).map(([a,n]) =>
             `<div class="price-row"><span>${esc(ACTION_LABELS[a] || a)}</span>
              ${n ? `<b>${n} credit${n === 1 ? "" : "s"}</b>` : `<span class="price-free">free</span>`}</div>`).join("")}</div>
-          <p class="merge-hint">One credit per candidate, charged when you reveal their contact. Revealing them again, emailing them and viewing their résumé are all free.</p>
+          <p class="merge-hint">One credit per candidate, charged when you reveal their contact. Revealing them again, emailing them and viewing their resume are all free.</p>
         </div>
         <div class="an-section"><h2>Where they went</h2>
           ${usage.by_action.length
@@ -4923,7 +4923,7 @@
       </div>`;
   }
   function matchRow(c){
-    // Reuse the directory's card shape so Résumé / Reveal / Save all work here.
+    // Reuse the directory's card shape so Resume / Reveal / Save all work here.
     S.providerCards.set(c.profile_id, {
       profile_id:c.profile_id, masked_name:c.name, initials:c.initials,
       is_released:c.is_released, specialty:c.specialty, profession_type:c.title,
@@ -4947,7 +4947,7 @@
       <td>${c.years_experience ? `${esc(c.years_experience)} yrs` : `<span class="cell-none">—</span>`}</td>
       <td>${esc(loc)}</td>
       <td class="td-actions">
-        <button class="btn small" data-resume="${c.profile_id}" title="View résumé"><i class="fas fa-file-lines"></i></button>
+        <button class="btn small" data-resume="${c.profile_id}" title="View resume"><i class="fas fa-file-lines"></i></button>
         <button class="btn small${(S.poolMembership.get(c.profile_id) || []).length ? " saved" : ""}" data-pool-save="${c.profile_id}" title="Save to a talent pool"><i class="fas fa-layer-group"></i></button>
       </td>
     </tr>`;
@@ -5039,7 +5039,7 @@
           ? `<span class="muted small">This application is ${esc(APPLICANT_STATUS_LABEL[a.status] || a.status).toLowerCase()}.</span>`
           : `<label class="applicant-stage">Stage
               <select class="input small" data-app-stage="${esc(a.application_id)}">${options}</select></label>`}
-        ${a.resume_url ? `<button class="btn small" data-resume="${esc(a.profile_id)}"><i class="fas fa-file-lines"></i>Résumé</button>` : ""}
+        ${a.resume_url ? `<button class="btn small" data-resume="${esc(a.profile_id)}"><i class="fas fa-file-lines"></i>Resume</button>` : ""}
         <button class="btn small primary" data-message="${esc(a.profile_id)}"><i class="fas fa-comment-dots"></i>Message</button>
       </div>
     </div>`;
@@ -5206,7 +5206,7 @@
         <button class="pool-note-edit" data-note-for="${m.profile_id}" title="Edit note"><i class="fas fa-pen"></i></button>
       </td>
       <td class="td-actions">
-        <button class="btn small" data-resume="${m.profile_id}" title="View résumé"><i class="fas fa-file-lines"></i></button>
+        <button class="btn small" data-resume="${m.profile_id}" title="View resume"><i class="fas fa-file-lines"></i></button>
         <button class="btn small" data-message="${m.profile_id}" title="Message this candidate"><i class="fas fa-comment-dots"></i></button>
         <button class="btn small" data-submit="${m.profile_id}" title="Submit to a client"><i class="fas fa-share-from-square"></i></button>
         <button class="btn small" data-pool-remove="${m.profile_id}" title="Remove from pool"><i class="fas fa-xmark"></i></button>

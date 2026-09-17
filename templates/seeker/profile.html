@@ -6,7 +6,7 @@
     <h2 style="margin:0">My profile</h2>
     <div class="row" style="gap:8px">
       <a class="btn btn-outline" href="/profile/edit">Edit profile</a>
-      {% if profile.resume_url %}<a class="btn btn-ghost" href="{{ profile.resume_url }}" target="_blank">View résumé</a>{% endif %}
+      {% if profile.resume_url %}<a class="btn btn-ghost" href="{{ profile.resume_url }}" target="_blank">View resume</a>{% endif %}
     </div>
   </div>
 
@@ -36,7 +36,7 @@
       </tbody></table>
     {% endif %}
     {% if not profile.resume_url %}
-      <div class="flash flash-error mt2">No résumé on file. <a href="/profile/edit">Upload one →</a></div>
+      <div class="flash flash-error mt2">No resume on file. <a href="/profile/edit">Upload one →</a></div>
     {% endif %}
   </div>
 </div>

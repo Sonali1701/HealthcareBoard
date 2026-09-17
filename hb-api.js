@@ -82,7 +82,7 @@
         <div style="background:#fff;color:#1A202C;width:400px;max-width:100%;border-radius:16px;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.45);position:relative">
           <div id="hb-au-close" style="position:absolute;top:16px;right:18px;color:#8A97AB;cursor:pointer;font-size:18px;line-height:1">&times;</div>
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
-            <div style="width:32px;height:32px;background:${teal};border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800">H</div>
+            <div style="width:32px;height:32px;background:${teal};border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800">M</div>
             <div style="font-size:18px;font-weight:700">MedHunt</div>
           </div>
           <div id="hb-au-title" style="font-size:21px;font-weight:700;margin:14px 0 2px">Welcome back</div>
@@ -164,7 +164,7 @@
       wrap.innerHTML = `
         <div class="hb-gate-brand" style="flex:1;background:linear-gradient(150deg,${teal},${dark});color:#fff;padding:56px 48px;display:flex;flex-direction:column;justify-content:center;gap:20px">
           <div style="display:flex;align-items:center;gap:11px">
-            <div style="width:44px;height:44px;background:#fff;color:${teal};border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px">H</div>
+            <div style="width:44px;height:44px;background:#fff;color:${teal};border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px">M</div>
             <div style="font-size:24px;font-weight:800">MedHunt</div>
           </div>
           <div style="font-size:33px;font-weight:800;line-height:1.15;max-width:430px">The staffing network for healthcare professionals</div>

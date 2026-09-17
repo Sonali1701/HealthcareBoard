@@ -20,7 +20,7 @@
     {% for a in apps %}{% set p = prof_map.get(a.profile_id) %}
     <tr>
       <td><a href="/talent/{{ a.profile_id }}" style="font-weight:600">{{ p.first_name if p else '—' }} {{ p.last_name if p else '' }}</a>
-        {% if p and p.resume_url %}<a class="small" href="{{ p.resume_url }}" target="_blank"> · résumé</a>{% endif %}</td>
+        {% if p and p.resume_url %}<a class="small" href="{{ p.resume_url }}" target="_blank"> · resume</a>{% endif %}</td>
       <td class="small">{{ p.specialty if p else '—' }}</td>
       <td class="small">{{ (a.match_score|int ~ '%') if a.match_score else '—' }}</td>
       <td>
