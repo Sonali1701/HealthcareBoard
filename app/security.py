@@ -104,7 +104,7 @@ def generate_mfa_secret() -> str:
 
 
 def mfa_provisioning_uri(secret: str, email: str) -> str:
-    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name="HealthBoard")
+    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name="MedHunt")
 
 
 def verify_mfa_code(secret: str, code: str) -> bool:

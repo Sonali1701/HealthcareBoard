@@ -87,7 +87,7 @@ def start(request: Request, profile_id: str, db: DbDep, user=Depends(require_use
         return redirect("/talent", flash="Candidate not found.", kind="error")
     if not profile.user_id:
         return redirect(f"/talent/{profile_id}",
-                        flash="This candidate hasn't joined HealthBoard yet, so they can't be messaged.",
+                        flash="This candidate hasn't joined MedHunt yet, so they can't be messaged.",
                         kind="error")
     if profile.user_id == user.user_id:
         return redirect("/messages")

@@ -234,7 +234,7 @@ def request_opt_out(body: OptOutRequest, db: DbSession, request: Request):
         base = settings.frontend_base_url.rstrip("/")
         link = f"{base}/api/privacy/opt-out/confirm?token={issued}"
         send_email(addr, "Confirm your removal request",
-                   f"<p>Someone asked to remove this address from the HealthBoard "
+                   f"<p>Someone asked to remove this address from the MedHunt "
                    f"provider directory.</p><p><a href='{link}'>Confirm removal</a></p>"
                    f"<p>If this wasn't you, ignore this email — nothing changes "
                    f"unless the link is used.</p>")

@@ -195,6 +195,9 @@
   const get = p => api("GET", p);
   const post = (p,b={}) => api("POST", p, b);
   const patch = (p,b={}) => api("PATCH", p, b);
+  const employerDashboardPath = () => "/api/employers/me/dashboard" +
+    (S.employer && S.employer.employer_id
+      ? `?employer_id=${encodeURIComponent(S.employer.employer_id)}` : "");
 
   async function login(email,password){
     const r = await post("/api/auth/login", {email, password, mfa_code:null});
@@ -258,7 +261,7 @@
     $$(".auth-tab").forEach(b => b.classList.toggle("active", b.dataset.authMode === mode));
     $("#signup-fields").classList.toggle("open", mode === "signup");
     $("#auth-title").textContent = mode === "signup" ? "Create your account" : "Welcome back";
-    $("#auth-subtitle").textContent = mode === "signup" ? "Join HealthBoard in seconds." : "Sign in to access your workspace.";
+    $("#auth-subtitle").textContent = mode === "signup" ? "Join MedHunt in seconds." : "Sign in to access your workspace.";
     $("#auth-submit").textContent = mode === "signup" ? "Create account" : "Sign in";
     $("#auth-hint").classList.toggle("show", mode === "signup");
     $("#signup-agree-row").classList.toggle("show", mode === "signup");
@@ -743,7 +746,7 @@
 
   async function adminAddMember(orgId){
     const v = await formDialog({title:"Add member to organization",
-      intro:"The user must already have a HealthBoard account. They'll be promoted to a recruiter account so they can use the workspace.",
+      intro:"The user must already have a MedHunt account. They'll be promoted to a recruiter account so they can use the workspace.",
       submit:"Add member",
       fields:[
         {name:"email", label:"User email", type:"email", required:true, wide:true, placeholder:"person@agency.com"},
@@ -1529,7 +1532,7 @@
     const name = S.profile ? `${S.profile.first_name} ${S.profile.last_name}`.trim() : "";
     const lines = [];
     if (name) lines.push(name);
-    lines.push("Credentials (via HealthBoard)", "");
+    lines.push("Credentials (via MedHunt)", "");
     if ((c.licenses || []).length){
       lines.push("Licences:");
       c.licenses.forEach(l => lines.push(`  - ${l.license_type} (${l.state_code})`
@@ -1600,7 +1603,7 @@
     $("#feed-list").innerHTML = loading("Loading feed...");
     try {
       const data = await get("/api/social/posts?limit=20");
-      $("#feed-list").innerHTML = (data.items || data || []).map(p => `<div class="list-row"><div><strong>${esc(p.author_name || "HealthBoard")}</strong><div class="muted">${esc(p.body || "")}</div></div></div>`).join("") || emptyState("Nothing posted yet", "This is where updates from the "
+      $("#feed-list").innerHTML = (data.items || data || []).map(p => `<div class="list-row"><div><strong>${esc(p.author_name || "MedHunt")}</strong><div class="muted">${esc(p.body || "")}</div></div></div>`).join("") || emptyState("Nothing posted yet", "This is where updates from the "
                  + "community will appear.", "fa-comments");
     } catch(e) { $("#feed-list").innerHTML = errorState("Could not load the feed"); }
   }
@@ -1644,7 +1647,7 @@
   async function loadEmployer(){
     $("#employer-panel").innerHTML = loading("Loading recruiter dashboard...");
     try {
-      const d = await get("/api/employers/me/dashboard");
+      const d = await get(employerDashboardPath());
       $("#employer-sub").textContent = d.employer ? d.employer.org_name : "Create an organization first";
       S.employer = d.employer || null;
       $("#employer-panel").innerHTML = d.employer
@@ -1697,7 +1700,7 @@
     try {
       let kpis = {};
       try {
-        const dash = await get("/api/employers/me/dashboard");
+        const dash = await get(employerDashboardPath());
         S.employer = dash.employer || S.employer;
         kpis = dash.kpis || {};
       } catch(_){}
@@ -1728,7 +1731,7 @@
                         ["Applications", kpis.applications || 0]];
       if (usage) kpiCards.push(["Team credits", usage.totals.credits],
                                ["Contacts revealed", usage.totals.reveals],
-                               ["Medhunt enrichments", usage.totals.medhunt_enriched]);
+                               ["MedHunt enrichments", usage.totals.medhunt_enriched]);
 
       const roleCell = m => m.is_owner
         ? `<span class="badge accent">Owner</span>`
@@ -1782,14 +1785,14 @@
 
         ${usage ? `<div class="an-section" style="margin-top:22px"><h2>Usage &amp; billing</h2>
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Member</th><th>Role</th><th>Credits left</th><th>Contacts revealed</th><th>Medhunt enriched</th></tr></thead>
+            <thead><tr><th>Member</th><th>Role</th><th>Credits left</th><th>Contacts revealed</th><th>MedHunt enriched</th></tr></thead>
             <tbody>${usage.members.map(m => `<tr>
               <td><div class="cell-name">${esc(m.name || m.email || "—")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
               <td><span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.role] || m.role)}</span></td>
               <td><b>${Number(m.credits).toLocaleString()}</b></td>
               <td>${Number(m.reveals).toLocaleString()}</td>
               <td>${Number(m.medhunt_enriched || 0).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
-          <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your HealthBoard administrator.</p></div>` : ""}
+          <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your MedHunt administrator.</p></div>` : ""}
       `;
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
       const iv = $("#oa-invite"); if (iv) iv.onclick = inviteTeammate;
@@ -1811,7 +1814,7 @@
     const v = await formDialog({
       title: "Invite a teammate",
       intro: "They'll get an email invitation to join your organisation. They don't "
-           + "need a HealthBoard account yet — they can create one when they accept.",
+           + "need a MedHunt account yet — they can create one when they accept.",
       submit: "Send invitation",
       fields: [
         {name:"email", label:"Their email", type:"email", required:true, wide:true,
@@ -1909,7 +1912,7 @@
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = "healthboard-jobs-template.xlsx";
+      a.href = url; a.download = "medhunt-jobs-template.xlsx";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
     } catch(e){ toast(e.message || "Download failed.", {title:"Template", kind:"err"}); }
@@ -2736,7 +2739,7 @@
       if (!res.ok) throw new Error("download failed");
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
-      a.href = url; a.download = "healthboard-capture-extension.zip";
+      a.href = url; a.download = "medhunt-capture-extension.zip";
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       $("#ext-download-hint").textContent = "Downloaded. Unzip it, then load it in your browser (step 2).";
     } catch(e) { $("#ext-download-hint").textContent = "Download failed — please try again."; }
@@ -3127,7 +3130,10 @@
     if (vCont) vCont.onclick = async () => {
       verifyMsg("Checking…", "");
       const ok = await loadMe();
-      if (ok === true) enterAppPages();
+      if (ok === true) {
+        if (await acceptStashedInvite()) await loadMe();
+        enterAppPages();
+      }
       else if (ok === "pending") verifyMsg("Not verified yet — open the link in your email, then try again.", "err");
       else { setToken(""); setRefresh(""); location.reload(); }
     };
@@ -3600,7 +3606,7 @@
   // is checked first: almost every profile is an imported résumé with no
   // account, and offering a button that always fails is worse than none.
   async function emailCandidate(profileId){
-    // The candidate has no HealthBoard account — reach them by email instead.
+    // The candidate has no MedHunt account — reach them by email instead.
     const card = S.providerCards.get(profileId);
     if (card && !card.is_released && !S.releasedContacts.has(profileId)){
       return toast("Reveal this candidate's contact first, then you can email them.",
@@ -3608,7 +3614,7 @@
     }
     const v = await formDialog({
       title: "Email this candidate",
-      intro: "This candidate isn't on HealthBoard yet, so your message reaches them by "
+      intro: "This candidate isn't on MedHunt yet, so your message reaches them by "
            + "email. Their reply comes straight to your inbox.",
       submit: "Send email",
       fields: [
@@ -4230,7 +4236,7 @@
       const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "my-healthboard-data.json";
+      a.download = "my-medhunt-data.json";
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
     } catch(e) { toast(e.message || "The export did not run.",
@@ -4638,10 +4644,13 @@
       // Market = real supply/demand (impressive, populated); sourcing = this
       // recruiter's own activity. The application funnel is intentionally not
       // shown — with no submissions/applications yet it would be all zeros.
-      const [mk, d, convo] = await Promise.all([
+      const orgParam = S.employer && S.employer.employer_id
+        ? `&employer_id=${encodeURIComponent(S.employer.employer_id)}` : "";
+      const [mk, d, convo, ext] = await Promise.all([
         get("/api/analytics/market"),
         get("/api/analytics/sourcing?days=30"),
         get("/api/analytics/conversations").catch(() => null),
+        get(`/api/analytics/medhunt?days=30${orgParam}`).catch(() => null),
       ]);
       const P = mk.providers, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
       const medhunt = d.medhunt || {enriched_total:0, enriched_recent:0, attempts_recent:0};
@@ -4656,7 +4665,7 @@
         ${stat(mk.jobs_active.toLocaleString(), "Open roles", "live on the board")}
         ${stat(P.states, "States covered")}
         ${stat(con.released_total, "Contacts revealed", `${con.released_recent} in ${d.window_days} days`, true)}
-        ${stat(medhunt.enriched_total, "Medhunt enrichments", `${medhunt.enriched_recent} in ${d.window_days} days`, true)}
+        ${stat(medhunt.enriched_total, "MedHunt enrichments", `${medhunt.enriched_recent} in ${d.window_days} days`, true)}
         ${stat(pools.shortlisted, "Shortlisted", `${pools.pools} pool${pools.pools === 1 ? "" : "s"}`)}
         ${stat(mk.credits.spent, "Credits spent", `${mk.credits.balance} remaining`)}
       </div></div>`;
@@ -4707,7 +4716,7 @@
         </div>
         <div class="an-grid" style="margin-top:14px">
           ${stat(runs.runs, "Sourcing runs")}
-          ${stat(medhunt.attempts_recent, "Medhunt checks", `last ${d.window_days} days`)}
+          ${stat(medhunt.attempts_recent, "MedHunt checks", `last ${d.window_days} days`)}
           ${stat(runs.candidates_ranked.toLocaleString(), "Candidates ranked", `avg score ${runs.avg_match_score}`)}
           ${stat(d.saved_searches, "Saved searches")}
           ${stat(pools.worked_pct + "%", "Shortlist worked", `${pools.worked} past sourced`)}
@@ -4727,7 +4736,44 @@
                 <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "—"}</td>
               </tr>`).join("")}</tbody></table></div></div>` : "";
 
+      // Extension audit: organization managers see the whole team; individual
+      // members get the same detail scoped to their own use.
+      let extensionSection = "";
+      if (ext) {
+        const ex = ext.summary || {}, sourceRows = ext.sources || [], memberRows = ext.members || [];
+        const activityRows = ext.activity || [];
+        const sourceBody = sourceRows.length
+          ? hbars(sourceRows.map((s, i) => ({label:s.source, value:s.enriched,
+              color:VIZ_CAT[i % VIZ_CAT.length]})))
+          : emptyState("No extension enrichments yet", "Sources appear after a candidate is enriched.", "fa-puzzle-piece");
+        extensionSection = `<div class="an-section"><h2>MedHunt extension analytics</h2>
+          <p class="team-note">${ext.scope === "organization" ? "Organization-wide usage" : "Your usage"} for the last ${ext.window_days} days.</p>
+          <div class="an-grid">
+            ${stat(ex.users || 0, "People who used it")}
+            ${stat(ex.checks || 0, "Extension checks")}
+            ${stat(ex.enrichments || 0, "Successful enrichments", "all completed events", true)}
+            ${stat(ex.candidates_enriched || 0, "Candidates enriched", "unique candidates", true)}
+          </div>
+          <div class="viz-grid" style="margin-top:14px">
+            ${vizCard("Enrichments by source", sourceBody, "where candidate data came from")}
+            ${vizCard("Team usage", memberRows.length ? `<div class="table-wrap"><table class="table">
+              <thead><tr><th>Member</th><th>Checks</th><th>Candidates</th><th>Last used</th></tr></thead>
+              <tbody>${memberRows.map(m => `<tr><td><div class="cell-name">${esc(m.name || m.email || "Team member")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
+                <td>${Number(m.checks || 0).toLocaleString()}</td><td>${Number(m.candidates_enriched || 0).toLocaleString()}</td>
+                <td>${m.last_used_at ? esc(shortTime(m.last_used_at)) : "—"}</td></tr>`).join("")}</tbody></table></div>`
+              : emptyState("No extension use yet", "Team activity will appear here.", "fa-users"), "who used MedHunt and when")}
+          </div>
+          ${activityRows.length ? `<div class="team-head" style="margin-top:20px"><h3>Recent extension activity</h3></div>
+            <div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Source</th><th>Outcome</th><th>Used</th></tr></thead>
+              <tbody>${activityRows.map(a => `<tr><td>${esc(a.user_name || "Team member")}</td>
+                <td>${esc(a.candidate_id || "—")}</td><td>${esc(a.source || "Unknown")}</td>
+                <td><span class="badge${a.enriched ? " accent" : ""}">${esc(a.status || (a.enriched ? "Enriched" : "Attempted"))}</span></td>
+                <td>${a.used_at ? esc(shortTime(a.used_at)) : "—"}</td></tr>`).join("")}</tbody></table></div>` : ""}
+        </div>`;
+      }
+
       box.innerHTML = glance
+        + extensionSection
         + `<div class="an-section"><h2>Talent market</h2>${marketGrid}</div>`
         + `<div class="an-section"><h2>Your sourcing</h2>${sourceGrid}</div>`
         + convoSection;
@@ -5270,7 +5316,7 @@
     // Offer the agency's open job orders so a pool says which role it's for.
     const jobOpts = [["", "— Not tied to a specific role —"]];
     try {
-      const d = await get("/api/employers/me/dashboard");
+      const d = await get(employerDashboardPath());
       (d.jobs || []).filter(j => j.status === "active").forEach(j =>
         jobOpts.push([j.job_id, j.title + (j.city ? ` — ${j.city}${j.state_code ? ", " + j.state_code : ""}` : "")]));
     } catch(e) { /* no org yet — pool can still be created untied */ }
@@ -5455,11 +5501,17 @@
     // logged-in user never sees the login form flash on refresh.
     if (token()) {
       const ok = await loadMe();
-      if (ok === "pending") return;   // verify gate is showing
+      if (ok === "pending") {
+        // Joining the team does not need to wait for email verification. This
+        // clears the owner's pending-invitation row as soon as signup succeeds;
+        // the invitee still remains behind the verification gate.
+        await acceptStashedInvite();
+        return;
+      }
       if (ok) {
         $("#boot-splash").classList.add("hidden");
+        if (await acceptStashedInvite()) await loadMe();
         enterAppPages();
-        acceptStashedInvite();
         return;
       }
     }
@@ -5479,18 +5531,23 @@
   async function acceptStashedInvite(){
     let tok = null;
     try { tok = sessionStorage.getItem("hb_invite"); } catch(_){}
-    if (!tok) return;
-    try { sessionStorage.removeItem("hb_invite"); } catch(_){}
-    try { history.replaceState(null, "", location.pathname); } catch(_){}
+    if (!tok) return false;
     try {
       const r = await post("/api/employers/invites/accept", {token: tok});
-      toast(r.already ? `You're already part of ${esc(r.org_name)}.`
-                      : `You've joined ${esc(r.org_name)}.`,
+      S.employer = r.employer || S.employer;
+      try { localStorage.setItem("hb_page", "orgadmin"); } catch(_){}
+      try { sessionStorage.removeItem("hb_invite"); } catch(_){}
+      try { history.replaceState(null, "", location.pathname); } catch(_){}
+      toast(r.already ? `You're already part of ${esc(r.employer.org_name)}.`
+                      : `You've joined ${esc(r.employer.org_name)}.`,
             {title:"Team joined", ms:6000});
-      if (typeof refreshUser === "function") refreshUser();
+      return true;
     } catch(e){
       toast(e.message || "This invitation link is no longer valid.",
             {title:"Invitation", kind:"err", ms:6000});
+      // Keep the token for a transient failure or an account-email mismatch so
+      // the invitee can retry after reconnecting or signing into the right account.
+      return false;
     }
   }
 

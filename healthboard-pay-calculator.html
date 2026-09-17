@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HealthBoard — Pay Package Calculator</title>
+<title>MedHunt — Pay Package Calculator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -1010,7 +1010,7 @@ body::after{content:'';position:fixed;inset:0;
       <strong>✅ Benefits (both options):</strong><br>
       Day 1 Medical + Dental + Vision | $500 completion bonus | $500 travel allowance | $200 scrubs/licensing<br><br>
       Please select your preferred option and reply to accept. We look forward to having you on the team!<br><br>
-      — HealthBoard Recruiting Team
+      — MedHunt Recruiting Team
     </div>
   </div>
 
@@ -1072,7 +1072,7 @@ const CAND_DATA = [
   { name:'Priya Waller, PharmD', city:'New York', state:'NY', baseRate:68 },
 ];
 
-/* ══ GSA LOOKUP (via HealthBoard backend proxy /api/gsa/rates) ══
+/* ══ GSA LOOKUP (via MedHunt backend proxy /api/gsa/rates) ══
    Falls back to the local FY2025 table if the backend is unreachable. */
 async function lookupGSA() {
   const cityInput = document.getElementById('gsa-city').value.trim();
@@ -1294,7 +1294,7 @@ function updateOfferLetter(w2Rate, weeklyW2, totalW2, w2RatePD, lodgingWk, mieWk
     <strong>🎁 Included in Both Options:</strong><br>
     Completion bonus: $${bonus.toLocaleString()} | Travel allowance: $${travel.toLocaleString()} | Reimbursements: $${reimb.toLocaleString()}<br><br>
     Please reply with your preferred option (A or B) to proceed. We look forward to welcoming you to the team!<br><br>
-    — HealthBoard Recruiting Team
+    — MedHunt Recruiting Team
   `;
 }
 

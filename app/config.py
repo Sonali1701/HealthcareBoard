@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     )
 
     # --- Core ---
-    app_name: str = "HealthBoard API"
+    app_name: str = "MedHunt API"
     environment: str = "development"
     debug: bool = True
 
@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     email_enabled: bool = False
     sendgrid_api_key: str = ""
     email_from: str = "no-reply@healthboard.dev"
-    email_from_name: str = "HealthBoard"
+    email_from_name: str = "MedHunt"
     # Send the previous completed Monday-Sunday credit-usage report to each
     # organization's owner and admins. Delivery claims make this safe across
     # multiple web workers and application restarts.

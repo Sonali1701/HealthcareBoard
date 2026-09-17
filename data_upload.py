@@ -1036,7 +1036,7 @@ def _validate_schema(engine) -> None:
         missing_tables = sorted(required_tables - tables)
         if missing_tables:
             raise SystemExit(
-                "ERROR: Neon database is missing HealthBoard table(s): "
+                "ERROR: Neon database is missing MedHunt table(s): "
                 + ", ".join(missing_tables)
             )
 
@@ -1050,7 +1050,7 @@ def _validate_schema(engine) -> None:
             raise SystemExit(
                 "ERROR: profiles table is missing column(s): "
                 + ", ".join(missing_columns)
-                + ". Deploy/run the latest HealthBoard migrations before uploading."
+                + ". Deploy/run the latest MedHunt migrations before uploading."
             )
 
 

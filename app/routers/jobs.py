@@ -376,7 +376,7 @@ def jobs_template(user: CurrentUser) -> Response:
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=healthboard-jobs-template.xlsx"},
+        headers={"Content-Disposition": "attachment; filename=medhunt-jobs-template.xlsx"},
     )
 
 

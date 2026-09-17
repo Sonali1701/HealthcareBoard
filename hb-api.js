@@ -1,4 +1,4 @@
-/* HealthBoard shared frontend API client.
+/* MedHunt shared frontend API client.
    Served at /static/hb-api.js ; pages are served same-origin at /ui/<page>.html
    so relative API calls (base = "") work. Handles JWT storage + a login modal. */
 (function () {
@@ -83,7 +83,7 @@
           <div id="hb-au-close" style="position:absolute;top:16px;right:18px;color:#8A97AB;cursor:pointer;font-size:18px;line-height:1">&times;</div>
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
             <div style="width:32px;height:32px;background:${teal};border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800">H</div>
-            <div style="font-size:18px;font-weight:700">HealthBoard</div>
+            <div style="font-size:18px;font-weight:700">MedHunt</div>
           </div>
           <div id="hb-au-title" style="font-size:21px;font-weight:700;margin:14px 0 2px">Welcome back</div>
           <div id="hb-au-sub" style="font-size:13px;color:#64748b;margin-bottom:16px">Sign in to your account</div>
@@ -100,7 +100,7 @@
           <div id="hb-au-err" style="color:#dc2626;font-size:12.5px;min-height:16px;margin:2px 0 8px"></div>
           <button id="hb-au-go" style="width:100%;padding:12px;background:${teal};color:#fff;border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer">Sign in</button>
           <div style="text-align:center;font-size:13px;color:#64748b;margin-top:13px">
-            <span id="hb-au-switch-text">New to HealthBoard?</span>
+            <span id="hb-au-switch-text">New to MedHunt?</span>
             <a id="hb-au-switch" href="#" style="color:${teal};font-weight:600;text-decoration:none">Create an account</a>
           </div>
         </div>`;
@@ -111,9 +111,9 @@
         mode = m;
         $("hb-au-signup").style.display = m === "signup" ? "block" : "none";
         $("hb-au-title").textContent = m === "signup" ? "Create your account" : "Welcome back";
-        $("hb-au-sub").textContent = m === "signup" ? "Join HealthBoard in seconds" : "Sign in to your account";
+        $("hb-au-sub").textContent = m === "signup" ? "Join MedHunt in seconds" : "Sign in to your account";
         $("hb-au-go").textContent = m === "signup" ? "Create account" : "Sign in";
-        $("hb-au-switch-text").textContent = m === "signup" ? "Already have an account?" : "New to HealthBoard?";
+        $("hb-au-switch-text").textContent = m === "signup" ? "Already have an account?" : "New to MedHunt?";
         $("hb-au-switch").textContent = m === "signup" ? "Sign in" : "Create an account";
         $("hb-au-err").textContent = "";
       };
@@ -165,7 +165,7 @@
         <div class="hb-gate-brand" style="flex:1;background:linear-gradient(150deg,${teal},${dark});color:#fff;padding:56px 48px;display:flex;flex-direction:column;justify-content:center;gap:20px">
           <div style="display:flex;align-items:center;gap:11px">
             <div style="width:44px;height:44px;background:#fff;color:${teal};border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px">H</div>
-            <div style="font-size:24px;font-weight:800">HealthBoard</div>
+            <div style="font-size:24px;font-weight:800">MedHunt</div>
           </div>
           <div style="font-size:33px;font-weight:800;line-height:1.15;max-width:430px">The staffing network for healthcare professionals</div>
           <div style="font-size:15px;opacity:.85;max-width:430px;line-height:1.6">Browse live jobs, connect with recruiters, and manage your credentials — all in one place. Sign in or create an account to continue.</div>
@@ -202,7 +202,7 @@
         $("hb-tab-signup").style.cssText += ";" + (m === "signup" ? on : off);
         $("hb-g-signup").style.display = m === "signup" ? "block" : "none";
         $("hb-g-title").textContent = m === "signup" ? "Create your account" : "Welcome back";
-        $("hb-g-sub").textContent = m === "signup" ? "Join HealthBoard in seconds" : "Sign in to access the board";
+        $("hb-g-sub").textContent = m === "signup" ? "Join MedHunt in seconds" : "Sign in to access the board";
         $("hb-g-go").textContent = m === "signup" ? "Create account" : "Sign in";
         $("hb-g-pass").setAttribute("autocomplete", m === "signup" ? "new-password" : "current-password");
         $("hb-g-err").textContent = "";

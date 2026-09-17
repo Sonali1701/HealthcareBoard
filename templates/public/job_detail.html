@@ -30,7 +30,7 @@
       <div class="panel">
         <div class="row items-center"><div class="logo">🏥</div>
           <div><h2 style="margin:0">{{ job.title }}</h2>
-            <div class="muted">{{ employer.org_name if employer else 'HealthBoard' }}
+            <div class="muted">{{ employer.org_name if employer else 'MedHunt' }}
               {% if job.city or job.state_code %}· {{ [job.city, job.state_code]|select|join(', ') }}{% endif %}</div></div>
         </div>
         <div class="row wrap mt" style="gap:6px">

@@ -4,7 +4,7 @@
   <div style="min-width:0">
     <div style="font-weight:600;font-size:15px;color:var(--gray-800)">{{ job.title }}</div>
     <div class="small muted" style="margin:2px 0 10px">
-      {{ employer.org_name if employer else 'HealthBoard' }}
+      {{ employer.org_name if employer else 'MedHunt' }}
       {% if job.city or job.state_code %}· {{ [job.city, job.state_code]|select|join(', ') }}{% endif %}
     </div>
     <div class="row wrap" style="gap:6px">

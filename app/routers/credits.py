@@ -122,7 +122,7 @@ def create_checkout(body: CheckoutIn, user: CurrentUser):
             line_items=[{
                 "price_data": {
                     "currency": "usd",
-                    "product_data": {"name": f"{pack['credits']} HealthBoard credits"},
+                    "product_data": {"name": f"{pack['credits']} MedHunt credits"},
                     "unit_amount": pack["price_cents"],
                 },
                 "quantity": 1,

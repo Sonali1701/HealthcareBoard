@@ -1,6 +1,6 @@
-# HealthBoard — Backend API
+# MedHunt — Backend API
 
-FastAPI backend for the HealthBoard healthcare-staffing platform. It powers the
+FastAPI backend for the MedHunt healthcare-staffing platform. It powers the
 existing static HTML frontends (`healthboard-*.html`): the careers platform, the
 AI matching engine, the recruiter chat/CRM, and the GSA per-diem pay calculators.
 

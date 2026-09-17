@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HealthBoard — GSA Live Pay Calculator</title>
+<title>MedHunt — GSA Live Pay Calculator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -844,7 +844,7 @@ let calcData    = {};
 let selectedPkg = null;
 let toastTimer  = null;
 
-/* ════════ GSA RATES (via HealthBoard backend proxy) ════════
+/* ════════ GSA RATES (via MedHunt backend proxy) ════════
    Routes through /api/gsa/rates so the api.data.gov key stays server-side and
    FY2025 fallback rates are served automatically when no key is configured. */
 async function fetchGSALive(city, state, zip) {
@@ -969,7 +969,7 @@ function renderGSABox() {
   document.getElementById('gfb-mie-sub').textContent     = 'per day';
   document.getElementById('gfb-weekly').textContent      = `$${weeklyMax.toLocaleString()}`;
   document.getElementById('gfb-fy').textContent          = `FY${GSA_YEAR}`;
-  document.getElementById('gfb-src').textContent         = d.source==='fallback' ? 'HealthBoard offline DB' : 'api.gsa.gov';
+  document.getElementById('gfb-src').textContent         = d.source==='fallback' ? 'MedHunt offline DB' : 'api.gsa.gov';
   document.getElementById('gsa-source-note').textContent =
     d.source==='fallback' ? `⚠ Offline rates (${d.fallbackReason||''})` : `✓ Live: api.gsa.gov · ${fetchedAt}`;
 
@@ -1224,7 +1224,7 @@ function buildOffer(d) {
     • Additional savings vs W2: <span class="gd"><strong>+$${fi(d.advantage)}</strong></span><br><br>
     <strong>✅ Both options include:</strong> $${fi(d.bonus)} completion bonus · $${fi(d.travel)} travel allowance · $${fi(d.reimb)} reimbursements · Day 1 Medical/Dental/Vision<br><br>
     Reply with <strong>A</strong> or <strong>B</strong> to confirm your preference.<br><br>
-    — HealthBoard Recruiting Team
+    — MedHunt Recruiting Team
   `;
 }
 

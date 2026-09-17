@@ -1,4 +1,4 @@
-"""One-command feature check for HealthBoard.
+"""One-command feature check for MedHunt.
 
 Verifies every backend feature (and, if Playwright is installed, every wired
 frontend page) against a RUNNING server, and prints a PASS/FAIL report.
@@ -193,7 +193,7 @@ def main() -> int:
     ap.add_argument("--no-pages", action="store_true", help="skip browser page checks")
     args = ap.parse_args()
 
-    print(f"Verifying HealthBoard at {args.base} ...\n")
+    print(f"Verifying MedHunt at {args.base} ...\n")
     if not wait_for_server(args.base):
         print(f"ERROR: server not reachable at {args.base}\n"
               f"Start it first:  .venv\\Scripts\\python main.py")

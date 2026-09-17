@@ -200,7 +200,7 @@ def can_message(profile_id: str, user: CurrentUser, db: DbSession):
 def email_outreach(body: EmailOutreachIn, user: CurrentUser, db: DbSession):
     """Message an off-platform candidate by email (cold outreach).
 
-    For candidates with no HealthBoard account. Gated behind the contact
+    For candidates with no MedHunt account. Gated behind the contact
     reveal — the recruiter must have released this candidate first — and the
     reply is routed to the recruiter's own inbox, not back into the app.
     """
@@ -212,7 +212,7 @@ def email_outreach(body: EmailOutreachIn, user: CurrentUser, db: DbSession):
     if profile.user_id:
         raise HTTPException(
             status_code=400,
-            detail="This candidate is on HealthBoard — message them in-app instead.")
+            detail="This candidate is on MedHunt — message them in-app instead.")
     if not profile.email:
         raise HTTPException(status_code=400, detail="No email on file for this candidate.")
 
@@ -228,7 +228,7 @@ def email_outreach(body: EmailOutreachIn, user: CurrentUser, db: DbSession):
     if not emp:
         member = db.scalar(select(EmployerMember).where(EmployerMember.user_id == user.user_id))
         emp = db.get(Employer, member.employer_id) if member else None
-    from_label = emp.org_name if emp else "A recruiter on HealthBoard"
+    from_label = emp.org_name if emp else "A recruiter on MedHunt"
 
     from ..services.email import send_recruiter_message
     sent = send_recruiter_message(

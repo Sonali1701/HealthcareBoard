@@ -65,14 +65,14 @@ def _wrap(heading: str, body_html: str, cta_text: str = "", cta_link: str = "") 
     return (
         '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
         'max-width:520px;margin:0 auto;color:#0f2f66">'
-        '<div style="font-size:19px;font-weight:700;color:#075fe8;padding:8px 0 16px">HealthBoard</div>'
+        '<div style="font-size:19px;font-weight:700;color:#075fe8;padding:8px 0 16px">MedHunt</div>'
         f'<h1 style="font-size:19px;margin:0 0 12px;color:#082452">{escape(heading)}</h1>'
         f'<div style="font-size:14px;line-height:1.6;color:#405f8d">{body_html}</div>'
         f'{cta}'
         '<hr style="border:0;border-top:1px solid #dce7f7;margin:22px 0 12px">'
         '<div style="font-size:11px;color:#96add0">'
-        'HealthBoard — a screened directory of healthcare professionals.<br>'
-        'You are receiving this because you have a HealthBoard account.'
+        'MedHunt — a screened directory of healthcare professionals.<br>'
+        'You are receiving this because you have a MedHunt account.'
         '</div></div>'
     )
 
@@ -83,7 +83,7 @@ def send_recruiter_message(to: str, *, candidate_name: str, from_label: str,
                            reply_to: str, subject: str, message: str) -> bool:
     """A recruiter's message to an off-platform candidate, delivered by email.
 
-    The candidate has no HealthBoard account, so their reply is routed straight
+    The candidate has no MedHunt account, so their reply is routed straight
     to the recruiter's own inbox via reply_to rather than back into the app.
     """
     safe = escape(message).replace("\n", "<br>")
@@ -114,7 +114,7 @@ def send_credential_expiry(email: str, *, name: str, credential: str,
 
 
 def send_notification_email(to: str, *, title: str, body: str,
-                            cta_text: str = "Open HealthBoard",
+                            cta_text: str = "Open MedHunt",
                             cta_link: str | None = None) -> bool:
     """A branded email mirroring an in-app notification (new message, offer…)."""
     html = _wrap(
@@ -131,37 +131,37 @@ def send_password_reset(email: str, token: str) -> bool:
     link = f"{_base()}/reset-password?token={token}"
     html = _wrap(
         "Reset your password",
-        "<p>We received a request to reset your HealthBoard password. This link "
+        "<p>We received a request to reset your MedHunt password. This link "
         "expires in one hour.</p>"
         "<p>If you didn't request this, you can safely ignore this email — your "
         "password will not change.</p>",
         "Reset your password", link,
     )
-    return send_email(email, "Reset your HealthBoard password", html)
+    return send_email(email, "Reset your MedHunt password", html)
 
 
 def send_email_verification(email: str, token: str) -> bool:
     link = f"{_base()}/verify-email?token={token}"
     html = _wrap(
         "Confirm your email",
-        "<p>Welcome to HealthBoard. Confirm this is your email address to "
+        "<p>Welcome to MedHunt. Confirm this is your email address to "
         "activate your account.</p>",
         "Verify your email", link,
     )
-    return send_email(email, "Verify your HealthBoard email", html)
+    return send_email(email, "Verify your MedHunt email", html)
 
 
 def send_medhunt_login_code(email: str, code: str, expires_minutes: int = 10) -> bool:
-    """Send the short-lived passwordless code used by the Medhunt extension."""
+    """Send the short-lived passwordless code used by the MedHunt extension."""
     html = _wrap(
-        "Your Medhunt sign-in code",
-        f"<p>Enter this code in the Medhunt browser extension:</p>"
+        "Your MedHunt sign-in code",
+        f"<p>Enter this code in the MedHunt browser extension:</p>"
         f"<p style='font-size:28px;letter-spacing:8px;font-weight:700;color:#075fe8'>"
         f"{escape(code)}</p>"
         f"<p>The code expires in {int(expires_minutes)} minutes. If you did not "
         "request it, you can safely ignore this email.</p>",
     )
-    return send_email(email, f"{code} is your Medhunt sign-in code", html)
+    return send_email(email, f"{code} is your MedHunt sign-in code", html)
 
 
 # --- Activity emails (sent alongside the in-app notification) --------------
@@ -191,19 +191,19 @@ def send_application_update(email: str, job_title: str, status: str) -> bool:
 def send_team_invite(email: str, org_name: str, accept_link: str | None = None) -> bool:
     if accept_link:
         html = _wrap(
-            f"Join {escape(org_name)} on HealthBoard",
+            f"Join {escape(org_name)} on MedHunt",
             f"<p>You've been invited to join <strong>{escape(org_name)}</strong> on "
-            "HealthBoard — its shared talent pools, submissions and jobs.</p>"
+            "MedHunt — its shared talent pools, submissions and jobs.</p>"
             "<p>Accept the invitation to get started. If you don't have an account "
             "yet, you'll be able to create one first. This link expires in 14 days.</p>",
             "Accept invitation", accept_link,
         )
-        return send_email(email, f"You're invited to join {org_name} on HealthBoard", html)
+        return send_email(email, f"You're invited to join {org_name} on MedHunt", html)
     html = _wrap(
         "You've been added to a team",
         f"<p>You now have access to <strong>{escape(org_name)}</strong> on "
-        "HealthBoard — its shared talent pools, submissions and jobs.</p>",
-        "Open HealthBoard", f"{_base()}/?page=employer",
+        "MedHunt — its shared talent pools, submissions and jobs.</p>",
+        "Open MedHunt", f"{_base()}/?page=employer",
     )
     return send_email(email, f"You've been added to {org_name}", html)
 

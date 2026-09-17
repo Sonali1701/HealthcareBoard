@@ -21,7 +21,7 @@ from sqlalchemy import select
 from ..database import utcnow
 from ..deps import CurrentUser, DbSession, IngestUser
 from ..importers.parsing import classify_provider, is_real_name
-from ..models import Profile
+from ..models import AuditLog, Profile
 from ..models.enums import ProfileSource
 from ..services import ingestion
 from ..services.ingestion import find_duplicate
@@ -59,6 +59,37 @@ def _require_recruiter(user: CurrentUser) -> None:
 # fill-empty — a capture never overwrites data already on file).
 _MERGE_SCALARS = ("email", "phone", "city", "state_code", "specialty",
                   "profession_type", "headline", "npi_number", "resume_url")
+
+
+def _audit_extension_capture(db: DbSession, user: IngestUser, profile: Profile,
+                             source: Optional[str]) -> None:
+    """Make central extension captures visible in MedHunt analytics.
+
+    One row per recruiter/candidate keeps retries and duplicate imports from
+    inflating the candidate count. The explicit extension activity endpoint can
+    still record richer per-run events when a client supports it.
+    """
+    from .extension import MEDHUNT_ATTEMPT_ACTION, MEDHUNT_ENRICHED_ACTION
+
+    exists = db.scalar(select(AuditLog.log_id).where(
+        AuditLog.actor_user_id == user.user_id,
+        AuditLog.entity_type == "medhunt_event",
+        AuditLog.entity_id == profile.profile_id,
+    ))
+    if exists:
+        return
+    enriched = bool((profile.email or "").strip() or (profile.phone or "").strip())
+    db.add(AuditLog(
+        actor_user_id=user.user_id,
+        action=MEDHUNT_ENRICHED_ACTION if enriched else MEDHUNT_ATTEMPT_ACTION,
+        entity_type="medhunt_event",
+        entity_id=profile.profile_id,
+        meta={
+            "candidate_id": profile.profile_id,
+            "status": "success" if enriched else "captured",
+            "source": (source or profile.capture_source or "extension").strip().lower(),
+        },
+    ))
 
 
 def _clean_state(v) -> Optional[str]:
@@ -125,6 +156,7 @@ def ingest_candidate(body: CandidateIn, user: IngestUser, db: DbSession):
     if existing_id:
         profile = db.get(Profile, existing_id)
         filled = _merge_into(profile, fields, user, fields.get("source"), now)
+        _audit_extension_capture(db, user, profile, fields.get("source"))
         db.commit()
         return _merged_result(profile, user, matched, filled)
 
@@ -146,6 +178,8 @@ def ingest_candidate(body: CandidateIn, user: IngestUser, db: DbSession):
         profile.profession_type, profile.specialty, profile.headline)
     profile.rebuild_search_text()
     db.add(profile)
+    db.flush()
+    _audit_extension_capture(db, user, profile, fields.get("source"))
     db.commit()
     return {
         "action": "created",
@@ -200,6 +234,7 @@ async def ingest_resume(user: IngestUser, db: DbSession,
             profile.resume_url = ingestion.store_resume_file(data, name)
             if "resume" not in filled:
                 filled.append("resume")
+        _audit_extension_capture(db, user, profile, source)
         db.commit()
         return _merged_result(profile, user, matched, filled)
 
@@ -213,6 +248,7 @@ async def ingest_resume(user: IngestUser, db: DbSession,
         profile.captured_by_user_id = user.user_id
         profile.captured_by_email = user.email
         profile.captured_at = now
+        _audit_extension_capture(db, user, profile, source)
         db.commit()
     return {
         "action": result.get("status", "created"),

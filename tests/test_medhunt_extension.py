@@ -94,6 +94,11 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
         summary = analytics.sourcing_activity(self.user, self.db, days=30)
         self.assertEqual(summary["medhunt"]["enriched_total"], 1)
         self.assertEqual(summary["medhunt"]["attempts_recent"], 1)
+        detail = analytics.medhunt_extension_activity(self.user, self.db, days=30)
+        self.assertEqual(detail["summary"]["users"], 1)
+        self.assertEqual(detail["summary"]["candidates_enriched"], 1)
+        self.assertEqual(detail["sources"], [{"source": "npiprofile", "enriched": 1}])
+        self.assertEqual(detail["activity"][0]["candidate_id"], "42")
 
 
 if __name__ == "__main__":

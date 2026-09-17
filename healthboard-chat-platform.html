@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HealthBoard Connect — Recruiter & Candidate Chat Platform</title>
+<title>MedHunt Connect — Recruiter & Candidate Chat Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
@@ -1832,7 +1832,7 @@ async function sendRecruiterMsg(){
   try { await HB.post('/api/messages/threads/' + HB_CUR + '/messages', { body: text }); }
   catch(e){ console.error('send', e); showToast('⚠ Send failed', e.message); return; }
   await hbSelectThread(HB_CUR);
-  showToast('✅ Message sent','Delivered via HealthBoard API');
+  showToast('✅ Message sent','Delivered via MedHunt API');
 }
 
 // ATS stage change → PATCH.

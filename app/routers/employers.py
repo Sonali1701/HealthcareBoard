@@ -22,7 +22,7 @@ from ..models import (
     TeamInvite,
     User,
 )
-from ..models.enums import ApplicationStatus, NotificationType
+from ..models.enums import ApplicationStatus, NotificationType, UserRole
 from ..schemas.common import Page
 from ..schemas.job import EmployerCreate, EmployerOut, EmployerUpdate
 from ..security import generate_opaque_token, sha256
@@ -59,12 +59,19 @@ def _guard_role_assignment(actor_role: str, target_role: str) -> None:
 
 
 @router.get("/me/dashboard")
-def my_employer_dashboard(user: CurrentUser, db: DbSession):
+def my_employer_dashboard(user: CurrentUser, db: DbSession,
+                          employer_id: str | None = None):
     """Everything the Employer Portal needs: org, KPIs, jobs, recent applicants."""
-    emp = db.scalar(select(Employer).where(Employer.owner_user_id == user.user_id))
-    if not emp:
-        member = db.scalar(select(EmployerMember).where(EmployerMember.user_id == user.user_id))
-        emp = db.get(Employer, member.employer_id) if member else None
+    if employer_id:
+        emp = db.get(Employer, employer_id)
+        if not emp:
+            raise HTTPException(status_code=404, detail="Employer not found")
+        _require_member(db, emp, user)
+    else:
+        emp = db.scalar(select(Employer).where(Employer.owner_user_id == user.user_id))
+        if not emp:
+            member = db.scalar(select(EmployerMember).where(EmployerMember.user_id == user.user_id))
+            emp = db.get(Employer, member.employer_id) if member else None
     if not emp:
         return {"employer": None, "kpis": {}, "jobs": [], "applicants": []}
 
@@ -243,7 +250,7 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
 
 @router.post("/{employer_id}/members", status_code=201)
 def invite_member(employer_id: str, body: MemberInvite, user: CurrentUser, db: DbSession):
-    """Add an existing HealthBoard user to the organisation by email."""
+    """Add an existing MedHunt user to the organisation by email."""
     employer = db.get(Employer, employer_id)
     if not employer:
         raise HTTPException(status_code=404, detail="Employer not found")
@@ -255,7 +262,7 @@ def invite_member(employer_id: str, body: MemberInvite, user: CurrentUser, db: D
         func.lower(User.email) == body.email.strip().lower()))
     if not invitee or invitee.deleted_at is not None:
         raise HTTPException(status_code=404,
-                            detail="No HealthBoard account with that email. Ask them to "
+                            detail="No MedHunt account with that email. Ask them to "
                                    "create an account first, then invite them.")
     if invitee.user_id == employer.owner_user_id:
         raise HTTPException(status_code=400, detail="You already own this organisation")
@@ -272,7 +279,7 @@ def invite_member(employer_id: str, body: MemberInvite, user: CurrentUser, db: D
     db.add(Notification(
         user_id=invitee.user_id, type=NotificationType.system,
         title="Added to a team",
-        body=f"You were added to {employer.org_name} on HealthBoard.",
+        body=f"You were added to {employer.org_name} on MedHunt.",
         data={"employer_id": employer_id}))
     db.commit()
     if invitee.email:
@@ -477,6 +484,11 @@ def accept_invite(body: InviteAccept, user: CurrentUser, db: DbSession):
     employer = db.get(Employer, inv.employer_id)
     if not employer:
         raise HTTPException(status_code=404, detail="Organisation not found")
+    if user.email.strip().lower() != inv.email.strip().lower():
+        raise HTTPException(
+            status_code=403,
+            detail=f"This invitation was sent to {inv.email}. Sign in with that email to accept it.",
+        )
 
     already = user.user_id == employer.owner_user_id or bool(db.scalar(
         select(EmployerMember).where(EmployerMember.employer_id == inv.employer_id,
@@ -484,6 +496,26 @@ def accept_invite(body: InviteAccept, user: CurrentUser, db: DbSession):
     if not already:
         db.add(EmployerMember(employer_id=inv.employer_id, user_id=user.user_id,
                               member_role=inv.role))
+    # Invitees need recruiter-level platform access for the organization pages
+    # and sourcing tools, regardless of which public sign-up role was selected.
+    if user.role == UserRole.job_seeker:
+        user.role = UserRole.recruiter
     inv.status = "accepted"
     db.commit()
-    return {"joined": True, "org_name": employer.org_name, "already": already}
+    return {
+        "joined": True,
+        "already": already,
+        "employer": {
+            "employer_id": employer.employer_id,
+            "org_name": employer.org_name,
+            "org_type": employer.org_type,
+            "city": employer.city,
+            "state_code": employer.state_code,
+            "website_url": employer.website_url,
+            "description": employer.description,
+            "is_verified": employer.is_verified,
+            "rating_avg": float(employer.rating_avg or 0),
+        },
+        # Retained for older clients.
+        "org_name": employer.org_name,
+    }

@@ -65,7 +65,7 @@ def signup(
     db.commit()
 
     dest = "/recruiter" if user_role == UserRole.recruiter else "/dashboard"
-    resp = redirect(dest, flash=f"Welcome to HealthBoard, {first_name or email}!")
+    resp = redirect(dest, flash=f"Welcome to MedHunt, {first_name or email}!")
     set_session(resp, create_web_session_token(user.user_id, user.role.value, session_id=session_id))
     return resp
 

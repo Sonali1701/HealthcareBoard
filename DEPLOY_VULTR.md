@@ -1,4 +1,4 @@
-# Deploying HealthBoard to Vultr
+# Deploying MedHunt to Vultr
 
 This runs the FastAPI app on a Vultr VPS with Docker, behind Nginx with HTTPS.
 Your **database (Neon)** and **file storage (Cloudflare R2)** stay where they are —

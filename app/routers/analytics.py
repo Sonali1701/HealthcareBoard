@@ -4,12 +4,16 @@ Backs the analytics view in healthboard-chat-platform.html.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from collections import Counter
+from datetime import timedelta
+
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, or_, select
 
 from ..deps import CurrentUser, DbSession
 from ..models import (
     Application,
+    AuditLog,
     CreditAccount,
     Employer,
     EmployerMember,
@@ -21,6 +25,8 @@ from ..models import (
     User,
 )
 from ..models.enums import ApplicationStatus, JobStatus, OfferStatus
+from ..database import utcnow
+from ..services import org_roles
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -33,6 +39,134 @@ def _employer_ids_for(db: DbSession, user: CurrentUser) -> list[str]:
         select(EmployerMember.employer_id).where(EmployerMember.user_id == user.user_id)
     ).all()
     return list({*owned, *member})
+
+
+@router.get("/medhunt")
+def medhunt_extension_activity(
+    user: CurrentUser,
+    db: DbSession,
+    days: int = Query(30, ge=1, le=365),
+    employer_id: str | None = None,
+):
+    """Detailed MedHunt extension usage, scoped to the current organization.
+
+    Owners, admins and managers can see their whole team. Regular members see
+    only their own events. Returning raw event rows as well as aggregates makes
+    the analytics page useful for both daily oversight and source attribution.
+    """
+    from .extension import MEDHUNT_ATTEMPT_ACTION, MEDHUNT_ENRICHED_ACTION
+
+    member_ids = [user.user_id]
+    scope = "personal"
+    employer = None
+    if employer_id:
+        employer = db.get(Employer, employer_id)
+        if not employer or org_roles.role_of(db, employer, user) is None:
+            raise HTTPException(status_code=403, detail="Not a member of this organisation")
+    else:
+        employer_ids = _employer_ids_for(db, user)
+        if employer_ids:
+            employer = db.get(Employer, employer_ids[0])
+
+    if employer:
+        role = org_roles.role_of(db, employer, user)
+        if org_roles.can(role, "analytics"):
+            member_ids = list({
+                employer.owner_user_id,
+                *db.scalars(select(EmployerMember.user_id).where(
+                    EmployerMember.employer_id == employer.employer_id
+                )).all(),
+            })
+            scope = "organization"
+
+    since = utcnow() - timedelta(days=days)
+    events = db.scalars(
+        select(AuditLog).where(
+            AuditLog.actor_user_id.in_(member_ids),
+            AuditLog.action.in_((MEDHUNT_ENRICHED_ACTION, MEDHUNT_ATTEMPT_ACTION)),
+            AuditLog.created_at >= since,
+        ).order_by(AuditLog.created_at.desc())
+    ).all()
+
+    users = {u.user_id: u for u in db.scalars(
+        select(User).where(User.user_id.in_(member_ids))
+    )}
+    profiles = {p.user_id: p for p in db.scalars(
+        select(Profile).where(Profile.user_id.in_(member_ids))
+    )}
+    per_member: dict[str, dict] = {}
+    source_counts: Counter[str] = Counter()
+    enriched_candidates: set[str] = set()
+
+    for uid in member_ids:
+        account = users.get(uid)
+        profile = profiles.get(uid)
+        name = (f"{profile.first_name} {profile.last_name}".strip() if profile else None)
+        per_member[uid] = {
+            "user_id": uid,
+            "name": name,
+            "email": account.email if account else None,
+            "checks": 0,
+            "enriched": 0,
+            "candidates_enriched": set(),
+            "last_used_at": None,
+        }
+
+    activity = []
+    for event in events:
+        meta = event.meta or {}
+        uid = event.actor_user_id
+        row = per_member.get(uid)
+        if row is None:
+            continue
+        source = str(meta.get("source") or "Unknown").strip() or "Unknown"
+        candidate_id = str(meta.get("candidate_id") or "").strip()
+        enriched = event.action == MEDHUNT_ENRICHED_ACTION
+        row["checks"] += 1
+        if row["last_used_at"] is None:
+            row["last_used_at"] = event.created_at
+        if enriched:
+            row["enriched"] += 1
+            source_counts[source] += 1
+            if candidate_id:
+                row["candidates_enriched"].add(candidate_id)
+                enriched_candidates.add(candidate_id)
+        activity.append({
+            "event_id": event.entity_id,
+            "user_id": uid,
+            "user_name": row["name"] or row["email"] or "Team member",
+            "candidate_id": candidate_id or None,
+            "source": source,
+            "status": meta.get("status") or ("success" if enriched else "attempted"),
+            "enriched": enriched,
+            "used_at": event.created_at,
+        })
+
+    members = []
+    for row in per_member.values():
+        candidate_ids = row.pop("candidates_enriched")
+        row["candidates_enriched"] = len(candidate_ids)
+        if row["checks"]:
+            members.append(row)
+    members.sort(key=lambda item: (item["last_used_at"] is not None,
+                                   item["last_used_at"]), reverse=True)
+    return {
+        "scope": scope,
+        "organization": ({"employer_id": employer.employer_id, "org_name": employer.org_name}
+                         if employer else None),
+        "window_days": days,
+        "summary": {
+            "users": len(members),
+            "checks": len(events),
+            "enrichments": sum(1 for event in events
+                               if event.action == MEDHUNT_ENRICHED_ACTION),
+            "candidates_enriched": len(enriched_candidates),
+        },
+        "members": members,
+        "sources": [{"source": source, "enriched": count}
+                    for source, count in source_counts.most_common()],
+        "activity": activity[:100],
+    }
 
 
 @router.get("/funnel")

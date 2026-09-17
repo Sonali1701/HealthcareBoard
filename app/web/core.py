@@ -25,7 +25,7 @@ FLASH_COOKIE = "hb_flash"
 _flash_signer = URLSafeSerializer(settings.jwt_secret, salt="hb-flash")
 
 # Template globals
-templates.env.globals["app_name"] = "HealthBoard"
+templates.env.globals["app_name"] = "MedHunt"
 
 
 # --- Redirect-based auth guard --------------------------------------------

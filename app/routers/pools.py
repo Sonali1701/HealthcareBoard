@@ -78,7 +78,7 @@ def _recruiter_identity(db: DbSession, user: CurrentUser) -> tuple[str, str]:
     if not emp:
         member = db.scalar(select(EmployerMember).where(EmployerMember.user_id == user.user_id))
         emp = db.get(Employer, member.employer_id) if member else None
-    return (emp.org_name if emp else "A recruiter on HealthBoard"), user.email
+    return (emp.org_name if emp else "A recruiter on MedHunt"), user.email
 
 
 # --- Helpers ---------------------------------------------------------------

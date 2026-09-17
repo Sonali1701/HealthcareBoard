@@ -1,4 +1,4 @@
-"""HealthBoard FastAPI application entry point.
+"""MedHunt FastAPI application entry point.
 
 Run locally:
     uvicorn app.main:app --reload
@@ -109,7 +109,7 @@ app = FastAPI(
     title=settings.app_name,
     version=__version__,
     description=(
-        "Backend for the HealthBoard healthcare-staffing platform — auth, "
+        "Backend for the MedHunt healthcare-staffing platform — auth, "
         "profiles, jobs, applications, social, messaging, AI matching and "
         "GSA per-diem pay calculation."
     ),
