@@ -2003,7 +2003,12 @@ async def lookup_profile_contact(
 
     try:
         if prior_candidate_id is not None:
-            match = await quick_sourcer.fetch_candidate(prior_candidate_id)
+            try:
+                match = await quick_sourcer.fetch_candidate(prior_candidate_id)
+            except quick_sourcer.QuickSourcerError:
+                # The source may expire old candidate ids; retry by name rather
+                # than surfacing a transient Hub error to the recruiter.
+                match = await quick_sourcer.find(name, location)
             if not match.found:        # the Hub forgot the id — search again
                 match = await quick_sourcer.find(name, location)
         else:

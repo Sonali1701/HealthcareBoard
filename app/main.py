@@ -486,6 +486,18 @@ for module in (web_public, web_auth, web_seeker, web_recruiter,
 # /assets -> app design assets (css/js). We deliberately do NOT mount the
 # project root: doing so served .env, the database and every résumé over HTTP.
 # Only the local upload fallback directory is exposed, at /static/uploads.
+@app.get("/assets/hb-api.js", include_in_schema=False)
+def legacy_api_client():
+    """Serve the shared client used by the standalone prototype pages.
+
+    This one safe file is kept at the project root for historical reasons;
+    exposing it under the normal asset prefix keeps those pages functional
+    without mounting the whole project directory.
+    """
+    return FileResponse(PROJECT_ROOT / "hb-api.js",
+                        media_type="application/javascript")
+
+
 app.mount("/assets", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="assets")
 app.mount("/static/uploads",
           StaticFiles(directory=str(PROJECT_ROOT / "uploads"), check_dir=False),

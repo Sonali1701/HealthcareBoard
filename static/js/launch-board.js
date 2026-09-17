@@ -223,7 +223,12 @@
       // An unverified account (only possible when email delivery is on) is held
       // at a verification gate rather than let into the app.
       if (S.user.status === "pending_verify"){ showVerifyGate(); return "pending"; }
-      try { S.profile = await get("/api/profiles/me"); } catch(e) { S.profile = null; }
+      S.profile = null;
+      // Recruiters/admins do not have a candidate Profile row. Only a
+      // job-seeker account should call this endpoint.
+      if (S.user.role === "job_seeker") {
+        try { S.profile = await get("/api/profiles/me"); } catch(e) { S.profile = null; }
+      }
       applyRole();
       const name = S.profile ? `${S.profile.first_name} ${S.profile.last_name}` : S.user.email.split("@")[0];
       const role = isRecruiter() ? "Recruiter" : (S.profile && (S.profile.specialty || S.profile.profession_type)) || "Healthcare Pro";

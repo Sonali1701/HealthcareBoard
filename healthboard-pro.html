@@ -2164,7 +2164,7 @@ document.querySelectorAll('.chip').forEach(chip => {
 <!-- ════════════════════════════════════════════════════════════
      LIVE DATA WIRING — replaces mock HTML with real API data
      ════════════════════════════════════════════════════════════ -->
-<script src="/static/hb-api.js"></script>
+<script src="/assets/hb-api.js"></script>
 <script>
 const HB_PALETTE = [['#2F7AF6','#0B46A3'],['#E14B27','#A0280A'],['#2D6A4F','#1B4332'],
                     ['#6B3FA0','#3D1A6E'],['#C99700','#8A5A00'],['#1A5276','#082452']];
@@ -2275,7 +2275,7 @@ function hbProCard(p, i){
   const contactRow = hbProviderContactRow(p);
   const auditRow = hbContactAudit(p);
   const action = p.resume_url
-    ? `<button class="btn btn-outline" onclick="hbViewResume('${p.profile_id}')" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-file-alt"></i>View résumé</button>`
+    ? `<button class="btn btn-outline" onclick="hbViewResume('${p.profile_id}')" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-file-alt"></i>View Resume</button>`
     : `<button class="btn btn-outline" style="width:100%;justify-content:center;font-size:13px;"><i class="fas fa-user-plus"></i>Connect</button>`;
   const contactLabel = (p.email || p.phone) ? 'Edit contact' : 'Add contact';
   const contactAction = hbCanUseProviders()
@@ -2381,9 +2381,13 @@ async function hbLoadDashboard(){
   // Greeting + metrics (only when signed in) — all real, no placeholders.
   if(!HB.isAuthed()) return;
   try{
-    const me=await HB.get('/api/profiles/me').catch(()=>null);
-    const apps=await HB.get('/api/applications/mine').catch(()=>[]);
-    const saved=await HB.get('/api/applications/saved').catch(()=>[]);
+    const authUser=await HB.get('/api/auth/me').catch(()=>null);
+    const isCandidate = authUser && authUser.role === 'job_seeker';
+    // Recruiter/admin accounts do not have a candidate Profile row and cannot
+    // use candidate application endpoints; keep their dashboard noise-free.
+    const me=isCandidate ? await HB.get('/api/profiles/me').catch(()=>null) : null;
+    const apps=isCandidate ? await HB.get('/api/applications/mine').catch(()=>[]) : [];
+    const saved=isCandidate ? await HB.get('/api/applications/saved').catch(()=>[]) : [];
     const em=dash.querySelector('.dash-title em'); if(em&&me) em.textContent=me.first_name;
     const sub=document.getElementById('hb-dash-sub');
     if(sub&&me){ const bits=[me.specialty,me.provider_category,[me.city,me.state_code].filter(Boolean).join(', ')].filter(Boolean); sub.textContent = bits.length? bits.join(' · ') : 'Find your next role and connect with recruiters.'; }
@@ -2476,8 +2480,12 @@ async function hbLoadProfessionals(force){
   grid.innerHTML = hbLoading('Loading providers...');
   if (countEl) countEl.textContent = 'Loading providers...';
   try {
+    // Keep the prototype responsive: the directory contains over a million
+    // rows and must never be downloaded wholesale into a browser tab. The
+    // production launch board handles server-side pagination; this standalone
+    // page renders the first live page and applies its local filters there.
     let all = [], offset = 0, total = Infinity;
-    while (all.length < total){
+    while (all.length < total && offset < 100){
       const d = await HB.get(`/api/profiles?providers_only=true&limit=100&offset=${offset}`);
       if (seq !== HB_PROV_REQ) return;   // a newer load superseded this one
       all = all.concat(d.items || []);
@@ -2593,7 +2601,7 @@ async function hbViewResume(profileId){
     ov.style.cssText = "position:fixed;inset:0;background:rgba(8,15,30,.72);z-index:99998;display:flex;align-items:center;justify-content:center;padding:24px;";
     ov.innerHTML = `<div style="background:#fff;color:#1A202C;width:720px;max-width:100%;max-height:88vh;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.45);display:flex;flex-direction:column;overflow:hidden;">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid #E7EBF1;">
-          <div style="font-weight:700;font-size:16px;" id="hb-resume-title">Résumé</div>
+          <div style="font-weight:700;font-size:16px;" id="hb-resume-title">Resume</div>
           <div style="display:flex;align-items:center;gap:14px;">
             <span style="font-size:11.5px;color:#94a3b8;"><i class="fas fa-lock" style="margin-right:5px;"></i>View only</span>
             <div id="hb-resume-close" style="cursor:pointer;color:#8A97AB;font-size:20px;line-height:1;">&times;</div>
@@ -2608,16 +2616,16 @@ async function hbViewResume(profileId){
     document.addEventListener('keydown', function esc(e){ if(e.key==='Escape'){ const o=document.getElementById('hb-resume-ov'); if(o) o.remove(); document.removeEventListener('keydown', esc);} });
   }
   const body = ov.querySelector('#hb-resume-body');
-  body.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center;">Loading résumé…</div>';
+  body.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center;">Loading Resume...</div>';
   try {
     await HB.ensureAuth();
     const r = await HB.get('/api/profiles/'+profileId+'/resume');
-    ov.querySelector('#hb-resume-title').textContent = r.name ? `${r.name} — Résumé` : 'Résumé';
+    ov.querySelector('#hb-resume-title').textContent = r.name ? `${r.name} — Resume` : 'Resume';
     body.innerHTML = `<div class="hb-resume-doc">${r.html}</div>`;
   } catch(e){
     const msg = e && e.status === 401
-      ? 'Please sign in to view this résumé.'
-      : (e && e.message ? e.message : 'Could not load this résumé.');
+      ? 'Please sign in to view this Resume.'
+      : (e && e.message ? e.message : 'Could not load this Resume.');
     body.innerHTML = `<div style="color:#dc2626;padding:20px;">${HB.esc(msg)}</div>`;
   }
 }
@@ -2699,7 +2707,7 @@ async function hbUploadResume(file){
     const dz=document.getElementById('dropzone');
     if(dz) dz.innerHTML='<div class="upload-icon"><i class="fas fa-check-circle" style="color:var(--teal)"></i></div>'+
       '<div class="upload-title">Uploaded '+HB.esc(file.name)+'</div>'+
-      '<div class="upload-sub"><a href="'+d.resume_url+'" target="_blank">View résumé</a> · saved to your profile</div>';
+      '<div class="upload-sub"><a href="'+d.resume_url+'" target="_blank">View Resume</a> · saved to your profile</div>';
   }catch(e){ alert(e.message||'Upload failed (sign in first).'); }
 }
 
@@ -2904,7 +2912,11 @@ async function hbLoadCurrentUser(){
     const me = await HB.get('/api/auth/me');
     hbApplyRoleAccess(me);
     let name = me.email.split('@')[0], role = (me.role||'').replace('_',' '), av = me.email[0].toUpperCase();
-    try{ const p = await HB.get('/api/profiles/me'); if(p){ name = p.first_name+' '+p.last_name; role = (p.specialty||p.profession_type||role); av = (p.first_name[0]+p.last_name[0]).toUpperCase(); } }catch(e){}
+    // Recruiters/admins do not have a candidate Profile row; avoid a noisy
+    // 404 and use their auth identity for the sidebar instead.
+    if (me.role === 'job_seeker') {
+      try{ const p = await HB.get('/api/profiles/me'); if(p){ name = p.first_name+' '+p.last_name; role = (p.specialty||p.profession_type||role); av = (p.first_name[0]+p.last_name[0]).toUpperCase(); } }catch(e){}
+    }
     const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;};
     set('hb-user-name', name); set('hb-user-role', role); set('hb-user-av', av);
     document.querySelectorAll('.topbar-user .avatar, .topbar-user .topbar-user-name').forEach(el=>{

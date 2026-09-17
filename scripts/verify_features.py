@@ -14,6 +14,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import shutil
 import sys
 import time
 
@@ -61,31 +64,48 @@ def run_api_checks(base: str) -> str | None:
     auth = {"Authorization": f"Bearer {tok}"}
     me = c.get("/api/auth/me", headers=auth)
     check("Auth", "current user (/me)", me.status_code == 200 and me.json().get("role") == "recruiter")
-    check("Auth", "refresh token rotates", c.post("/api/auth/refresh", json={"refresh_token": refresh}).status_code == 200)
+    refreshed = c.post("/api/auth/refresh", json={"refresh_token": refresh})
+    check("Auth", "refresh token rotates", refreshed.status_code == 200)
+    if refreshed.status_code == 200:
+        # The server enforces a single active session, so continue the E2E run
+        # with the newly issued access token rather than the superseded one.
+        tok = refreshed.json()["access_token"]
+        auth = {"Authorization": f"Bearer {tok}"}
     check("Auth", "uploads endpoint protected (401 w/o token)",
           c.post("/api/uploads/resume").status_code == 401)
 
     # --- Profiles (candidate board) ---
-    pl = c.get("/api/profiles?limit=100")
-    total = pl.json().get("total", 0) if pl.status_code == 200 else 0
+    pl = c.get("/api/profiles?limit=100", headers=auth)
+    # Newer Page responses expose `items` without a top-level total; use the
+    # returned page size as a liveness signal in that case.
+    if pl.status_code == 200:
+        profile_payload = pl.json()
+        total = max(profile_payload.get("total", 0), len(profile_payload.get("items", [])))
+    else:
+        total = 0
     check("Profiles", "list profiles", pl.status_code == 200 and total > 0, f"{total} profiles")
-    check("Profiles", "full-text search (q=)", c.get("/api/profiles?q=allergy").status_code == 200)
-    check("Profiles", "filter by profession", c.get("/api/profiles?profession_type=MD").status_code == 200)
-    check("Profiles", "filter by state", c.get("/api/profiles?state_code=NC").status_code == 200)
+    check("Profiles", "full-text search (q=)", c.get("/api/profiles?q=allergy", headers=auth).status_code == 200)
+    check("Profiles", "filter by profession", c.get("/api/profiles?profession_type=MD", headers=auth).status_code == 200)
+    check("Profiles", "filter by state", c.get("/api/profiles?state_code=NC", headers=auth).status_code == 200)
     if total:
         pid = pl.json()["items"][0]["profile_id"]
-        det = c.get(f"/api/profiles/{pid}")
+        det = c.get(f"/api/profiles/{pid}", headers=auth)
         check("Profiles", "profile detail (licenses/certs)",
               det.status_code == 200 and "licenses" in det.json())
         ru = pl.json()["items"][0].get("resume_url")
         if ru:
-            rf = c.get(ru)
+            rf = c.get(ru, headers=auth)
             check("Profiles", "résumé file downloads", rf.status_code == 200 and len(rf.content) > 500,
                   f"{len(rf.content)} bytes")
 
     # --- Jobs / applications ---
-    jb = c.get("/api/jobs?limit=20")
-    check("Jobs", "list jobs", jb.status_code == 200, f"{jb.json().get('total',0)} jobs")
+    jb = c.get("/api/jobs?limit=20", headers=auth)
+    if jb.status_code == 200:
+        jobs_payload = jb.json()
+        job_count = max(jobs_payload.get("total", 0), len(jobs_payload.get("items", [])))
+    else:
+        job_count = 0
+    check("Jobs", "list jobs", jb.status_code == 200 and job_count > 0, f"{job_count} jobs")
 
     # --- AI matching ---
     mr = c.post("/api/matching/run", json={"specialty": "Allergy & Immunology", "top_n": 50}, headers=auth)
@@ -111,6 +131,9 @@ def run_api_checks(base: str) -> str | None:
     check("Analytics", "recruitment funnel", c.get("/api/analytics/funnel", headers=auth).status_code == 200)
     check("Analytics", "recruiter KPIs", c.get("/api/analytics/kpis", headers=auth).status_code == 200)
     check("Analytics", "CRM conversations", c.get("/api/analytics/conversations", headers=auth).status_code == 200)
+    med = c.get("/api/analytics/medhunt", headers=auth)
+    med_shape = med.status_code == 200 and all(k in med.json() for k in ("summary", "members", "sources", "activity"))
+    check("Analytics", "MedHunt extension details", med_shape)
 
     # --- Notifications / social ---
     check("Notifications", "notification feed", c.get("/api/notifications", headers=auth).status_code == 200)
@@ -120,7 +143,7 @@ def run_api_checks(base: str) -> str | None:
     return tok
 
 
-def run_page_checks(base: str) -> None:
+def run_page_checks(base: str, token: str | None = None) -> None:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -130,22 +153,57 @@ def run_page_checks(base: str) -> None:
     with sync_playwright() as p:
         try:
             br = p.chromium.launch()
-        except Exception as e:
-            check("Pages", "launch browser", False, str(e)[:80])
-            return
+        except Exception:
+            # CI/dev machines often have Edge or Chrome but not Playwright's
+            # downloaded bundle. Use a system browser before declaring UI E2E
+            # unavailable.
+            candidates = [
+                os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
+                + r"\Microsoft\Edge\Application\msedge.exe",
+                os.environ.get("PROGRAMFILES", r"C:\Program Files")
+                + r"\Google\Chrome\Application\chrome.exe",
+            ]
+            executable = next((path for path in candidates if os.path.exists(path)), None)
+            if not executable:
+                executable = shutil.which("msedge") or shutil.which("chrome")
+            if not executable:
+                check("Pages", "launch browser", False, "No Chromium/Edge executable found")
+                return
+            try:
+                br = p.chromium.launch(executable_path=executable)
+            except Exception as e:
+                check("Pages", "launch browser", False, str(e)[:120])
+                return
 
         def page_errs():
             ctx = br.new_context()
+            if token:
+                ctx.add_init_script(
+                    f"localStorage.setItem('hb_token', {json.dumps(token)});"
+                )
             pg = ctx.new_page()
             errs: list[str] = []
-            pg.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+            # CDN font/icon requests can be blocked in CI or a restricted
+            # browser sandbox; only same-origin application errors fail E2E.
+            pg.on("console", lambda m: errs.append(m.text)
+                  if m.type == "error" and (
+                      not m.location.get("url")
+                      or m.location.get("url", "").startswith(base)
+                  ) else None)
             pg.on("pageerror", lambda e: errs.append(str(e)))
             return ctx, pg, errs
 
         ui = base + "/ui/"
         # pro
         ctx, pg, errs = page_errs()
-        pg.goto(ui + "healthboard-pro.html", wait_until="networkidle"); pg.wait_for_timeout(1200)
+        # Authenticated prototypes poll their API; waiting for network-idle can
+        # therefore time out even while the page is healthy.
+        pg.goto(ui + "healthboard-pro.html", wait_until="domcontentloaded")
+        try:
+            pg.wait_for_selector(".professionals-grid .pro-card", timeout=15000)
+        except Exception:
+            pass
+        pg.wait_for_timeout(800)
         n = len(pg.query_selector_all(".professionals-grid .pro-card"))
         check("Pages", "pro.html candidate board", n > 0 and not errs, f"{n} cards, errors={errs[:1]}")
         ctx.close()
@@ -154,7 +212,14 @@ def run_page_checks(base: str) -> None:
         pg.goto(ui + "healthboard-ai-matching.html", wait_until="domcontentloaded")
         try:
             pg.wait_for_selector("#hb-li-go", timeout=6000); pg.click("#hb-li-go")
-            pg.wait_for_selector("#candidates-grid .candidate-card", timeout=15000)
+        except Exception:
+            pass
+        # The live matching page waits for an explicit user action; exercise
+        # the same button a recruiter uses instead of relying on demo auto-run.
+        try:
+            pg.wait_for_selector("#run-btn", timeout=5000)
+            pg.click("#run-btn")
+            pg.wait_for_selector("#candidates-grid .candidate-card", timeout=30000)
         except Exception:
             pass
         n = len(pg.query_selector_all("#candidates-grid .candidate-card"))
@@ -199,9 +264,9 @@ def main() -> int:
               f"Start it first:  .venv\\Scripts\\python main.py")
         return 2
 
-    run_api_checks(args.base)
+    token = run_api_checks(args.base)
     if not args.no_pages:
-        run_page_checks(args.base)
+        run_page_checks(args.base, token)
 
     # Report
     groups: dict[str, list] = {}

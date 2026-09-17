@@ -708,7 +708,7 @@ body::before{content:'';position:fixed;inset:0;
       </div>
     </div>
 
-    <button class="run-btn" id="run-btn" onclick="runMatching()">
+    <button class="run-btn" id="run-btn" onclick="showResults()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Run AI Matching Engine
     </button>
@@ -1408,13 +1408,11 @@ function showToast(msg, sub){
 /* ════════ INIT ════════ */
 document.addEventListener('DOMContentLoaded',()=>{
   updateShortlistUI();
-  // Auto-run with default job on load for demo
-  setTimeout(()=>runMatching(), 800);
 });
 </script>
 
 <!-- ════════ LIVE DATA WIRING — real /api/matching/run ════════ -->
-<script src="/static/hb-api.js"></script>
+<script src="/assets/hb-api.js"></script>
 <script>
 const HB_GRAD = ['linear-gradient(135deg,#00B4A6,#007A6E)','linear-gradient(135deg,#1A7FD4,#0A5A9A)',
                  'linear-gradient(135deg,#6B3FA0,#3D1A6E)','linear-gradient(135deg,#E14B27,#A0280A)',
@@ -1466,7 +1464,8 @@ function hbBuildSpec(includeSpecialty){
 async function showResults(){
   document.getElementById('empty-state').style.display='none';
   const rc = document.getElementById('results-content'); rc.style.display='block';
-  const specialty = document.getElementById('job-specialty').value;
+  const specialtyEl = document.getElementById('job-specialty');
+  const specialty = specialtyEl ? specialtyEl.value : '';
   document.getElementById('results-title').textContent = `Top matches — ${specialty}`;
 
   try { await HB.ensureAuth(); } catch(e){}
@@ -1515,7 +1514,7 @@ window.toggleShortlistItem = function(rank){
 // Show sign up / login first; block the page until authed.
 // The finally guarantees we never leave a blank (locked) screen if the gate errors.
 document.addEventListener('DOMContentLoaded', () => {
-  Promise.resolve().then(() => HB.gate()).catch(() => {})
+  Promise.resolve().then(() => HB.gate()).then(() => showResults()).catch(() => {})
     .finally(() => document.documentElement.classList.remove('hb-locked'));
 });
 </script>

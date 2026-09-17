@@ -92,8 +92,8 @@ async function load(){
   $("grid").innerHTML = items.map(p => {
     const loc = [p.city, p.state_code].filter(Boolean).join(", ") || "Location N/A";
     const resume = p.resume_url
-      ? `<a class="resume" href="${p.resume_url}" target="_blank">View résumé</a>`
-      : `<a class="resume disabled">No résumé on file</a>`;
+      ? `<a class="resume" href="${p.resume_url}" target="_blank">View Resume</a>`
+      : `<a class="resume disabled">No Resume on file</a>`;
     return `<div class="card">
       <div class="top">
         <div class="avatar">${initials(p.first_name, p.last_name)}</div>
