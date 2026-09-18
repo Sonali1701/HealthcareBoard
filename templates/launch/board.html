@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MedHunt</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/assets/medhunt-logo.png" as="image">
   <meta name="description" content="A screened directory of healthcare professionals, live roles from real facilities, and credentials you can actually check.">
   <meta name="theme-color" content="#0d2545">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,7 +17,7 @@
 <body>
 <!-- Shown while we validate an existing session so the login form never flashes. -->
 <div id="boot-splash" class="boot-splash">
-  <div class="boot-mark"><i class="fas fa-heart-pulse"></i></div>
+  <img class="product-logo boot-logo" src="/assets/medhunt-logo.png" alt="MedHunt">
   <div class="spinner big"></div>
   <div class="boot-text">Loading your workspace…</div>
 </div>
@@ -25,7 +26,7 @@
 <div id="landing" class="landing hidden">
   <header class="lp-nav">
     <div class="lp-nav-inner">
-      <a class="lp-logo" href="#top"><span class="lp-mark"><i class="fas fa-heart-pulse"></i></span>MedHunt</a>
+      <a class="lp-logo" href="#top" aria-label="MedHunt home"><img class="product-logo lp-logo-image" src="/assets/medhunt-logo.png" alt="MedHunt"></a>
       <nav class="lp-links">
         <a href="#platform">Platform</a>
         <a href="#pipeline">How it works</a>
@@ -165,7 +166,7 @@
 
   <footer class="lp-footer">
     <div class="lp-inner lp-footer-inner">
-      <a class="lp-logo" href="#top"><span class="lp-mark"><i class="fas fa-heart-pulse"></i></span>MedHunt</a>
+      <a class="lp-logo" href="#top" aria-label="MedHunt home"><img class="product-logo lp-logo-image" src="/assets/medhunt-logo.png" alt="MedHunt"></a>
       <nav class="lp-foot-links">
         <a href="#platform">Platform</a>
         <a href="#pipeline">How it works</a>
@@ -183,7 +184,7 @@
   <div class="auth-shell">
     <button class="auth-back" id="auth-back"><i class="fas fa-arrow-left"></i>Back to home</button>
     <div class="auth-card">
-      <div class="auth-brand-row"><span class="lp-mark"><i class="fas fa-heart-pulse"></i></span>MedHunt</div>
+      <a class="auth-brand-row" href="/" aria-label="MedHunt home"><img class="product-logo auth-logo" src="/assets/medhunt-logo.png" alt="MedHunt"></a>
       <div class="auth-tabs">
         <button class="auth-tab active" data-auth-mode="login">Sign in</button>
         <button class="auth-tab" data-auth-mode="signup">Create account</button>
@@ -223,6 +224,7 @@
 
 <div id="verify-gate" class="verify-gate hidden">
   <div class="verify-card">
+    <img class="product-logo verify-logo" src="/assets/medhunt-logo.png" alt="MedHunt">
     <div class="verify-mark"><i class="fas fa-envelope-circle-check"></i></div>
     <h1>Confirm your email</h1>
     <p>We sent a verification link to <strong id="verify-email">your email</strong>.
@@ -239,8 +241,7 @@
 <div class="app-shell hidden" id="app-shell">
   <aside class="sidebar">
     <a class="logo" href="#" data-page="dashboard">
-      <span class="logo-icon"><i class="fas fa-heart-pulse"></i></span>
-      <span><strong>Med<span>Hunt</span></strong><small>Pro Platform</small></span>
+      <img class="product-logo app-logo" src="/assets/medhunt-logo.png" alt="MedHunt">
     </a>
     <nav class="nav">
       <div class="nav-label">Main</div>

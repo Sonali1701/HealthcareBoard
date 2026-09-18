@@ -37,8 +37,9 @@ h1{font-size:30px}h2{font-size:22px}h3{font-size:16px;font-family:var(--font-bod
 @media(max-width:860px){.sidebar{display:none}.main-content{margin-left:0}}
 
 /* Sidebar */
-.sidebar-logo{padding:22px 20px;border-bottom:1px solid rgba(255,255,255,.08)}
-.logo-mark{display:flex;align-items:center;gap:10px;text-decoration:none}
+.sidebar-logo{padding:10px 20px;border-bottom:1px solid rgba(255,255,255,.08);background:#fff}
+.logo-mark{display:flex;align-items:center;justify-content:center;text-decoration:none}
+.sidebar-brand-logo{display:block;width:172px;max-width:100%;height:auto}
 .logo-icon{width:36px;height:36px;background:var(--teal-mid);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px}
 .logo-text{font-family:var(--font-display);color:#fff;font-size:17px;line-height:1.1}
 .logo-text span{color:var(--teal-mid)}
@@ -127,6 +128,8 @@ h1{font-size:30px}h2{font-size:22px}h3{font-size:16px;font-family:var(--font-bod
 
 /* Forms */
 .field{margin-bottom:14px}
+.auth-page-logo{display:block;width:190px;margin:-12px auto 8px}
+.auth-page-logo img{display:block;width:100%;height:auto}
 .label{display:block;font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:5px}
 .input,.select,.textarea{width:100%;padding:10px 13px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-family:var(--font-body);font-size:14px;background:#fff;color:var(--gray-800)}
 .input:focus,.select:focus,.textarea:focus{outline:none;border-color:var(--teal-mid);box-shadow:0 0 0 3px rgba(26,158,158,.12)}

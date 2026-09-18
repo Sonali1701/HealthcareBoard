@@ -18,12 +18,15 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from ..config import settings
 from ..database import utcnow
 from ..deps import CurrentUser, DbSession, IngestUser
-from ..models import AuditLog, EmailVerificationToken, User, UserRole, UserStatus
+from ..models import (
+    AuditLog, EmailVerificationToken, Employer, EmployerMember, Notification,
+    NotificationType, User, UserRole, UserStatus,
+)
 from ..ratelimit import auth_rate_limit
 from ..security import sha256
 from ..services.email import send_medhunt_login_code
@@ -75,6 +78,43 @@ class MedhuntEnrichmentEvent(BaseModel):
     status: str = Field(min_length=1, max_length=40)
     source: str = Field(default="", max_length=80)
     run_id: str = Field(default="", max_length=120)
+
+
+class MedhuntAssignment(BaseModel):
+    conversation_id: str = Field(min_length=1, max_length=80)
+    candidate_id: str = Field(min_length=1, max_length=80)
+    nexus_candidate_id: str = Field(default="", max_length=120)
+    candidate_name: str = Field(default="", max_length=320)
+    recruiter_user_id: str = Field(min_length=1, max_length=80)
+
+
+class MedhuntMessageEvent(BaseModel):
+    event_id: str = Field(min_length=8, max_length=200)
+    conversation_id: str = Field(min_length=1, max_length=80)
+    candidate_id: str = Field(min_length=1, max_length=80)
+    nexus_candidate_id: str = Field(default="", max_length=120)
+    candidate_name: str = Field(default="", max_length=320)
+    initiated_by_user_id: str = Field(default="", max_length=80)
+    assigned_recruiter_user_id: str = Field(default="", max_length=80)
+    event_type: str = Field(min_length=1, max_length=40)
+    message_preview: str = Field(default="", max_length=240)
+
+
+def _user_employer(db, user_id: str) -> Employer | None:
+    return db.scalar(select(Employer).where(or_(
+        Employer.owner_user_id == user_id,
+        Employer.employer_id.in_(select(EmployerMember.employer_id).where(
+            EmployerMember.user_id == user_id
+        )),
+    )).limit(1))
+
+
+def _employer_user_ids(db, employer: Employer) -> set[str]:
+    member_ids = set(db.scalars(select(EmployerMember.user_id).where(
+        EmployerMember.employer_id == employer.employer_id
+    )).all())
+    member_ids.add(employer.owner_user_id)
+    return member_ids
 
 
 def _code_digest(email: str, code: str, nonce: str) -> str:
@@ -184,6 +224,108 @@ def verify_medhunt_code(body: MedhuntCodeVerify, request: Request, db: DbSession
 def medhunt_me(user: IngestUser):
     _require_recruiter(user)
     return {"user_id": user.user_id, "email": user.email, "role": user.role.value}
+
+
+@router.get("/team/recruiters")
+def medhunt_recruiters(user: IngestUser, db: DbSession):
+    _require_recruiter(user)
+    employer = _user_employer(db, user.user_id)
+    if not employer:
+        return {"items": []}
+    users = db.scalars(select(User).where(
+        User.user_id.in_(_employer_user_ids(db, employer)),
+        User.deleted_at.is_(None),
+    )).all()
+    return {"items": [
+        {"user_id": item.user_id, "email": item.email, "name": item.email}
+        for item in sorted(users, key=lambda value: (value.email or "").lower())
+        if item.role in {UserRole.recruiter, UserRole.admin}
+    ]}
+
+
+@router.post("/medhunt/conversations/assign")
+def assign_medhunt_conversation(body: MedhuntAssignment, user: IngestUser, db: DbSession):
+    _require_recruiter(user)
+    employer = _user_employer(db, user.user_id)
+    if not employer or body.recruiter_user_id not in _employer_user_ids(db, employer):
+        raise HTTPException(status_code=403, detail="Recruiter is not on your team")
+    recruiter = db.get(User, body.recruiter_user_id)
+    if not recruiter or recruiter.role not in {UserRole.recruiter, UserRole.admin}:
+        raise HTTPException(status_code=400, detail="Choose an active recruiter")
+    event_id = hashlib.sha256(
+        f"assign:{body.conversation_id}:{body.recruiter_user_id}".encode()
+    ).hexdigest()[:36]
+    if not db.scalar(select(AuditLog).where(
+        AuditLog.action == "medhunt_conversation_assigned",
+        AuditLog.entity_type == "medhunt_conversation",
+        AuditLog.entity_id == event_id,
+    )):
+        db.add(AuditLog(
+            actor_user_id=user.user_id,
+            action="medhunt_conversation_assigned",
+            entity_type="medhunt_conversation",
+            entity_id=event_id,
+            meta={
+                "conversation_id": body.conversation_id,
+                "candidate_id": body.candidate_id,
+                "nexus_candidate_id": body.nexus_candidate_id,
+                "candidate_name": body.candidate_name,
+                "assigned_recruiter_user_id": recruiter.user_id,
+                "source": "medhunt",
+            },
+        ))
+        db.add(Notification(
+            user_id=recruiter.user_id,
+            type=NotificationType.message,
+            title="Medhunt candidate reply assigned",
+            body=f"{body.candidate_name or 'A candidate'} was assigned to you.",
+            data={
+                "source": "medhunt", "conversation_id": body.conversation_id,
+                "candidate_id": body.candidate_id,
+                "nexus_candidate_id": body.nexus_candidate_id,
+            },
+        ))
+        db.commit()
+    return {"user_id": recruiter.user_id, "email": recruiter.email, "name": recruiter.email}
+
+
+@router.post("/medhunt/events")
+def record_medhunt_message_event(body: MedhuntMessageEvent, request: Request, db: DbSession):
+    supplied = request.headers.get("x-medhunt-service-token", "")
+    if not settings.medhunt_service_token or not hmac.compare_digest(
+        supplied, settings.medhunt_service_token
+    ):
+        raise HTTPException(status_code=401, detail="Invalid Medhunt service token")
+    entity_id = hashlib.sha256(body.event_id.encode()).hexdigest()[:36]
+    if db.scalar(select(AuditLog).where(
+        AuditLog.action == f"medhunt_sms_{body.event_type}",
+        AuditLog.entity_type == "medhunt_sms_event",
+        AuditLog.entity_id == entity_id,
+    )):
+        return {"recorded": False, "event_id": body.event_id}
+    recipient_id = body.assigned_recruiter_user_id or body.initiated_by_user_id
+    actor_id = recipient_id if db.get(User, recipient_id) else None
+    db.add(AuditLog(
+        actor_user_id=actor_id,
+        action=f"medhunt_sms_{body.event_type}",
+        entity_type="medhunt_sms_event",
+        entity_id=entity_id,
+        meta={**body.model_dump(), "source": "medhunt"},
+    ))
+    if actor_id and body.event_type == "received":
+        db.add(Notification(
+            user_id=actor_id,
+            type=NotificationType.message,
+            title="New Medhunt candidate reply",
+            body=f"{body.candidate_name or 'A candidate'} replied: {body.message_preview}"[:500],
+            data={
+                "source": "medhunt", "conversation_id": body.conversation_id,
+                "candidate_id": body.candidate_id,
+                "nexus_candidate_id": body.nexus_candidate_id,
+            },
+        ))
+    db.commit()
+    return {"recorded": True, "event_id": body.event_id}
 
 
 @router.post("/activity/enrichment")

@@ -28,7 +28,9 @@ button,input,select{font:inherit}
 /* --- Shell ------------------------------------------------------------- */
 .app-shell{display:flex;min-height:100vh}
 .sidebar{width:var(--sidebar);background:var(--white);border-right:1px solid var(--line);color:var(--ink);display:flex;flex-direction:column;position:fixed;inset:0 auto 0 0;box-shadow:1px 0 0 rgba(14,42,85,.02),4px 0 24px -18px rgba(14,42,85,.18);z-index:20}
-.logo{display:flex;gap:11px;align-items:center;padding:18px 20px;text-decoration:none;color:var(--ink)}
+.product-logo{display:block;max-width:100%;height:auto;mix-blend-mode:multiply}
+.logo{display:flex;align-items:center;padding:10px 20px;text-decoration:none;color:var(--ink)}
+.app-logo{width:168px}
 .logo-icon,.brand-mark{width:34px;height:34px;border-radius:10px;background:var(--accent-grad);display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px;box-shadow:0 6px 14px -6px rgba(11,92,255,.6),inset 0 1px 0 rgba(255,255,255,.35)}
 .logo strong{display:block;font-size:15.5px;font-weight:700;letter-spacing:-.02em}
 .logo span span{color:var(--accent)}
@@ -212,7 +214,7 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 /* --- Boot splash ------------------------------------------------------- */
 .boot-splash{position:fixed;inset:0;z-index:2000;background:var(--white);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--ink)}
 .boot-splash.hidden{display:none}
-.boot-mark{width:44px;height:44px;border-radius:10px;background:var(--ink);display:grid;place-items:center;font-size:18px;color:#fff}
+.boot-logo{width:200px}
 .spinner.big{width:24px;height:24px;border-width:2px;border-color:var(--line);border-top-color:var(--accent)}
 .boot-text{font-size:14px;color:var(--muted)}
 
@@ -229,8 +231,8 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 .auth-card{background:var(--white);border:1px solid var(--line);border-radius:18px;
   padding:34px 34px 30px;
   box-shadow:0 26px 64px -32px rgba(13,37,69,.42),0 2px 8px -3px rgba(13,37,69,.08)}
-.auth-brand-row{display:flex;align-items:center;gap:11px;font-size:18px;font-weight:700;
-  color:var(--ink);margin-bottom:24px}
+.auth-brand-row{display:flex;align-items:center;justify-content:center;color:var(--ink);margin-bottom:20px}
+.auth-logo{width:190px}
 .auth-row{display:flex;align-items:center;gap:10px;justify-content:space-between}
 .auth-link{border:0;background:none;padding:0;font-size:12.5px;color:var(--accent);
   cursor:pointer;font-weight:500}
@@ -276,7 +278,8 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 .lp-inner{max-width:1160px;margin:0 auto;padding:0 28px}
 .lp-mark{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;
   background:var(--accent-grad);color:#fff;font-size:13px;box-shadow:0 6px 14px -6px rgba(11,92,255,.6),inset 0 1px 0 rgba(255,255,255,.35)}
-.lp-logo{display:inline-flex;align-items:center;gap:10px;font-size:17px;font-weight:600;color:var(--lp-ink);text-decoration:none;letter-spacing:-.01em}
+.lp-logo{display:inline-flex;align-items:center;color:var(--lp-ink);text-decoration:none}
+.lp-logo-image{width:126px}
 
 .lp-nav{position:sticky;top:0;z-index:5;background:rgba(244,248,255,.8);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--lp-line)}
 .lp-nav-inner{max-width:1160px;margin:0 auto;padding:15px 28px;display:flex;align-items:center;justify-content:space-between}
@@ -442,6 +445,11 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
   .lp-placement{position:static;margin-top:18px;right:auto;bottom:auto}
   .lp-footer-inner{flex-direction:column;text-align:center}
   .lp-stats{gap:26px}
+  .lp-logo-image{width:108px}
+  .lp-nav-inner{padding:8px 14px}
+  .lp-links{gap:2px}
+  .lp-signin{padding:8px}
+  .landing .lp-links .btn{padding:9px 11px}
 }
 
 /* --- Modals ------------------------------------------------------------ */
@@ -1281,6 +1289,7 @@ tr.is-selected{background:var(--accent-soft)}
 .verify-card{background:var(--white);border:1px solid var(--line);border-radius:16px;
   width:min(440px,100%);padding:34px 32px 26px;text-align:center;
   box-shadow:0 20px 40px -18px rgba(13,37,69,.28)}
+.verify-logo{width:180px;margin:0 auto 8px}
 .verify-mark{font-size:40px;color:var(--accent);margin-bottom:14px}
 .verify-card h1{font-size:21px;margin:0 0 10px;color:var(--ink-strong)}
 .verify-card p{font-size:14px;color:var(--faint);line-height:1.6;margin:0 0 18px}

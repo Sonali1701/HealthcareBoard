@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/app.css">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231A9E9E'/><text x='16' y='23' font-size='18' text-anchor='middle' fill='white' font-family='serif'>M</text></svg>">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 </head>
 <body>
 {% set role = user.role.value if user else 'guest' %}
@@ -18,9 +18,7 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <a class="logo-mark" href="/">
-        <div class="logo-icon"><i class="fas fa-heart-pulse"></i></div>
-        <div><div class="logo-text">Med<span>Hunt</span></div>
-          <div class="logo-sub">Staffing platform</div></div>
+        <img class="sidebar-brand-logo" src="/assets/medhunt-logo.png" alt="MedHunt">
       </a>
     </div>
 

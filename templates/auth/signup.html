@@ -3,6 +3,7 @@
 {% block content %}
 <div class="container" style="max-width:480px;margin-top:40px">
   <div class="panel">
+    <a class="auth-page-logo" href="/" aria-label="MedHunt home"><img src="/assets/medhunt-logo.png" alt="MedHunt"></a>
     <h2 class="center">Create your account</h2>
     {% if error %}<div class="form-err">{{ error }}</div>{% endif %}
     <form method="post" action="/signup" class="mt" id="signup-form">

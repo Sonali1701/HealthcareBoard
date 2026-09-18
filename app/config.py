@@ -176,6 +176,10 @@ class Settings(BaseSettings):
     # read timeout has to be generous — the usual 30s would fail every lookup.
     quick_sourcer_timeout: float = 150.0
 
+    # Shared backend credential for asynchronous Medhunt reply events. Keep it
+    # identical to MEDHUNT_HEALTHBOARD_SERVICE_TOKEN on the Medhunt service.
+    medhunt_service_token: str = ""
+
     @model_validator(mode="after")
     def _prefer_gemini_key(self):
         """If GEMINI_API_KEY is set, use it as the LLM key (paid key wins)."""

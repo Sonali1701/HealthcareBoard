@@ -87,6 +87,16 @@ def medhunt_extension_activity(
             AuditLog.created_at >= since,
         ).order_by(AuditLog.created_at.desc())
     ).all()
+    sms_events = db.scalars(
+        select(AuditLog).where(
+            AuditLog.actor_user_id.in_(member_ids),
+            AuditLog.action.in_((
+                "medhunt_sms_received", "medhunt_sms_sent",
+                "medhunt_conversation_assigned",
+            )),
+            AuditLog.created_at >= since,
+        ).order_by(AuditLog.created_at.desc())
+    ).all()
 
     users = {u.user_id: u for u in db.scalars(
         select(User).where(User.user_id.in_(member_ids))
@@ -161,11 +171,23 @@ def medhunt_extension_activity(
             "enrichments": sum(1 for event in events
                                if event.action == MEDHUNT_ENRICHED_ACTION),
             "candidates_enriched": len(enriched_candidates),
+            "sms_sent": sum(1 for event in sms_events if event.action == "medhunt_sms_sent"),
+            "sms_replies": sum(1 for event in sms_events if event.action == "medhunt_sms_received"),
+            "sms_assignments": sum(1 for event in sms_events if event.action == "medhunt_conversation_assigned"),
         },
         "members": members,
         "sources": [{"source": source, "enriched": count}
                     for source, count in source_counts.most_common()],
         "activity": activity[:100],
+        "sms_activity": [{
+            "event_id": event.entity_id,
+            "user_id": event.actor_user_id,
+            "type": event.action.removeprefix("medhunt_"),
+            "candidate_id": (event.meta or {}).get("candidate_id"),
+            "candidate_name": (event.meta or {}).get("candidate_name"),
+            "conversation_id": (event.meta or {}).get("conversation_id"),
+            "used_at": event.created_at,
+        } for event in sms_events[:100]],
     }
 
 
@@ -331,6 +353,21 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
         AuditLog.action.in_((MEDHUNT_ENRICHED_ACTION, MEDHUNT_ATTEMPT_ACTION)),
         AuditLog.created_at >= since,
     ))
+    medhunt_sms_sent = count(select(func.count()).select_from(AuditLog).where(
+        AuditLog.actor_user_id == uid,
+        AuditLog.action == "medhunt_sms_sent",
+        AuditLog.created_at >= since,
+    ))
+    medhunt_sms_replies = count(select(func.count()).select_from(AuditLog).where(
+        AuditLog.actor_user_id == uid,
+        AuditLog.action == "medhunt_sms_received",
+        AuditLog.created_at >= since,
+    ))
+    medhunt_sms_assignments = count(select(func.count()).select_from(AuditLog).where(
+        AuditLog.actor_user_id == uid,
+        AuditLog.action == "medhunt_conversation_assigned",
+        AuditLog.created_at >= since,
+    ))
     pool_ids = db.scalars(select(TalentPool.pool_id)
                           .where(TalentPool.owner_user_id == uid)).all()
     shortlisted = count(select(func.count()).select_from(TalentPoolMember)
@@ -372,6 +409,9 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
             "enriched_total": medhunt_enriched,
             "enriched_recent": medhunt_enriched_recent,
             "attempts_recent": medhunt_attempts_recent,
+            "sms_sent_recent": medhunt_sms_sent,
+            "sms_replies_recent": medhunt_sms_replies,
+            "sms_assignments_recent": medhunt_sms_assignments,
         },
         "pools": {
             "pools": len(pool_ids),
