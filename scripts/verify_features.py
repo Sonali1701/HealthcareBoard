@@ -109,7 +109,10 @@ def run_api_checks(base: str) -> str | None:
 
     # --- AI matching ---
     mr = c.post("/api/matching/run", json={"specialty": "Allergy & Immunology", "top_n": 50}, headers=auth)
-    if mr.status_code != 200:
+    mtotal = mr.json().get("summary", {}).get("total", 0) if mr.status_code == 200 else 0
+    # A healthy endpoint can legitimately return an empty specialty slice. The
+    # release check needs to prove that ranking seeded candidates also works.
+    if mr.status_code != 200 or mtotal == 0:
         mr = c.post("/api/matching/run", json={"top_n": 50}, headers=auth)
     mtotal = mr.json().get("summary", {}).get("total", 0) if mr.status_code == 200 else 0
     check("Matching", "run AI matching", mr.status_code == 200 and mtotal > 0, f"{mtotal} candidates")

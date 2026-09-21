@@ -4,20 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MedHunt</title>
-  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="preload" href="/assets/medhunt-logo.png" as="image">
+  <link rel="icon" href="/assets/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
+  <link rel="preload" href="/assets/medhunt-logo.jpg?v={{ asset_version }}" as="image" type="image/jpeg">
   <meta name="description" content="A screened directory of healthcare professionals, live roles from real facilities, and credentials you can actually check.">
   <meta name="theme-color" content="#0d2545">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <link rel="stylesheet" href="/assets/css/launch-board.css">
+  <link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/assets/css/launch-board.css?v={{ asset_version }}">
 </head>
 <body>
 <!-- Shown while we validate an existing session so the login form never flashes. -->
 <div id="boot-splash" class="boot-splash">
-  <img class="product-logo boot-logo" src="/assets/medhunt-logo.png" alt="MedHunt">
+  <img class="product-logo boot-logo" src="/assets/medhunt-logo.jpg?v={{ asset_version }}" alt="MedHunt">
   <div class="spinner big"></div>
   <div class="boot-text">Loading your workspace…</div>
 </div>
@@ -26,7 +23,7 @@
 <div id="landing" class="landing hidden">
   <header class="lp-nav">
     <div class="lp-nav-inner">
-      <a class="lp-logo" href="#top" aria-label="MedHunt home"><img class="product-logo lp-logo-image" src="/assets/medhunt-logo.png" alt="MedHunt"></a>
+      <a class="lp-logo" href="#top" aria-label="MedHunt home"><img class="product-logo lp-logo-image" src="/assets/medhunt-logo.jpg?v={{ asset_version }}" alt="MedHunt"></a>
       <nav class="lp-links">
         <a href="#platform">Platform</a>
         <a href="#pipeline">How it works</a>
@@ -166,7 +163,7 @@
 
   <footer class="lp-footer">
     <div class="lp-inner lp-footer-inner">
-      <a class="lp-logo" href="#top" aria-label="MedHunt home"><img class="product-logo lp-logo-image" src="/assets/medhunt-logo.png" alt="MedHunt"></a>
+      <a class="lp-logo" href="#top" aria-label="MedHunt home"><img class="product-logo lp-logo-image" src="/assets/medhunt-logo.jpg?v={{ asset_version }}" alt="MedHunt"></a>
       <nav class="lp-foot-links">
         <a href="#platform">Platform</a>
         <a href="#pipeline">How it works</a>
@@ -184,7 +181,7 @@
   <div class="auth-shell">
     <button class="auth-back" id="auth-back"><i class="fas fa-arrow-left"></i>Back to home</button>
     <div class="auth-card">
-      <a class="auth-brand-row" href="/" aria-label="MedHunt home"><img class="product-logo auth-logo" src="/assets/medhunt-logo.png" alt="MedHunt"></a>
+      <a class="auth-brand-row" href="/" aria-label="MedHunt home"><img class="product-logo auth-logo" src="/assets/medhunt-logo.jpg?v={{ asset_version }}" alt="MedHunt"></a>
       <div class="auth-tabs">
         <button class="auth-tab active" data-auth-mode="login">Sign in</button>
         <button class="auth-tab" data-auth-mode="signup">Create account</button>
@@ -224,7 +221,7 @@
 
 <div id="verify-gate" class="verify-gate hidden">
   <div class="verify-card">
-    <img class="product-logo verify-logo" src="/assets/medhunt-logo.png" alt="MedHunt">
+    <img class="product-logo verify-logo" src="/assets/medhunt-logo.jpg?v={{ asset_version }}" alt="MedHunt">
     <div class="verify-mark"><i class="fas fa-envelope-circle-check"></i></div>
     <h1>Confirm your email</h1>
     <p>We sent a verification link to <strong id="verify-email">your email</strong>.
@@ -241,7 +238,7 @@
 <div class="app-shell hidden" id="app-shell">
   <aside class="sidebar">
     <a class="logo" href="#" data-page="dashboard">
-      <img class="product-logo app-logo" src="/assets/medhunt-logo.png" alt="MedHunt">
+      <img class="product-logo app-logo" src="/assets/medhunt-logo.jpg?v={{ asset_version }}" alt="MedHunt">
     </a>
     <nav class="nav">
       <div class="nav-label">Main</div>
@@ -910,6 +907,6 @@
   </button>
 </div>
 
-<script src="/assets/js/launch-board.js"></script>
+<script src="/assets/js/launch-board.js?v={{ asset_version }}"></script>
 </body>
 </html>

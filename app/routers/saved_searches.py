@@ -159,15 +159,10 @@ def list_searches(user: CurrentUser, db: DbSession, kind: Optional[str] = None):
     elif not _is_recruiter_or_admin(user):
         stmt = stmt.where(SavedSearch.kind == "jobs")
     rows = db.scalars(stmt.order_by(SavedSearch.updated_at.desc())).all()
-    # Report current matches and the delta against the recorded baseline so the
-    # alert chips can render "+N" without a separate /check round-trip. This does
-    # not disturb the baseline — only POST /check acknowledges growth.
-    items = []
-    for s in rows:
-        current = _count_matches(db, s.params or {}, s.kind)
-        baseline = s.last_count if s.last_count is not None else current
-        items.append(_json(s, matches=current, new=max(0, current - baseline)))
-    return {"items": items}
+    # Listing searches should be cheap. Re-counting here duplicates the work in
+    # POST /check and can turn one page load into two full profile/job scans per
+    # saved search. Return the most recently checked count instead.
+    return {"items": [_json(s, matches=s.last_count, new=0) for s in rows]}
 
 
 @router.post("", status_code=201)

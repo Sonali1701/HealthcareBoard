@@ -6,15 +6,13 @@
 <meta name='description' content='{% block description %}MedHunt legal information.{% endblock %}'>
 <meta name='theme-color' content='#081a38'>
 <title>{% block title %}{% endblock %} | MedHunt</title>
-<link rel='preconnect' href='https://fonts.googleapis.com'>
-<link href='https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap' rel='stylesheet'>
-<link rel='icon' href='/assets/favicon.svg' type='image/svg+xml'>
-<link rel='stylesheet' href='/assets/css/legal.css'>
+<link rel='icon' href='/assets/favicon.svg?v={{ asset_version }}' type='image/svg+xml'>
+<link rel='stylesheet' href='/assets/css/legal.css?v={{ asset_version }}'>
 </head>
 <body>
 <a class='skip-link' href='#legal-content'>Skip to legal content</a>
 <header class='site-header'><div class='header-inner'>
-<a class='brand' href='/' aria-label='MedHunt home'><img class='legal-logo' src='/assets/medhunt-logo.png' alt='MedHunt'></a>
+<a class='brand' href='/' aria-label='MedHunt home'><img class='legal-logo' src='/assets/medhunt-logo.jpg?v={{ asset_version }}' alt='MedHunt'></a>
 <nav class='header-nav' aria-label='Legal navigation'>
 <a href='/privacy' {% if page_key == 'privacy' %}aria-current='page'{% endif %}>Privacy</a>
 <a href='/terms' {% if page_key == 'terms' %}aria-current='page'{% endif %}>Terms</a>

@@ -16,7 +16,7 @@
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{font-family:var(--font-body);background:var(--gray-50);color:var(--gray-800);min-height:100vh}
+body{font-family:var(--font-body);background:var(--gray-50);color:var(--gray-800);min-height:100vh;overflow-x:hidden}
 a{color:var(--teal);text-decoration:none}
 a:hover{text-decoration:underline}
 h1,h2,h3{font-family:var(--font-display);font-weight:400;color:var(--gray-800);line-height:1.2}
@@ -163,3 +163,26 @@ table.tbl tr:hover td{background:var(--gray-50)}
 .tabs{display:flex;border-bottom:2px solid var(--gray-200);margin-bottom:18px}
 .tab{padding:10px 18px;font-size:14px;color:var(--gray-400);border-bottom:2px solid transparent;margin-bottom:-2px}
 .tab.active{color:var(--teal);border-bottom-color:var(--teal);font-weight:500}
+
+@media(max-width:860px){
+  .container{padding:20px 18px}
+  .app-grid{grid-template-columns:1fr!important}
+  .grid.cols-2,.grid.cols-3{grid-template-columns:1fr!important}
+  .list-card{grid-template-columns:44px minmax(0,1fr)!important;gap:12px;padding:16px}
+  .list-card>div:last-child{grid-column:2;text-align:left!important}
+  .topbar{padding:0 16px}
+  .topbar-search{max-width:none;min-width:0}
+  .hero,.search-hero{padding:34px 0}
+  .hero h1,.search-hero h1{font-size:clamp(26px,7vw,34px)}
+  table.tbl{display:block;overflow-x:auto;white-space:nowrap}
+}
+@media(max-width:560px){
+  .container{padding:16px 14px}
+  .topbar-actions{gap:5px}
+  .topbar-actions .btn{padding-left:10px;padding-right:10px}
+  .searchbar{padding:6px}
+  .panel,.card{padding:16px}
+  .auth-page-logo{width:min(190px,72vw)}
+  .signup-name-row{flex-direction:column!important;gap:0!important}
+  .bubble{max-width:88%}
+}

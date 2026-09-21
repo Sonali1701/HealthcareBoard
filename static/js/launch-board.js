@@ -105,6 +105,7 @@
 
   async function api(method, path, body, _retried){
     const headers = {};
+    let transientAuthFailure = false;
     if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
     if (token()) headers.Authorization = "Bearer " + token();
     // no-store: this data (threads, pools, counts) changes constantly, and a
@@ -129,7 +130,10 @@
         signOutExpired();
         const err = new Error("Session expired"); err.status = 401; err.expired = true; throw err;
       }
-      // "error" (network/transient): fall through and surface the original 401.
+      // A network/5xx failure while refreshing is not proof that the session is
+      // dead. Preserve the tokens so a page refresh can retry instead of
+      // turning a temporary outage into an apparent logout.
+      transientAuthFailure = true;
     }
     const text = await res.text();
     let data = null;
@@ -138,6 +142,7 @@
       const detail = data && data.detail ? data.detail : res.statusText;
       const err = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
       err.status = res.status;
+      err.transientAuth = transientAuthFailure;
       throw err;
     }
     return data;
@@ -216,7 +221,7 @@
     if (!isAdmin() && $("#page-admin").classList.contains("active")) showPage("dashboard");
   }
 
-  async function loadMe(){
+  async function loadMe(attempt=0){
     if (!token()) return false;
     try {
       S.user = await get("/api/auth/me");
@@ -242,7 +247,17 @@
       $("#app-shell").classList.remove("hidden");
       return true;
     } catch(e) {
-      setToken(""); setRefresh(""); return false;
+      // Do not destroy a usable refresh token because the first request after
+      // navigation raced the API restarting or a connection briefly dropped.
+      // One short retry is enough to cover normal mobile/network handoffs.
+      if (attempt === 0 && (e.transientAuth || !e.status || e.status >= 500)) {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        return loadMe(1);
+      }
+      if (e.expired || e.superseded) {
+        setToken(""); setRefresh("");
+      }
+      return false;
     }
   }
 
@@ -1011,12 +1026,6 @@
     S.providerInflight.set(key, req);
     return req;
   }
-  function prefetchProviderTabs(){
-    if (hasNonCategoryFilters()) return;  // only warm tabs on an unfiltered browse
-    ["Physicians","Nursing","Allied","APP","Others"].forEach(category => {
-      fetchProviders(providerParams({...S.provider, category}, {offset:0, count:false})).catch(()=>{});
-    });
-  }
   // The headline shows the whole directory's size and stays constant regardless of
   // the selected tab/filter. The current view's count lives on the tabs + the pager.
   function providerCountLabel(){
@@ -1166,7 +1175,6 @@
       S.providerLastData = data;
       renderProviderPage(data);
       renderPager(data);
-      prefetchProviderTabs();
     } catch(e) {
       $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, e.status === 403 ? "Recruiter access required." : "Could not load providers.");
       $("#providers-pager").innerHTML = "";
@@ -3129,7 +3137,21 @@
       const tile = e.target.closest(".metric[data-page]");
       if (tile) showPage(tile.dataset.page);
     });
-    $("#logout-btn").onclick = () => { setToken(""); setRefresh(""); location.reload(); };
+    $("#logout-btn").onclick = async () => {
+      // Revoke the server-side refresh session as well as clearing this browser.
+      // Clearing localStorage alone leaves a copied refresh token usable.
+      const rt = localStorage.getItem("hb_refresh");
+      if (rt) {
+        try {
+          await fetch("/api/auth/logout", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            cache:"no-store", keepalive:true,
+            body:JSON.stringify({refresh_token:rt}),
+          });
+        } catch(e) { /* local sign-out must still succeed while offline */ }
+      }
+      setToken(""); setRefresh(""); location.reload();
+    };
     // Verification gate (only reached when email delivery is on).
     const vCont = $("#verify-continue");
     if (vCont) vCont.onclick = async () => {
@@ -4863,8 +4885,17 @@
   // for professionals (job alerts) as well as recruiters (candidate alerts),
   // on app load, since there is no scheduler yet.
   async function checkSavedSearches(){
+    // Refreshes and repeat visits should not re-run every saved-search count.
+    // A five-minute client throttle keeps notifications timely while avoiding
+    // repeated database scans during ordinary navigation.
+    const key = `hb_search_check_at:${S.user && S.user.user_id || "user"}`;
+    try {
+      const last = Number(localStorage.getItem(key) || 0);
+      if (last && Date.now() - last < 5 * 60 * 1000) return;
+    } catch(e) {}
     try {
       const d = await post("/api/saved-searches/check", {});
+      try { localStorage.setItem(key, String(Date.now())); } catch(e) {}
       const byId = {};
       (d.results || []).forEach(r => { byId[r.search_id] = r.new; });
       (S.searches || []).forEach(s => { s.new_matches = byId[s.search_id] || 0; });
@@ -5470,13 +5501,11 @@
       ? requested : (saved && document.getElementById("page-" + saved) ? saved : "dashboard");
     showPage(initial);
     handlePurchaseReturn();
-    loadJobs();
     refreshUnreadBadge();
     refreshNotificationBadge();
     refreshCredits();
     if (isRecruiter()){
       loadFeatures().then(() => { if (S.providerLastData) renderProviderPage(S.providerLastData); });
-      loadProviderFacets();
       // Standing searches are re-counted on entry; anything that grew since
       // the last visit turns into a notification.
       loadSavedSearches().then(checkSavedSearches);
@@ -5504,6 +5533,11 @@
     } catch(_){}
     // A splash covers the screen while we validate an existing token, so a
     // logged-in user never sees the login form flash on refresh.
+    // If a browser restored the refresh token but lost only the short-lived
+    // access token, rebuild the access pair before deciding the user is out.
+    if (!token() && localStorage.getItem("hb_refresh")) {
+      await refreshTokens();
+    }
     if (token()) {
       const ok = await loadMe();
       if (ok === "pending") {

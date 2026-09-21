@@ -172,14 +172,25 @@ async def attach_web_user(request: Request, call_next):
 
 
 @app.middleware("http")
-async def _no_cache_app_assets(request: Request, call_next):
-    """Never let browsers cache the app HTML / JS / CSS — otherwise an old cached
-    asset (e.g. from before a feature was added) breaks styling or behaviour."""
+async def _cache_policy(request: Request, call_next):
+    """Keep dynamic responses fresh while caching versioned static assets."""
     response = await call_next(request)
     path = request.url.path
-    if (path in _PROTOTYPE_ROUTES or path.startswith("/ui/") or path == "/"
-            or path.startswith("/api/")   # API reads must never come from cache
-            or (path.startswith(("/static/", "/assets/")) and path.endswith((".js", ".css", ".html")))):
+    is_asset = path.startswith(("/static/", "/assets/"))
+    # Font Awesome's CSS resolves its pinned, locally bundled font files by a
+    # relative URL, so those immutable vendor fonts do not carry the template's
+    # query-string version themselves.
+    is_pinned_vendor_font = path.startswith(
+        "/assets/vendor/fontawesome/webfonts/"
+    ) and path.endswith(".woff2")
+    if is_asset and (request.query_params.get("v") or is_pinned_vendor_font):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        if "Pragma" in response.headers:
+            del response.headers["Pragma"]
+        if "Expires" in response.headers:
+            del response.headers["Expires"]
+    elif (path in _PROTOTYPE_ROUTES or path.startswith("/ui/") or path == "/"
+          or path.startswith("/api/") or is_asset):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container" style="max-width:480px;margin-top:40px">
   <div class="panel">
-    <a class="auth-page-logo" href="/" aria-label="MedHunt home"><img src="/assets/medhunt-logo.png" alt="MedHunt"></a>
+    <a class="auth-page-logo" href="/" aria-label="MedHunt home"><img src="/assets/medhunt-logo.jpg?v={{ asset_version }}" alt="MedHunt"></a>
     <h2 class="center">Create your account</h2>
     {% if error %}<div class="form-err">{{ error }}</div>{% endif %}
     <form method="post" action="/signup" class="mt" id="signup-form">
@@ -22,7 +22,7 @@
           </label>
         </div>
       </div>
-      <div class="row" style="gap:10px">
+      <div class="row signup-name-row" style="gap:10px">
         <div class="field" style="flex:1">
           <label class="label">First name</label>
           <input class="input" name="first_name" value="{{ first_name or '' }}">

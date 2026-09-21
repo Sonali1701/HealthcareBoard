@@ -1,6 +1,7 @@
 """Web layer plumbing: templates, cookie sessions, flash messages, auth deps."""
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeSerializer
 from sqlalchemy.orm import Session
 
+from .. import __version__
 from ..config import settings
 from ..database import get_db
 from ..models import User, UserStatus
@@ -26,6 +28,31 @@ _flash_signer = URLSafeSerializer(settings.jwt_secret, salt="hb-flash")
 
 # Template globals
 templates.env.globals["app_name"] = "MedHunt"
+
+
+def _asset_version() -> str:
+    """Content fingerprint so every asset change invalidates browser caches."""
+    digest = hashlib.sha256()
+    static_root = PROJECT_ROOT / "static"
+    files = (
+        "css/app.css", "css/launch-board.css", "css/legal.css",
+        "js/launch-board.js", "medhunt-logo.jpg", "favicon.svg",
+        "vendor/fontawesome/css/all.min.css",
+        "vendor/fontawesome/webfonts/fa-solid-900.woff2",
+        "vendor/fontawesome/webfonts/fa-regular-400.woff2",
+        "vendor/htmx/htmx.min.js",
+    )
+    found = False
+    for relative in files:
+        path = static_root / relative
+        if path.is_file():
+            found = True
+            digest.update(relative.encode("utf-8"))
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:12] if found else __version__
+
+
+templates.env.globals["asset_version"] = _asset_version()
 
 
 # --- Redirect-based auth guard --------------------------------------------
