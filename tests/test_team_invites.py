@@ -112,7 +112,57 @@ class TeamInviteAcceptanceTests(unittest.TestCase):
         self.assertEqual(report["summary"]["users"], 2)
         self.assertEqual(report["summary"]["checks"], 2)
         self.assertEqual(report["summary"]["candidates_enriched"], 1)
-        self.assertEqual(report["sources"], [{"source": "indeed", "enriched": 1}])
+        self.assertEqual({row["source"]: (row["checks"], row["enriched"])
+                          for row in report["sources"]},
+                         {"indeed": (1, 1), "vivian": (1, 0)})
+        self.assertEqual(report["daily"][0]["checks"], 2)
+        self.assertEqual(report["daily"][0]["users"], 2)
+        self.assertEqual(report["daily"][0]["candidates_enriched"], 1)
+        self.assertEqual(report["activity_total"], 2)
+        self.assertEqual(len(report["member_options"]), 2)
+
+        filtered = analytics.medhunt_extension_activity(
+            self.owner, self.db, days=30, employer_id=self.org.employer_id,
+            member_id=self.owner.user_id, source="INDEED", outcome="enriched",
+            page=1, page_size=1,
+        )
+        self.assertEqual(filtered["summary"]["checks"], 1)
+        self.assertEqual(filtered["summary"]["enrichments"], 1)
+        self.assertEqual(filtered["activity_total"], 1)
+        self.assertEqual(filtered["activity"][0]["user_email"], self.owner.email)
+        self.assertEqual(filtered["activity"][0]["event_id"], "owner-event")
+        self.assertEqual(len(filtered["source_options"]), 2)
+
+        today = utcnow().date()
+        by_platform_and_date = analytics.medhunt_extension_activity(
+            self.owner, self.db, days=30, employer_id=self.org.employer_id,
+            platform="indeed", date_from=today, date_to=today,
+        )
+        self.assertEqual(by_platform_and_date["summary"]["checks"], 1)
+        self.assertEqual(by_platform_and_date["activity"][0]["platform"], "indeed")
+        self.assertEqual(by_platform_and_date["filters"]["date_from"], today.isoformat())
+        self.assertEqual(by_platform_and_date["platform_options"], ["indeed", "vivian"])
+
+        with self.assertRaises(HTTPException) as invalid_range:
+            analytics.medhunt_extension_activity(
+                self.owner, self.db, days=30, employer_id=self.org.employer_id,
+                date_from=today, date_to=today - timedelta(days=1),
+            )
+        self.assertEqual(invalid_range.exception.status_code, 422)
+
+        second_page = analytics.medhunt_extension_activity(
+            self.owner, self.db, days=30, employer_id=self.org.employer_id,
+            page=2, page_size=1,
+        )
+        self.assertEqual(second_page["activity_total"], 2)
+        self.assertEqual(len(second_page["activity"]), 1)
+
+        with self.assertRaises(HTTPException) as denied:
+            analytics.medhunt_extension_activity(
+                self.invitee, self.db, days=30, employer_id=self.org.employer_id,
+                member_id=self.owner.user_id,
+            )
+        self.assertEqual(denied.exception.status_code, 403)
 
     def test_invite_cannot_be_claimed_by_a_different_email(self):
         invite = self._invite()

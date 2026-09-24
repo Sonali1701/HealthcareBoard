@@ -179,6 +179,7 @@ class Settings(BaseSettings):
     # Shared backend credential for asynchronous Medhunt reply events. Keep it
     # identical to MEDHUNT_HEALTHBOARD_SERVICE_TOKEN on the Medhunt service.
     medhunt_service_token: str = ""
+    medhunt_api_base_url: str = ""
 
     @model_validator(mode="after")
     def _prefer_gemini_key(self):

@@ -384,7 +384,88 @@
     if (name === "orgs") loadAdminOrgs();
     if (name === "jobs") loadAdminJobs();
     if (name === "logins") loadAdminLogins();
+    if (name === "devices") loadMedhuntDevices("#admin-medhunt-devices");
+    if (name === "replies") loadMedhuntReplies("#admin-medhunt-replies");
     if (name === "audit") loadAdminAudit();
+  }
+
+  const medhuntDate = value => value ? new Date(Number(value) * 1000).toLocaleString() : "—";
+  const medhuntPath = employerId => employerId ? `?employer_id=${encodeURIComponent(employerId)}` : "";
+
+  async function loadMedhuntDevices(selector, employerId=""){
+    const box = $(selector);
+    if (!box) return;
+    box.innerHTML = loading("Loading registered devices...");
+    try {
+      const data = await get("/api/extension/medhunt/devices" + medhuntPath(employerId));
+      const multiple = data.multi_device_accounts || [];
+      box.innerHTML = `${multiple.length ? `<p class="team-note"><b>Multiple approved devices:</b> ${multiple.map(a => `${esc(a.email || a.user_id)} (${Number(a.device_count)})`).join(", ")}</p>` : ""}
+        <div class="table-wrap"><table class="table"><thead><tr><th>Account</th><th>Device</th><th>Status</th><th>Last used</th><th></th></tr></thead>
+        <tbody>${(data.items || []).length ? data.items.map(d => `<tr>
+          <td>${esc(d.user_email || d.user_id)}</td>
+          <td>${esc(d.device_name || "Browser")} · ${esc(d.installation_suffix || "")}</td>
+          <td>${esc(d.status)}${Number(d.approved_device_count || 0) > 1 ? ` · ${Number(d.approved_device_count)} devices` : ""}</td>
+          <td>${esc(medhuntDate(d.last_seen))}</td>
+          <td>${d.status === "pending" ? `<button class="btn small primary" data-medhunt-approve="${Number(d.id)}" data-medhunt-org="${esc(employerId)}">Approve</button>` : ""}</td>
+        </tr>`).join("") : `<tr><td colspan="5">No registered devices.</td></tr>`}</tbody></table></div>`;
+    } catch(e) { box.innerHTML = errorState("Could not load extension devices.", e.message); }
+  }
+
+  async function approveMedhuntDevice(button){
+    try {
+      await post(`/api/extension/medhunt/devices/${Number(button.dataset.medhuntApprove)}/approve${medhuntPath(button.dataset.medhuntOrg)}`, {});
+      toast("Device approved.", {title:"Extension devices"});
+      loadMedhuntDevices(button.dataset.medhuntOrg ? "#org-medhunt-devices" : "#admin-medhunt-devices", button.dataset.medhuntOrg || "");
+    } catch(e) { toast(e.message || "Could not approve device.", {kind:"err"}); }
+  }
+
+  async function loadMedhuntReplies(selector, employerId=""){
+    const box = $(selector);
+    if (!box) return;
+    box.innerHTML = loading("Loading candidate replies...");
+    try {
+      const data = await get("/api/extension/medhunt/conversations" + medhuntPath(employerId));
+      const items = (data.items || []).filter(item => ["replied", "assigned"].includes(item.status));
+      box.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Candidate</th><th>Status</th><th>Assigned recruiter</th><th>Last activity</th><th></th></tr></thead>
+        <tbody>${items.length ? items.map(c => `<tr>
+          <td>${esc(c.candidate_name || "Candidate")}</td><td>${esc(c.status)}</td>
+          <td>${esc(c.assigned_recruiter_email || "Unassigned")}</td>
+          <td>${esc(medhuntDate(c.last_message_at || c.updated))}</td>
+          <td><button class="btn small" data-medhunt-conversation="${Number(c.id)}" data-medhunt-org="${esc(employerId)}">Review &amp; assign</button></td>
+        </tr>`).join("") : `<tr><td colspan="5">No candidate replies yet.</td></tr>`}</tbody></table></div>`;
+    } catch(e) { box.innerHTML = errorState("Could not load candidate replies.", e.message); }
+  }
+
+  async function openMedhuntConversation(button){
+    const id = Number(button.dataset.medhuntConversation);
+    const employerId = button.dataset.medhuntOrg || "";
+    try {
+      const path = medhuntPath(employerId);
+      const [conversation, recruiters] = await Promise.all([
+        get(`/api/extension/medhunt/conversations/${id}${path}`),
+        get(`/api/extension/medhunt/conversations/${id}/recruiters${path}`),
+      ]);
+      const messages = conversation.messages || [];
+      $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card form-card">
+        <div class="modal-head"><strong>${esc(conversation.candidate_name || "Candidate reply")}</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div>
+        <div class="dlg-body"><div class="msg-bubbles" style="max-height:45vh;overflow:auto">${messages.map(m => `<p><b>${m.direction === "inbound" ? "Candidate" : "Recruiter"}:</b> ${esc(m.body || "")}</p>`).join("")}</div>
+          <label>Assign recruiter<select class="input" id="medhunt-recruiter"><option value="">Choose recruiter</option>${(recruiters.items || []).map(r => `<option value="${esc(r.user_id)}"${r.user_id === conversation.assigned_recruiter_id ? " selected" : ""}>${esc(r.name || r.email)}</option>`).join("")}</select></label></div>
+        <div class="dlg-foot"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="medhunt-assign">Assign recruiter</button></div>
+      </div></div>`;
+      $("#medhunt-assign").onclick = async () => {
+        const recruiter_user_id = $("#medhunt-recruiter").value;
+        if (!recruiter_user_id) return toast("Choose a recruiter.", {kind:"err"});
+        try {
+          await post("/api/extension/medhunt/conversations/assign" + medhuntPath(employerId), {
+            conversation_id:String(id), candidate_id:String(conversation.candidate_id),
+            recruiter_user_id,
+          });
+          $("#modal-root").innerHTML = "";
+          toast("Candidate reply assigned.", {title:"Candidate replies"});
+          loadMedhuntReplies(employerId ? "#org-medhunt-replies" : "#admin-medhunt-replies", employerId);
+        } catch(e) { toast(e.message || "Could not assign recruiter.", {kind:"err"}); }
+      };
+    } catch(e) { toast(e.message || "Could not open candidate reply.", {kind:"err"}); }
   }
 
   async function loadAdminLogins(){
@@ -1806,12 +1887,16 @@
               <td>${Number(m.reveals).toLocaleString()}</td>
               <td>${Number(m.medhunt_enriched || 0).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
           <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your MedHunt administrator.</p></div>` : ""}
+        ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>Candidate replies</h2><p class="team-note">Review SMS replies and assign them to a recruiter on your team.</p><div id="org-medhunt-replies"></div></div>` : ""}
+        ${perms.manage_roles ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
       `;
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
       const iv = $("#oa-invite"); if (iv) iv.onclick = inviteTeammate;
       $$("#orgadmin-panel [data-member-remove]").forEach(b => b.onclick = () => removeTeammate(b.dataset.memberRemove));
       $$("#orgadmin-panel [data-invite-revoke]").forEach(b => b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
       $$("#orgadmin-panel [data-member-role]").forEach(s => s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
+      if (perms.analytics) loadMedhuntReplies("#org-medhunt-replies", emp.employer_id);
+      if (perms.manage_roles) loadMedhuntDevices("#org-medhunt-devices", emp.employer_id);
     } catch(e) { box.innerHTML = errorState("Could not load your organization.", e.message || ""); }
   }
 
@@ -3247,6 +3332,10 @@
       if (aAct) adminUpdateUser(aAct.dataset.adminActivate, {status:"active"});
       const aTab = e.target.closest(".admin-tab");
       if (aTab) showAdminTab(aTab.dataset.atab);
+      const mApprove = e.target.closest("[data-medhunt-approve]");
+      if (mApprove) approveMedhuntDevice(mApprove);
+      const mConversation = e.target.closest("[data-medhunt-conversation]");
+      if (mConversation) openMedhuntConversation(mConversation);
       const aUser = e.target.closest("[data-admin-user]");
       if (aUser) openAdminUser(aUser.dataset.adminUser);
       const aOrg = e.target.closest("[data-admin-org]");
@@ -4664,20 +4753,86 @@
   const FUNNEL_ORDER = [["applied","Applied"],["screening","Screening"],
                         ["interview","Interview"],["offer","Offer"],["hired","Hired"]];
 
+  const extensionAnalyticsFilters = {days:30, date_from:"", date_to:"", member_id:"", platform:"", provider:"", outcome:"", page:1, orgId:null};
+  function renderExtensionAnalytics(ext){
+    const ex = ext.summary || {}, members = ext.members || [], days = ext.daily || [];
+    const activity = ext.activity || [], sources = ext.sources || [];
+    const current = extensionAnalyticsFilters;
+    const option = (value, label, selectedValue) => `<option value="${esc(value)}"${value === selectedValue ? " selected" : ""}>${esc(label)}</option>`;
+    const memberOptions = (ext.member_options || []).map(m => option(m.user_id, m.name || m.email || "Team member", current.member_id)).join("");
+    const platformOptions = (ext.platform_options || ext.source_options || []).map(s => option(s, s, current.platform)).join("");
+    const providerOptions = (ext.provider_options || []).map(s => option(s, s, current.provider)).join("");
+    const sourceBody = sources.length
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Platform</th><th>Checks</th><th>Enrichments</th><th>Success rate</th></tr></thead><tbody>${sources.map(s => `<tr><td>${esc(s.source)}</td><td>${Number(s.checks).toLocaleString()}</td><td>${Number(s.enriched).toLocaleString()}</td><td>${s.checks ? Math.round(100 * s.enriched / s.checks) : 0}%</td></tr>`).join("")}</tbody></table></div>`
+      : emptyState("No source activity", "Sources appear after an extension check.", "fa-puzzle-piece");
+    const pageCount = Math.max(1, Math.ceil((ext.activity_total || 0) / (ext.activity_page_size || 50)));
+    return `<div class="an-section"><h2>MedHunt extension analytics</h2>
+      <p class="team-note">${ext.scope === "organization" ? "Organization-wide usage" : "Your usage"}. Daily totals use UTC dates; event times use your local time.</p>
+      ${ext.error ? `<p class="team-note" role="alert">${esc(ext.error)}</p>` : ""}
+      <div class="extension-filters">
+        <label>Period<select class="input" data-extension-filter="days">${[7,30,90,365].map(n => option(n, `Last ${n} days`, current.days)).join("")}</select></label>
+        <label>From (UTC)<input class="input" type="date" data-extension-filter="date_from" value="${esc(current.date_from)}"></label>
+        <label>To (UTC)<input class="input" type="date" data-extension-filter="date_to" value="${esc(current.date_to)}"></label>
+        ${ext.scope === "organization" ? `<label>Member<select class="input" data-extension-filter="member_id">${option("", "All members", current.member_id)}${memberOptions}</select></label>` : ""}
+        <label>Platform<select class="input" data-extension-filter="platform">${option("", "All platforms", current.platform)}${platformOptions}</select></label>
+        <label>Lookup provider<select class="input" data-extension-filter="provider">${option("", "All providers", current.provider)}${providerOptions}</select></label>
+        <label>Outcome<select class="input" data-extension-filter="outcome">${option("", "All outcomes", current.outcome)}${option("enriched", "Enriched", current.outcome)}${option("attempted", "Other attempts", current.outcome)}</select></label>
+      </div>
+      ${(current.date_from || current.date_to) ? `<p class="team-note">Select both UTC dates for an exact range. Clear both to return to the rolling period.</p>` : ""}
+      <div class="an-grid">
+        ${stat(ex.users || 0, "People who used it")}
+        ${stat(ex.checks || 0, "Extension checks")}
+        ${stat(ex.enrichments || 0, "Successful enrichments", "completed events", true)}
+        ${stat(ex.candidates_enriched || 0, "Candidates enriched", "unique candidates", true)}
+        ${stat(ex.sms_sent || 0, "SMS sent", "period and member")}
+        ${stat(ex.sms_replies || 0, "SMS replies", "period and member")}
+        ${stat(ex.sms_assignments || 0, "Reply assignments", "period and member")}
+      </div>
+      <div class="team-head extension-detail-head"><h3>Daily activity</h3><span class="team-note">${days.length} active days</span></div>
+      ${days.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Date (UTC)</th><th>People</th><th>Checks</th><th>Enrichments</th><th>Unique candidates</th></tr></thead><tbody>${days.map(d => `<tr><td>${esc(d.date)}</td><td>${Number(d.users).toLocaleString()}</td><td>${Number(d.checks).toLocaleString()}</td><td>${Number(d.enrichments).toLocaleString()}</td><td>${Number(d.candidates_enriched).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>`
+        : emptyState("No extension activity in this period", "Try a longer period or different filters.", "fa-calendar-days")}
+      <div class="viz-grid extension-detail-grid">
+        ${vizCard("Platform activity", sourceBody, "checks and enrichments by platform")}
+        ${vizCard("User activity", members.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Checks</th><th>Enrichments</th><th>Unique candidates</th><th>Last used</th></tr></thead><tbody>${members.map(m => `<tr><td><div class="cell-name">${esc(m.name || m.email || "Team member")}</div><div class="cell-sub">${esc(m.email || "")}</div></td><td>${Number(m.checks).toLocaleString()}</td><td>${Number(m.enriched).toLocaleString()}</td><td>${Number(m.candidates_enriched).toLocaleString()}</td><td>${m.last_used_at ? esc(shortTime(m.last_used_at)) : "—"}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No extension use yet", "User activity will appear here.", "fa-users"), "who used MedHunt and when")}
+      </div>
+      <div class="team-head extension-detail-head"><h3>Extension event log</h3><span class="team-note">${Number(ext.activity_total || 0).toLocaleString()} events</span></div>
+      ${activity.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Platform</th><th>Provider</th><th>Outcome</th><th>Run ID</th><th>Event ID</th><th>Date &amp; time</th></tr></thead><tbody>${activity.map(a => `<tr><td><div class="cell-name">${esc(a.user_name || "Team member")}</div><div class="cell-sub">${esc(a.user_email || "")}</div></td><td>${a.candidate_name ? `<div class="cell-name">${esc(a.candidate_name)}</div>` : ""}<div class="cell-sub">${esc(a.candidate_id || "—")}</div></td><td>${esc(a.platform || a.source || "Unknown")}</td><td>${esc(a.provider || "—")}</td><td><span class="badge${a.enriched ? " accent" : ""}">${esc(a.status || (a.enriched ? "Enriched" : "Attempted"))}</span></td><td>${esc(a.run_id || "—")}</td><td>${esc(a.event_id || "—")}</td><td>${a.used_at ? esc(new Date(a.used_at).toLocaleString()) : "—"}</td></tr>`).join("")}</tbody></table></div>`
+        : emptyState("No events match these filters", "Try a different period or filter.", "fa-list")}
+      ${pageCount > 1 ? `<div class="extension-pages"><button class="btn small" data-extension-page="${ext.activity_page - 1}"${ext.activity_page <= 1 ? " disabled" : ""}>Previous</button><span>Page ${ext.activity_page} of ${pageCount}</span><button class="btn small" data-extension-page="${ext.activity_page + 1}"${ext.activity_page >= pageCount ? " disabled" : ""}>Next</button></div>` : ""}
+    </div>`;
+  }
   async function loadAnalytics(){
     const box = $("#analytics-panel");
     box.innerHTML = loading("Loading your activity...");
     try {
+      const activeOrgId = S.employer && S.employer.employer_id || "";
+      if (extensionAnalyticsFilters.orgId !== activeOrgId) {
+        extensionAnalyticsFilters.orgId = activeOrgId;
+        extensionAnalyticsFilters.member_id = "";
+        extensionAnalyticsFilters.platform = "";
+        extensionAnalyticsFilters.provider = "";
+        extensionAnalyticsFilters.outcome = "";
+        extensionAnalyticsFilters.page = 1;
+      }
       // Market = real supply/demand (impressive, populated); sourcing = this
       // recruiter's own activity. The application funnel is intentionally not
       // shown — with no submissions/applications yet it would be all zeros.
-      const orgParam = S.employer && S.employer.employer_id
-        ? `&employer_id=${encodeURIComponent(S.employer.employer_id)}` : "";
+      const extensionParams = new URLSearchParams({
+        days:String(extensionAnalyticsFilters.days),
+        member_id:extensionAnalyticsFilters.member_id,
+        platform:extensionAnalyticsFilters.platform,
+        provider:extensionAnalyticsFilters.provider,
+        outcome:extensionAnalyticsFilters.outcome,
+        page:String(extensionAnalyticsFilters.page),
+      });
+      if (activeOrgId) extensionParams.set("employer_id", activeOrgId);
+      if (extensionAnalyticsFilters.date_from) extensionParams.set("date_from", extensionAnalyticsFilters.date_from);
+      if (extensionAnalyticsFilters.date_to) extensionParams.set("date_to", extensionAnalyticsFilters.date_to);
       const [mk, d, convo, ext] = await Promise.all([
         get("/api/analytics/market"),
         get("/api/analytics/sourcing?days=30"),
         get("/api/analytics/conversations").catch(() => null),
-        get(`/api/analytics/medhunt?days=30${orgParam}`).catch(() => null),
+        get(`/api/analytics/medhunt?${extensionParams}`).catch(e => ({error:e.message, scope:activeOrgId ? "organization" : "personal"})),
       ]);
       const P = mk.providers, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
       const medhunt = d.medhunt || {enriched_total:0, enriched_recent:0, attempts_recent:0};
@@ -4765,39 +4920,7 @@
 
       // Extension audit: organization managers see the whole team; individual
       // members get the same detail scoped to their own use.
-      let extensionSection = "";
-      if (ext) {
-        const ex = ext.summary || {}, sourceRows = ext.sources || [], memberRows = ext.members || [];
-        const activityRows = ext.activity || [];
-        const sourceBody = sourceRows.length
-          ? hbars(sourceRows.map((s, i) => ({label:s.source, value:s.enriched,
-              color:VIZ_CAT[i % VIZ_CAT.length]})))
-          : emptyState("No extension enrichments yet", "Sources appear after a candidate is enriched.", "fa-puzzle-piece");
-        extensionSection = `<div class="an-section"><h2>MedHunt extension analytics</h2>
-          <p class="team-note">${ext.scope === "organization" ? "Organization-wide usage" : "Your usage"} for the last ${ext.window_days} days.</p>
-          <div class="an-grid">
-            ${stat(ex.users || 0, "People who used it")}
-            ${stat(ex.checks || 0, "Extension checks")}
-            ${stat(ex.enrichments || 0, "Successful enrichments", "all completed events", true)}
-            ${stat(ex.candidates_enriched || 0, "Candidates enriched", "unique candidates", true)}
-          </div>
-          <div class="viz-grid" style="margin-top:14px">
-            ${vizCard("Enrichments by source", sourceBody, "where candidate data came from")}
-            ${vizCard("Team usage", memberRows.length ? `<div class="table-wrap"><table class="table">
-              <thead><tr><th>Member</th><th>Checks</th><th>Candidates</th><th>Last used</th></tr></thead>
-              <tbody>${memberRows.map(m => `<tr><td><div class="cell-name">${esc(m.name || m.email || "Team member")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
-                <td>${Number(m.checks || 0).toLocaleString()}</td><td>${Number(m.candidates_enriched || 0).toLocaleString()}</td>
-                <td>${m.last_used_at ? esc(shortTime(m.last_used_at)) : "—"}</td></tr>`).join("")}</tbody></table></div>`
-              : emptyState("No extension use yet", "Team activity will appear here.", "fa-users"), "who used MedHunt and when")}
-          </div>
-          ${activityRows.length ? `<div class="team-head" style="margin-top:20px"><h3>Recent extension activity</h3></div>
-            <div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Source</th><th>Outcome</th><th>Used</th></tr></thead>
-              <tbody>${activityRows.map(a => `<tr><td>${esc(a.user_name || "Team member")}</td>
-                <td>${esc(a.candidate_id || "—")}</td><td>${esc(a.source || "Unknown")}</td>
-                <td><span class="badge${a.enriched ? " accent" : ""}">${esc(a.status || (a.enriched ? "Enriched" : "Attempted"))}</span></td>
-                <td>${a.used_at ? esc(shortTime(a.used_at)) : "—"}</td></tr>`).join("")}</tbody></table></div>` : ""}
-        </div>`;
-      }
+      const extensionSection = renderExtensionAnalytics(ext);
 
       box.innerHTML = glance
         + extensionSection
@@ -4805,6 +4928,19 @@
         + `<div class="an-section"><h2>Your sourcing</h2>${sourceGrid}</div>`
         + convoSection;
       $("#analytics-sub").textContent = `${cn(P.listable)} providers · ${mk.jobs_active} open roles · last ${d.window_days} days`;
+      box.onchange = event => {
+        const field = event.target.dataset.extensionFilter;
+        if (!field) return;
+        extensionAnalyticsFilters[field] = field === "days" ? Number(event.target.value) : event.target.value;
+        extensionAnalyticsFilters.page = 1;
+        loadAnalytics();
+      };
+      box.onclick = event => {
+        const button = event.target.closest("[data-extension-page]");
+        if (!button || button.disabled) return;
+        extensionAnalyticsFilters.page = Number(button.dataset.extensionPage);
+        loadAnalytics();
+      };
     } catch(e) { box.innerHTML = errorState("Could not load analytics"); }
   }
 

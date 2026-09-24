@@ -5,7 +5,7 @@ Backs the analytics view in healthboard-chat-platform.html.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, or_, select
@@ -47,6 +47,15 @@ def medhunt_extension_activity(
     db: DbSession,
     days: int = Query(30, ge=1, le=365),
     employer_id: str | None = None,
+    member_id: str | None = None,
+    source: str | None = None,
+    platform: str | None = None,
+    provider: str | None = None,
+    outcome: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = 1,
+    page_size: int = 50,
 ):
     """Detailed MedHunt extension usage, scoped to the current organization.
 
@@ -79,12 +88,24 @@ def medhunt_extension_activity(
             })
             scope = "organization"
 
-    since = utcnow() - timedelta(days=days)
+    since = (datetime.combine(date_from, datetime.min.time(), timezone.utc)
+             if date_from else
+             datetime.combine(date_to - timedelta(days=days - 1), datetime.min.time(), timezone.utc)
+             if date_to else utcnow() - timedelta(days=days))
+    until = (datetime.combine(date_to + timedelta(days=1), datetime.min.time(), timezone.utc)
+             if date_to else None)
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="Start date must be on or before end date")
+    if date_from and date_to and (date_to - date_from).days > 366:
+        raise HTTPException(status_code=422, detail="Choose a date range of at most 366 days")
+    event_window = [AuditLog.created_at >= since]
+    if until:
+        event_window.append(AuditLog.created_at < until)
     events = db.scalars(
         select(AuditLog).where(
             AuditLog.actor_user_id.in_(member_ids),
             AuditLog.action.in_((MEDHUNT_ENRICHED_ACTION, MEDHUNT_ATTEMPT_ACTION)),
-            AuditLog.created_at >= since,
+            *event_window,
         ).order_by(AuditLog.created_at.desc())
     ).all()
     sms_events = db.scalars(
@@ -94,9 +115,43 @@ def medhunt_extension_activity(
                 "medhunt_sms_received", "medhunt_sms_sent",
                 "medhunt_conversation_assigned",
             )),
-            AuditLog.created_at >= since,
+            *event_window,
         ).order_by(AuditLog.created_at.desc())
     ).all()
+
+    # Keep filter choices from the full authorized window. A selected filter
+    # should not make the other choices disappear from the controls.
+    available_platforms = sorted({
+        str((event.meta or {}).get("platform") or
+            (event.meta or {}).get("source") or "Unknown").strip() or "Unknown"
+        for event in events
+    }, key=str.casefold)
+    available_providers = sorted({
+        str((event.meta or {}).get("provider") or "Unknown").strip() or "Unknown"
+        for event in events
+    }, key=str.casefold)
+    if member_id and member_id not in member_ids:
+        raise HTTPException(status_code=403, detail="Not a member of this organisation")
+    if outcome and outcome not in {"enriched", "attempted"}:
+        raise HTTPException(status_code=422, detail="Invalid outcome")
+    if page < 1 or page_size < 1 or page_size > 100:
+        raise HTTPException(status_code=422, detail="Invalid activity page")
+    if member_id:
+        events = [event for event in events if event.actor_user_id == member_id]
+        sms_events = [event for event in sms_events if event.actor_user_id == member_id]
+    selected_platform = platform or source
+    if selected_platform:
+        events = [event for event in events if (
+            str((event.meta or {}).get("platform") or
+                (event.meta or {}).get("source") or "Unknown").strip() or "Unknown"
+        ).casefold() == selected_platform.casefold()]
+    if provider:
+        events = [event for event in events if (
+            str((event.meta or {}).get("provider") or "Unknown").strip() or "Unknown"
+        ).casefold() == provider.casefold()]
+    if outcome:
+        action = MEDHUNT_ENRICHED_ACTION if outcome == "enriched" else MEDHUNT_ATTEMPT_ACTION
+        events = [event for event in events if event.action == action]
 
     users = {u.user_id: u for u in db.scalars(
         select(User).where(User.user_id.in_(member_ids))
@@ -104,9 +159,18 @@ def medhunt_extension_activity(
     profiles = {p.user_id: p for p in db.scalars(
         select(Profile).where(Profile.user_id.in_(member_ids))
     )}
+    member_options = [{
+        "user_id": uid,
+        "name": (f"{profiles[uid].first_name} {profiles[uid].last_name}".strip()
+                 if uid in profiles else None),
+        "email": users[uid].email if uid in users else None,
+    } for uid in member_ids]
+    member_options.sort(key=lambda row: (row["name"] or row["email"] or "").casefold())
     per_member: dict[str, dict] = {}
     source_counts: Counter[str] = Counter()
+    source_checks: Counter[str] = Counter()
     enriched_candidates: set[str] = set()
+    daily: dict[str, dict] = {}
 
     for uid in member_ids:
         account = users.get(uid)
@@ -129,24 +193,40 @@ def medhunt_extension_activity(
         row = per_member.get(uid)
         if row is None:
             continue
-        source = str(meta.get("source") or "Unknown").strip() or "Unknown"
+        event_source = str(meta.get("platform") or meta.get("source") or "Unknown").strip() or "Unknown"
         candidate_id = str(meta.get("candidate_id") or "").strip()
         enriched = event.action == MEDHUNT_ENRICHED_ACTION
         row["checks"] += 1
+        source_checks[event_source] += 1
         if row["last_used_at"] is None:
             row["last_used_at"] = event.created_at
         if enriched:
             row["enriched"] += 1
-            source_counts[source] += 1
+            source_counts[event_source] += 1
             if candidate_id:
                 row["candidates_enriched"].add(candidate_id)
                 enriched_candidates.add(candidate_id)
+        day = event.created_at.date().isoformat()
+        daily_row = daily.setdefault(day, {
+            "date": day, "checks": 0, "enrichments": 0,
+            "users": set(), "candidates_enriched": set(),
+        })
+        daily_row["checks"] += 1
+        daily_row["users"].add(uid)
+        if enriched:
+            daily_row["enrichments"] += 1
+            if candidate_id:
+                daily_row["candidates_enriched"].add(candidate_id)
         activity.append({
             "event_id": event.entity_id,
             "user_id": uid,
             "user_name": row["name"] or row["email"] or "Team member",
+            "user_email": row["email"],
             "candidate_id": candidate_id or None,
-            "source": source,
+            "run_id": meta.get("run_id") or None,
+            "source": event_source,
+            "platform": event_source,
+            "provider": meta.get("provider") or None,
             "status": meta.get("status") or ("success" if enriched else "attempted"),
             "enriched": enriched,
             "used_at": event.created_at,
@@ -160,11 +240,28 @@ def medhunt_extension_activity(
             members.append(row)
     members.sort(key=lambda item: (item["last_used_at"] is not None,
                                    item["last_used_at"]), reverse=True)
+    page_activity = activity[(page - 1) * page_size:page * page_size]
+    candidate_ids = [row["candidate_id"] for row in page_activity if row["candidate_id"]]
+    candidate_names = {profile.profile_id: f"{profile.first_name} {profile.last_name}".strip()
+                       for profile in db.scalars(select(Profile).where(
+                           Profile.profile_id.in_(candidate_ids)
+                       ))} if candidate_ids else {}
+    for row in page_activity:
+        row["candidate_name"] = candidate_names.get(row["candidate_id"])
     return {
         "scope": scope,
         "organization": ({"employer_id": employer.employer_id, "org_name": employer.org_name}
                          if employer else None),
         "window_days": days,
+        "filters": {"member_id": member_id, "source": source,
+                    "platform": selected_platform, "provider": provider,
+                    "outcome": outcome,
+                    "date_from": date_from.isoformat() if date_from else None,
+                    "date_to": date_to.isoformat() if date_to else None},
+        "source_options": available_platforms,
+        "platform_options": available_platforms,
+        "provider_options": available_providers,
+        "member_options": member_options,
         "summary": {
             "users": len(members),
             "checks": len(events),
@@ -176,9 +273,19 @@ def medhunt_extension_activity(
             "sms_assignments": sum(1 for event in sms_events if event.action == "medhunt_conversation_assigned"),
         },
         "members": members,
-        "sources": [{"source": source, "enriched": count}
-                    for source, count in source_counts.most_common()],
-        "activity": activity[:100],
+        "sources": [{
+            "source": item, "checks": count,
+            "enriched": source_counts[item],
+        } for item, count in source_checks.most_common()],
+        "daily": [{
+            **row,
+            "users": len(row["users"]),
+            "candidates_enriched": len(row["candidates_enriched"]),
+        } for _, row in sorted(daily.items(), reverse=True)],
+        "activity_total": len(activity),
+        "activity_page": page,
+        "activity_page_size": page_size,
+        "activity": page_activity,
         "sms_activity": [{
             "event_id": event.entity_id,
             "user_id": event.actor_user_id,

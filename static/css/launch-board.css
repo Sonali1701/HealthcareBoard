@@ -1004,6 +1004,14 @@ tr.is-selected{background:var(--accent-soft)}
 .an-stat b.accent{color:var(--accent-strong)}
 .an-stat span{font-size:12px;color:var(--faint)}
 .an-stat small{display:block;font-size:11px;color:var(--dim);margin-top:3px}
+.extension-filters{display:flex;flex-wrap:wrap;gap:12px;margin:14px 0 18px}
+.extension-filters label{display:flex;flex-direction:column;gap:5px;min-width:145px;font-size:12px;color:var(--muted)}
+.extension-filters .input{min-width:145px}
+.extension-detail-head{margin:22px 0 10px}
+.extension-detail-head h3{margin:0;font-size:14px}
+.extension-detail-head .team-note{margin:0}
+.extension-detail-grid{margin-top:16px}
+.extension-pages{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:12px;font-size:12px;color:var(--muted)}
 .an-bar{display:flex;height:9px;border-radius:999px;overflow:hidden;background:var(--soft);
   border:1px solid var(--line);margin-top:10px}
 .an-bar i{display:block;height:100%}

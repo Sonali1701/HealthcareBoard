@@ -798,6 +798,8 @@
         <button class="admin-tab" data-atab="orgs"><i class="fas fa-hospital"></i>Organizations</button>
         <button class="admin-tab" data-atab="jobs"><i class="fas fa-briefcase"></i>Jobs</button>
         <button class="admin-tab" data-atab="logins"><i class="fas fa-network-wired"></i>IP &amp; Logins</button>
+        <button class="admin-tab" data-atab="devices"><i class="fas fa-laptop"></i>Extension devices</button>
+        <button class="admin-tab" data-atab="replies"><i class="fas fa-reply"></i>Candidate replies</button>
         <button class="admin-tab" data-atab="audit"><i class="fas fa-clock-rotate-left"></i>Audit log</button>
       </div>
 
@@ -842,6 +844,16 @@
           </table>
         </div>
         <div class="admin-pager" id="admin-login-pager"></div>
+      </div>
+
+      <div class="admin-panel" id="admin-devices">
+        <p class="muted">Registered extension devices, including accounts used on more than one device. Approve requests that were made after access was revoked.</p>
+        <div id="admin-medhunt-devices"></div>
+      </div>
+
+      <div class="admin-panel" id="admin-replies">
+        <p class="muted">Review candidate SMS replies and assign a recruiter from MedHunt.</p>
+        <div id="admin-medhunt-replies"></div>
       </div>
 
       <div class="admin-panel" id="admin-orgs">

@@ -11,10 +11,11 @@ import hmac
 import io
 import secrets
 import zipfile
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import jwt
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
@@ -30,6 +31,7 @@ from ..models import (
 from ..ratelimit import auth_rate_limit
 from ..security import sha256
 from ..services.email import send_medhunt_login_code
+from ..services import org_roles
 
 router = APIRouter(prefix="/api/extension", tags=["extension"])
 
@@ -77,15 +79,128 @@ class MedhuntEnrichmentEvent(BaseModel):
     candidate_id: str = Field(min_length=1, max_length=80)
     status: str = Field(min_length=1, max_length=40)
     source: str = Field(default="", max_length=80)
+    platform: str = Field(default="", max_length=80)
+    provider: str = Field(default="", max_length=80)
     run_id: str = Field(default="", max_length=120)
+    occurred_at: datetime | None = None
+
+
+class MedhuntServiceEnrichmentEvent(MedhuntEnrichmentEvent):
+    user_id: str = Field(min_length=1, max_length=80)
 
 
 class MedhuntAssignment(BaseModel):
-    conversation_id: str = Field(min_length=1, max_length=80)
-    candidate_id: str = Field(min_length=1, max_length=80)
+    conversation_id: str = Field(min_length=1, max_length=80, pattern=r"^\d+$")
+    candidate_id: str = Field(min_length=1, max_length=80, pattern=r"^\d+$")
     nexus_candidate_id: str = Field(default="", max_length=120)
     candidate_name: str = Field(default="", max_length=320)
     recruiter_user_id: str = Field(min_length=1, max_length=80)
+
+
+def _medhunt_request(path: str, payload: dict) -> dict:
+    if not settings.medhunt_api_base_url or not settings.medhunt_service_token:
+        raise HTTPException(503, "Medhunt backend connection is not configured")
+    try:
+        response = httpx.post(
+            f"{settings.medhunt_api_base_url.rstrip('/')}{path}",
+            json=payload,
+            headers={"X-Medhunt-Service-Token": settings.medhunt_service_token},
+            timeout=15,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("detail", "Medhunt request failed")
+        except ValueError:
+            detail = "Medhunt request failed"
+        raise HTTPException(exc.response.status_code, detail) from exc
+    except (httpx.RequestError, ValueError) as exc:
+        raise HTTPException(502, "Medhunt backend is unavailable") from exc
+
+
+def _medhunt_scope(db, user: User, *, employer_id: str = "", device_admin: bool = False) -> tuple[dict, Employer | None]:
+    platform_admin = user.role == UserRole.admin
+    if platform_admin and not employer_id:
+        return {"all_users": True, "user_ids": []}, None
+    employer = db.get(Employer, employer_id) if employer_id else _user_employer(db, user.user_id)
+    if not employer:
+        raise HTTPException(404, "Organization not found")
+    role = org_roles.role_of(db, employer, user)
+    allowed = {"owner", "admin"} if device_admin else {"owner", "admin", "manager"}
+    if role not in allowed:
+        raise HTTPException(403, "Organization admin access is required")
+    member_ids = _employer_user_ids(db, employer)
+    if not device_admin:
+        # SMS conversations currently carry an initiating user, not an org ID.
+        # A person in two organizations cannot be attributed safely to either.
+        owners = db.execute(select(Employer.owner_user_id, Employer.employer_id).where(
+            Employer.owner_user_id.in_(member_ids),
+        )).all()
+        memberships = db.execute(select(EmployerMember.user_id, EmployerMember.employer_id).where(
+            EmployerMember.user_id.in_(member_ids),
+        )).all()
+        affiliations = {}
+        for uid, org_id in [*owners, *memberships]:
+            affiliations.setdefault(uid, set()).add(org_id)
+        member_ids = {
+            uid for uid in member_ids
+            if affiliations.get(uid) == {employer.employer_id}
+        }
+    return {"all_users": False, "user_ids": sorted(member_ids)}, employer
+
+
+@router.get("/medhunt/devices")
+def list_medhunt_devices(user: CurrentUser, db: DbSession, employer_id: str = ""):
+    scope, _ = _medhunt_scope(db, user, employer_id=employer_id, device_admin=True)
+    return _medhunt_request("/internal/halo/devices", scope)
+
+
+@router.post("/medhunt/devices/{device_id}/approve")
+def approve_medhunt_device(device_id: int, user: CurrentUser, db: DbSession,
+                           employer_id: str = ""):
+    scope, _ = _medhunt_scope(db, user, employer_id=employer_id, device_admin=True)
+    return _medhunt_request(
+        f"/internal/halo/devices/{device_id}/approve",
+        {**scope, "actor_user_id": user.user_id},
+    )
+
+
+@router.get("/medhunt/conversations")
+def list_medhunt_conversations(user: CurrentUser, db: DbSession,
+                               employer_id: str = ""):
+    scope, _ = _medhunt_scope(db, user, employer_id=employer_id)
+    return _medhunt_request("/internal/halo/conversations", scope)
+
+
+@router.get("/medhunt/conversations/{conversation_id}")
+def get_medhunt_conversation(conversation_id: int, user: CurrentUser, db: DbSession,
+                             employer_id: str = ""):
+    scope, _ = _medhunt_scope(db, user, employer_id=employer_id)
+    return _medhunt_request(f"/internal/halo/conversations/{conversation_id}", scope)
+
+
+@router.get("/medhunt/conversations/{conversation_id}/recruiters")
+def recruiters_for_medhunt_conversation(conversation_id: int, user: CurrentUser,
+                                        db: DbSession, employer_id: str = ""):
+    scope, scoped_employer = _medhunt_scope(db, user, employer_id=employer_id)
+    conversation = _medhunt_request(
+        f"/internal/halo/conversations/{conversation_id}", scope,
+    )
+    employer = scoped_employer or _user_employer(
+        db, str(conversation.get("initiated_by") or ""),
+    )
+    if not employer:
+        return {"items": []}
+    users = db.scalars(select(User).where(
+        User.user_id.in_(_employer_user_ids(db, employer)),
+        User.deleted_at.is_(None), User.status == UserStatus.active,
+    )).all()
+    return {"items": [
+        {"user_id": item.user_id, "email": item.email,
+         "name": item.email}
+        for item in users if item.role in {UserRole.recruiter, UserRole.admin}
+    ]}
 
 
 class MedhuntMessageEvent(BaseModel):
@@ -244,32 +359,44 @@ def medhunt_recruiters(user: IngestUser, db: DbSession):
 
 
 @router.post("/medhunt/conversations/assign")
-def assign_medhunt_conversation(body: MedhuntAssignment, user: IngestUser, db: DbSession):
-    _require_recruiter(user)
-    employer = _user_employer(db, user.user_id)
+def assign_medhunt_conversation(body: MedhuntAssignment, user: CurrentUser, db: DbSession,
+                                employer_id: str = ""):
+    scope, scoped_employer = _medhunt_scope(db, user, employer_id=employer_id)
+    conversation = _medhunt_request(
+        f"/internal/halo/conversations/{body.conversation_id}", scope,
+    )
+    if str(conversation.get("candidate_id")) != body.candidate_id:
+        raise HTTPException(409, "Candidate and conversation do not match")
+    if not any(message.get("direction") == "inbound"
+               for message in conversation.get("messages", [])):
+        raise HTTPException(409, "Wait for a candidate reply before assigning")
+    employer = scoped_employer or _user_employer(
+        db, str(conversation.get("initiated_by") or ""),
+    )
     if not employer or body.recruiter_user_id not in _employer_user_ids(db, employer):
         raise HTTPException(status_code=403, detail="Recruiter is not on your team")
     recruiter = db.get(User, body.recruiter_user_id)
-    if not recruiter or recruiter.role not in {UserRole.recruiter, UserRole.admin}:
+    if not recruiter or recruiter.deleted_at is not None or recruiter.status != UserStatus.active \
+            or recruiter.role not in {UserRole.recruiter, UserRole.admin}:
         raise HTTPException(status_code=400, detail="Choose an active recruiter")
-    event_id = hashlib.sha256(
-        f"assign:{body.conversation_id}:{body.recruiter_user_id}".encode()
-    ).hexdigest()[:36]
-    if not db.scalar(select(AuditLog).where(
-        AuditLog.action == "medhunt_conversation_assigned",
-        AuditLog.entity_type == "medhunt_conversation",
-        AuditLog.entity_id == event_id,
-    )):
+    if str(conversation.get("assigned_recruiter_id") or "") != recruiter.user_id:
+        _medhunt_request(
+            f"/internal/halo/conversations/{body.conversation_id}/assign",
+            {**scope, "actor_user_id": user.user_id,
+             "recruiter_user_id": recruiter.user_id,
+             "recruiter_email": recruiter.email,
+             "recruiter_name": recruiter.email},
+        )
         db.add(AuditLog(
             actor_user_id=user.user_id,
             action="medhunt_conversation_assigned",
             entity_type="medhunt_conversation",
-            entity_id=event_id,
+            entity_id=secrets.token_hex(18),
             meta={
                 "conversation_id": body.conversation_id,
                 "candidate_id": body.candidate_id,
-                "nexus_candidate_id": body.nexus_candidate_id,
-                "candidate_name": body.candidate_name,
+                "nexus_candidate_id": str(conversation.get("nexus_candidate_id") or ""),
+                "candidate_name": str(conversation.get("candidate_name") or ""),
                 "assigned_recruiter_user_id": recruiter.user_id,
                 "source": "medhunt",
             },
@@ -278,11 +405,11 @@ def assign_medhunt_conversation(body: MedhuntAssignment, user: IngestUser, db: D
             user_id=recruiter.user_id,
             type=NotificationType.message,
             title="Medhunt candidate reply assigned",
-            body=f"{body.candidate_name or 'A candidate'} was assigned to you.",
+            body=f"{conversation.get('candidate_name') or 'A candidate'} was assigned to you.",
             data={
                 "source": "medhunt", "conversation_id": body.conversation_id,
                 "candidate_id": body.candidate_id,
-                "nexus_candidate_id": body.nexus_candidate_id,
+                "nexus_candidate_id": str(conversation.get("nexus_candidate_id") or ""),
             },
         ))
         db.commit()
@@ -333,6 +460,25 @@ def record_medhunt_enrichment(body: MedhuntEnrichmentEvent, user: IngestUser,
                                db: DbSession, request: Request):
     """Append one idempotent MedHunt enrichment result to MedHunt analytics."""
     _require_recruiter(user)
+    return _save_medhunt_enrichment(body, user, db, request)
+
+
+@router.post("/activity/enrichment/service")
+def record_medhunt_enrichment_service(body: MedhuntServiceEnrichmentEvent,
+                                      db: DbSession, request: Request):
+    supplied = request.headers.get("x-medhunt-service-token", "")
+    if not settings.medhunt_service_token or not hmac.compare_digest(
+        supplied, settings.medhunt_service_token
+    ):
+        raise HTTPException(401, "Invalid Medhunt service token")
+    user = db.get(User, body.user_id)
+    if not user or user.deleted_at is not None:
+        raise HTTPException(404, "Medhunt event user not found")
+    return _save_medhunt_enrichment(body, user, db, request)
+
+
+def _save_medhunt_enrichment(body: MedhuntEnrichmentEvent, user: User,
+                             db: DbSession, request: Request):
     status = body.status.strip().lower()
     action = (
         MEDHUNT_ENRICHED_ACTION if status in {"found", "success"}
@@ -349,6 +495,14 @@ def record_medhunt_enrichment(body: MedhuntEnrichmentEvent, user: IngestUser,
     ip_address = forwarded.split(",")[0].strip()[:64] if forwarded else (
         request.client.host if request.client else None
     )
+    occurred_at = body.occurred_at
+    if occurred_at is not None:
+        if occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+        occurred_at = occurred_at.astimezone(timezone.utc)
+        if occurred_at > utcnow() + timedelta(minutes=5):
+            raise HTTPException(422, "Event time cannot be in the future")
+    platform = (body.platform or body.source).strip().lower()
     db.add(AuditLog(
         actor_user_id=user.user_id,
         action=action,
@@ -358,9 +512,12 @@ def record_medhunt_enrichment(body: MedhuntEnrichmentEvent, user: IngestUser,
             "candidate_id": body.candidate_id,
             "status": status,
             "source": body.source.strip().lower(),
+            "platform": platform,
+            "provider": body.provider.strip().lower(),
             "run_id": body.run_id,
         },
         ip_address=ip_address,
+        **({"created_at": occurred_at} if occurred_at else {}),
     ))
     db.commit()
     return {"recorded": True, "event_id": body.event_id}
