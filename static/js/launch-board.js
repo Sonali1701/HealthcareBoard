@@ -200,6 +200,7 @@
   const get = p => api("GET", p);
   const post = (p,b={}) => api("POST", p, b);
   const patch = (p,b={}) => api("PATCH", p, b);
+  const put = (p,b={}) => api("PUT", p, b);
   const employerDashboardPath = () => "/api/employers/me/dashboard" +
     (S.employer && S.employer.employer_id
       ? `?employer_id=${encodeURIComponent(S.employer.employer_id)}` : "");
@@ -328,7 +329,7 @@
     if ((id === "providers" || id === "ai" || id === "extension" || id === "pools"
          || id === "matching" || id === "outreach" || id === "credits" || id === "submissions"
          || id === "applicants" || id === "calculator" || id === "clients" || id === "orgadmin"
-         || id === "placements") && !isRecruiter()) id = "dashboard";
+         || id === "placements" || id === "medhuntreplies") && !isRecruiter()) id = "dashboard";
     // Seeker-only pages: a staffing agency sources candidates, it doesn't find
     // jobs, apply, or keep a resume.
     if ((id === "resume" || id === "applications" || id === "jobs") && isRecruiter()) id = "dashboard";
@@ -348,6 +349,7 @@
     if (id === "community") loadFeed();
     if (id === "notifications") { loadNotifications(); refreshNotificationBadge(); }
     if (id === "messages") loadMessages();
+    if (id === "medhuntreplies") loadMyMedhuntReplies();
     if (id === "pools") loadPools();
     if (id === "employer") loadEmployer();
     if (id === "orgadmin") loadOrgAdmin();
@@ -425,18 +427,67 @@
     box.innerHTML = loading("Loading candidate replies...");
     try {
       const data = await get("/api/extension/medhunt/conversations" + medhuntPath(employerId));
-      const items = (data.items || []).filter(item => ["replied", "assigned"].includes(item.status));
-      box.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Candidate</th><th>Status</th><th>Assigned recruiter</th><th>Last activity</th><th></th></tr></thead>
+      const items = data.items || [];
+      box.innerHTML = `${items.some(item => item.has_reply) ? `<div class="row" style="justify-content:flex-end;margin-bottom:10px"><button class="btn small" data-medhunt-bulk="${esc(employerId)}">Assign selected replies</button></div>` : ""}<div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-medhunt-select-all aria-label="Select candidate replies"></th><th>Candidate</th><th>Started by</th><th>Candidate replied?</th><th>Assigned recruiter</th><th>Recruiter replied?</th><th>Last activity</th><th></th></tr></thead>
         <tbody>${items.length ? items.map(c => `<tr>
-          <td>${esc(c.candidate_name || "Candidate")}</td><td>${esc(c.status)}</td>
+          <td><input type="checkbox" data-medhunt-select="${Number(c.id)}" data-candidate-id="${esc(c.candidate_id)}" ${c.has_reply && !(Number(c.last_outbound_at || 0) > Number(c.last_reply_at || 0)) && c.status !== "opted_out" ? "" : "disabled"}></td>
+          <td>${esc(c.candidate_name || "Candidate")}</td><td>${esc(c.initiated_by_email || "Unknown user")}</td><td>${c.has_reply ? `Yes · ${esc(medhuntDate(c.last_reply_at))}` : "No reply yet"}${c.status === "opted_out" ? ` · <b>STOP</b>` : ""}</td>
           <td>${esc(c.assigned_recruiter_email || "Unassigned")}</td>
+          <td>${Number(c.last_outbound_at || 0) > Number(c.last_reply_at || 0) ? `Yes · ${esc(c.last_outbound_user_email || "team member")}` : "No"}</td>
           <td>${esc(medhuntDate(c.last_message_at || c.updated))}</td>
-          <td><button class="btn small" data-medhunt-conversation="${Number(c.id)}" data-medhunt-org="${esc(employerId)}">Review &amp; assign</button></td>
-        </tr>`).join("") : `<tr><td colspan="5">No candidate replies yet.</td></tr>`}</tbody></table></div>`;
+          <td><button class="btn small" data-medhunt-conversation="${Number(c.id)}" data-medhunt-org="${esc(employerId)}">Review thread</button></td>
+        </tr>`).join("") : `<tr><td colspan="8">No outreach conversations yet.</td></tr>`}</tbody></table></div>`;
+      const selectAll = box.querySelector("[data-medhunt-select-all]");
+      if (selectAll) selectAll.onchange = () => box.querySelectorAll("[data-medhunt-select]").forEach(item => { item.checked = selectAll.checked; });
+      const bulk = box.querySelector("[data-medhunt-bulk]");
+      if (bulk) bulk.onclick = () => openMedhuntBulkAssign(box, employerId);
     } catch(e) { box.innerHTML = errorState("Could not load candidate replies.", e.message); }
   }
 
+  async function loadMyMedhuntReplies(){
+    const box = $("#my-medhunt-replies");
+    if (!box) return;
+    box.innerHTML = loading("Loading your candidate replies...");
+    try {
+      const data = await get("/api/extension/medhunt/my-replies");
+      const items = data.items || [];
+      box.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Candidate</th><th>Status</th><th>Assigned to</th><th>Last reply</th><th></th></tr></thead><tbody>${items.length ? items.map(c => `<tr><td>${esc(c.candidate_name || "Candidate")}</td><td>${esc(c.status)}${c.status === "opted_out" ? " · STOP" : ""}</td><td>${esc(c.assigned_recruiter_email || "Unassigned")}</td><td>${esc(medhuntDate(c.last_reply_at || c.last_message_at || c.updated))}</td><td><button class="btn small" data-medhunt-conversation="${Number(c.id)}" data-medhunt-view="1">View reply</button></td></tr>`).join("") : `<tr><td colspan="5">No replies assigned to you yet.</td></tr>`}</tbody></table></div>`;
+    } catch(e) { box.innerHTML = errorState("Could not load your candidate replies.", e.message); }
+  }
+
+  async function openMedhuntBulkAssign(box, employerId){
+      const selected = [...box.querySelectorAll("[data-medhunt-select]:checked")];
+    if (!selected.length) return toast("Select at least one replied candidate.", {kind:"err"});
+    const firstId = selected[0].dataset.medhuntSelect;
+    try {
+      const path = medhuntPath(employerId);
+      const recruiters = await get(`/api/extension/medhunt/conversations/${firstId}/recruiters${path}`);
+      const options = recruiters.items || [];
+      if (!options.length) return toast("No active recruiters are available for this organization.", {kind:"err"});
+      $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card form-card"><div class="modal-head"><strong>Assign ${selected.length} candidate replies</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div><div class="dlg-body"><p>All selected replies will be assigned to this recruiter.</p><label>Recruiter<select class="input" id="medhunt-bulk-recruiter"><option value="">Choose recruiter</option>${options.map(r => `<option value="${esc(r.user_id)}">${esc(r.name || r.email)}</option>`).join("")}</select></label></div><div class="dlg-foot"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="medhunt-bulk-confirm">Assign selected</button></div></div></div>`;
+      $("#medhunt-bulk-confirm").onclick = async () => {
+        const recruiter_user_id = $("#medhunt-bulk-recruiter").value;
+        if (!recruiter_user_id) return toast("Choose a recruiter.", {kind:"err"});
+        let done = 0, failed = 0;
+        for (const row of selected) {
+          try {
+            await post("/api/extension/medhunt/conversations/assign" + path, {
+              conversation_id: row.dataset.medhuntSelect,
+              candidate_id: row.dataset.candidateId,
+              recruiter_user_id,
+            });
+            done++;
+          } catch (_) { failed++; }
+        }
+        $("#modal-root").innerHTML = "";
+        toast(failed ? `${done} assigned; ${failed} could not be assigned (check organization membership).` : `${done} candidate replies assigned.`, {title:"Candidate replies", kind:failed ? "err" : "ok"});
+        loadMedhuntReplies(employerId ? "#org-medhunt-replies" : "#admin-medhunt-replies", employerId);
+      };
+    } catch(e) { toast(e.message || "Could not prepare bulk assignment.", {kind:"err"}); }
+  }
+
   async function openMedhuntConversation(button){
+    if (button.dataset.medhuntView) return viewMedhuntConversation(button);
     const id = Number(button.dataset.medhuntConversation);
     const employerId = button.dataset.medhuntOrg || "";
     try {
@@ -448,10 +499,12 @@
       const messages = conversation.messages || [];
       $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card form-card">
         <div class="modal-head"><strong>${esc(conversation.candidate_name || "Candidate reply")}</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div>
-        <div class="dlg-body"><div class="msg-bubbles" style="max-height:45vh;overflow:auto">${messages.map(m => `<p><b>${m.direction === "inbound" ? "Candidate" : "Recruiter"}:</b> ${esc(m.body || "")}</p>`).join("")}</div>
+        <div class="dlg-body"><div class="msg-bubbles" style="max-height:38vh;overflow:auto">${messages.map(m => `<p><b>${m.direction === "inbound" ? "Candidate" : esc(m.sender_name || "Recruiter")}:</b> ${esc(m.body || "")}</p>`).join("")}</div>
+          ${conversation.status === "opted_out" ? `<p class="muted">This candidate opted out. Replies are disabled.</p>` : conversation.can_reply ? `<label>Reply to candidate<textarea class="input" id="medhunt-reply" rows="3" maxlength="500" placeholder="Write a reply…"></textarea></label><button class="btn" id="medhunt-reply-send">Send reply</button>` : `<p class="muted">Only the original or assigned recruiter can reply. Reassign the unanswered candidate reply to another teammate above.</p>`}
           <label>Assign recruiter<select class="input" id="medhunt-recruiter"><option value="">Choose recruiter</option>${(recruiters.items || []).map(r => `<option value="${esc(r.user_id)}"${r.user_id === conversation.assigned_recruiter_id ? " selected" : ""}>${esc(r.name || r.email)}</option>`).join("")}</select></label></div>
         <div class="dlg-foot"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="medhunt-assign">Assign recruiter</button></div>
       </div></div>`;
+      bindMedhuntReply(id, employerId, () => openMedhuntConversation(button));
       $("#medhunt-assign").onclick = async () => {
         const recruiter_user_id = $("#medhunt-recruiter").value;
         if (!recruiter_user_id) return toast("Choose a recruiter.", {kind:"err"});
@@ -466,6 +519,37 @@
         } catch(e) { toast(e.message || "Could not assign recruiter.", {kind:"err"}); }
       };
     } catch(e) { toast(e.message || "Could not open candidate reply.", {kind:"err"}); }
+  }
+
+  async function viewMedhuntConversation(button){
+    const id = Number(button.dataset.medhuntConversation);
+    try {
+      const conversation = await get(`/api/extension/medhunt/conversations/${id}`);
+      const messages = conversation.messages || [];
+      $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card form-card"><div class="modal-head"><strong>${esc(conversation.candidate_name || "Candidate reply")}</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div><div class="dlg-body"><p class="muted">${esc(conversation.candidate_phone || "")}</p><div class="msg-bubbles" style="max-height:48vh;overflow:auto">${messages.map(m => `<p><b>${m.direction === "inbound" ? "Candidate" : esc(m.sender_name || "Recruiter")}:</b> ${esc(m.body || "")}</p>`).join("")}</div>${conversation.status === "opted_out" ? `<p class="muted">This candidate opted out. Replies are disabled.</p>` : conversation.can_reply ? `<label>Reply to candidate<textarea class="input" id="medhunt-reply" rows="3" maxlength="500" placeholder="Write a reply…"></textarea></label><button class="btn primary" id="medhunt-reply-send">Send reply</button>` : `<p class="muted">Only the original or assigned recruiter can reply.</p>`}</div><div class="dlg-foot"><button class="btn ghost" data-close-modal>Close</button></div></div></div>`;
+      bindMedhuntReply(id, "", () => viewMedhuntConversation(button));
+    } catch(e) { toast(e.message || "Could not open candidate reply.", {kind:"err"}); }
+  }
+
+  function bindMedhuntReply(conversationId, employerId, onSent){
+    const button = $("#medhunt-reply-send"), input = $("#medhunt-reply");
+    if (!button || !input) return;
+    const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    button.onclick = async () => {
+      const message = input.value.trim();
+      if (!message) return toast("Write a reply first.", {kind:"err"});
+      button.disabled = true;
+      try {
+        await post(`/api/extension/medhunt/conversations/${conversationId}/reply${medhuntPath(employerId)}`, {
+          message, request_id: requestId,
+        });
+        toast("Reply sent.", {title:"Candidate conversation"});
+        onSent?.();
+      } catch(e){
+        toast(e.message || "Could not send reply.", {title:"Candidate conversation", kind:"err"});
+        button.disabled = false;
+      }
+    };
   }
 
   async function loadAdminLogins(){
@@ -1728,13 +1812,15 @@
         refreshNotificationBadge();
       };
       $$("#notifications-list [data-notif]").forEach(row => row.onclick = async () => {
-        if (!row.classList.contains("unread")) return;
         try {
-          await post(`/api/notifications/${row.dataset.notif}/read`, {});
-          row.classList.remove("unread");
-          const dot = row.querySelector(".notif-dot"); if (dot) dot.remove();
-          refreshNotificationBadge();
+          if (row.classList.contains("unread")) {
+            await post(`/api/notifications/${row.dataset.notif}/read`, {});
+            row.classList.remove("unread");
+            const dot = row.querySelector(".notif-dot"); if (dot) dot.remove();
+            refreshNotificationBadge();
+          }
         } catch(e) { /* leave the row as-is on failure */ }
+        if (data?.find(n => n.notification_id === row.dataset.notif)?.data?.source === "medhunt") showPage("medhuntreplies");
       });
     } catch(e) { box.innerHTML = errorState("Could not load notifications"); }
   }
@@ -1818,6 +1904,16 @@
       if (perms.analytics){
         try { usage = await get(`/api/employers/${emp.employer_id}/usage`); } catch(_){}
       }
+      let medhuntCredits = [];
+      if (perms.medhunt_credits){
+        try { medhuntCredits = (await get(`/api/extension/medhunt/credits/team?employer_id=${encodeURIComponent(emp.employer_id)}`)).items || []; } catch(_){}
+      }
+      let medhuntSmsSenders = [];
+      if (perms.manage_roles){
+        try { medhuntSmsSenders = (await get(`/api/extension/medhunt/sms-senders?employer_id=${encodeURIComponent(emp.employer_id)}`)).items || []; } catch(_){}
+      }
+      const medhuntCreditByUser = new Map(medhuntCredits.map(item => [item.user_id, item.balance]));
+      const medhuntSmsSenderByUser = new Map(medhuntSmsSenders.map(item => [item.user_id, item]));
       $("#orgadmin-sub").textContent = emp.org_name;
 
       const kpiCards = [["Members", (mem.items || []).length],
@@ -1838,6 +1934,10 @@
       const memberRows = (mem.items || []).map(m => `<tr>
         <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
         <td>${roleCell(m)}</td>
+        ${perms.medhunt_credits ? `<td><b>${Number(medhuntCreditByUser.get(m.user_id) || 0).toLocaleString()}</b>
+          <button class="btn ghost small" data-medhunt-credit-grant="${esc(m.user_id)}" data-medhunt-credit-email="${esc(m.email || "user")}"><i class="fas fa-plus"></i>Grant</button></td>` : ""}
+        ${perms.manage_roles ? `<td>${esc(medhuntSmsSenderByUser.get(m.user_id)?.sender_number || "Not configured")}
+          <button class="btn ghost small" data-medhunt-sms-sender="${esc(m.user_id)}" data-medhunt-sms-email="${esc(m.email || "user")}"><i class="fas fa-phone"></i>Set sender</button></td>` : ""}
         <td class="td-actions">${(perms.manage_members && !m.is_owner)
           ? `<button class="btn small" data-member-remove="${esc(m.user_id)}" title="Remove from organization"><i class="fas fa-user-minus"></i></button>` : ""}</td>
       </tr>`).join("");
@@ -1867,10 +1967,12 @@
           <div class="team-head"><h2>Members &amp; roles</h2>${perms.manage_members
             ? `<button class="btn ghost small" id="oa-invite"><i class="fas fa-user-plus"></i>Invite teammate</button>` : ""}</div>
           <p class="team-note">${perms.manage_roles
-            ? "Admins manage roles &amp; billing; managers manage members; members use the tools."
-            : "The people in your organization. Talent pools, submissions and jobs are shared across the team."}</p>
+            ? "Admins manage roles and billing; admins and managers can grant extension enrichment credits to team members."
+            : perms.medhunt_credits
+              ? "Managers can grant extension enrichment credits to team members when their balance runs low."
+              : "The people in your organization. Talent pools, submissions and jobs are shared across the team."}</p>
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Member</th><th>Role</th><th class="th-actions"></th></tr></thead>
+            <thead><tr><th>Member</th><th>Role</th>${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_roles ? "<th>SMS sender number</th>" : ""}<th class="th-actions"></th></tr></thead>
             <tbody>${memberRows}</tbody></table></div>
           ${invites.length ? `<div class="team-head" style="margin-top:20px"><h2>Pending invitations</h2></div>
             <div class="table-wrap"><table class="table"><thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
@@ -1887,7 +1989,7 @@
               <td>${Number(m.reveals).toLocaleString()}</td>
               <td>${Number(m.medhunt_enriched || 0).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
           <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your MedHunt administrator.</p></div>` : ""}
-        ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>Candidate replies</h2><p class="team-note">Review SMS replies and assign them to a recruiter on your team.</p><div id="org-medhunt-replies"></div></div>` : ""}
+        ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>SMS conversations</h2><p class="team-note">Review who contacted each candidate, see replies and recruiter follow-up, and reassign unanswered replies.</p><div id="org-medhunt-replies"></div></div>` : ""}
         ${perms.manage_roles ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
       `;
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
@@ -1895,9 +1997,54 @@
       $$("#orgadmin-panel [data-member-remove]").forEach(b => b.onclick = () => removeTeammate(b.dataset.memberRemove));
       $$("#orgadmin-panel [data-invite-revoke]").forEach(b => b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
       $$("#orgadmin-panel [data-member-role]").forEach(s => s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
+      $$("#orgadmin-panel [data-medhunt-credit-grant]").forEach(b => b.onclick = () => grantMedhuntExtensionCredits(
+        b.dataset.medhuntCreditGrant, b.dataset.medhuntCreditEmail, emp.employer_id));
+      $$("#orgadmin-panel [data-medhunt-sms-sender]").forEach(b => b.onclick = () => configureMedhuntSmsSender(
+        b.dataset.medhuntSmsSender, b.dataset.medhuntSmsEmail, emp.employer_id,
+        medhuntSmsSenderByUser.get(b.dataset.medhuntSmsSender) || {}));
       if (perms.analytics) loadMedhuntReplies("#org-medhunt-replies", emp.employer_id);
       if (perms.manage_roles) loadMedhuntDevices("#org-medhunt-devices", emp.employer_id);
     } catch(e) { box.innerHTML = errorState("Could not load your organization.", e.message || ""); }
+  }
+
+  async function configureMedhuntSmsSender(userId, email, employerId, current={}){
+    const v = await formDialog({
+      title: `SMS sender · ${email}`,
+      intro: "Assign this teammate's Zoom Phone number and the Zoom user ID that owns it. Candidate messages and replies will use this sender.",
+      submit: "Save sender",
+      fields: [
+        {name:"sender_number", label:"Zoom Phone number", type:"tel", required:true, value:current.sender_number || ""},
+        {name:"zoom_user_id", label:"Zoom user ID", type:"text", required:true, value:current.zoom_user_id || ""},
+      ],
+    });
+    if (!v) return;
+    try {
+      await put(`/api/extension/medhunt/sms-senders/${encodeURIComponent(userId)}?employer_id=${encodeURIComponent(employerId)}`, {
+        sender_number:v.sender_number, zoom_user_id:v.zoom_user_id,
+      });
+      toast("SMS sender saved.", {title:"Extension messaging"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not save the SMS sender.", {title:"Extension messaging", kind:"err"}); }
+  }
+
+  async function grantMedhuntExtensionCredits(userId, email, employerId){
+    const v = await formDialog({
+      title: `Grant extension credits · ${email}`,
+      intro: "These credits are separate from contact-reveal credits. One credit covers one new candidate enrichment lookup; cached contact results do not use credits.",
+      submit: "Grant credits",
+      fields: [
+        {name:"amount", label:"Credits to add", type:"number", required:true, min:1, max:10000, value:"25"},
+        {name:"note", label:"Note (optional)", type:"text", value:""},
+      ],
+    });
+    if (!v) return;
+    try {
+      const result = await post(`/api/extension/medhunt/credits/team/${encodeURIComponent(userId)}/grant?employer_id=${encodeURIComponent(employerId)}`, {
+        amount: Number(v.amount), note: v.note || "",
+      });
+      toast(`Balance is now ${Number(result.balance).toLocaleString()} extension credits.`, {title:"Extension credits updated"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not grant extension credits.", {title:"Extension credits", kind:"err"}); }
   }
 
   async function inviteTeammate(){
@@ -3478,8 +3625,11 @@
           }).join("")}</select>`;
         if (f.type === "textarea") return `<textarea ${common} rows="3">${esc(val)}</textarea>`;
         if (f.type === "checkbox") return `<input type="checkbox" name="${f.name}"${f.value ? " checked" : ""}>`;
+        const bounds = f.type === "number"
+          ? `${f.min != null ? ` min="${esc(f.min)}"` : ""}${f.max != null ? ` max="${esc(f.max)}"` : ""}`
+          : `${f.max ? ` maxlength="${esc(f.max)}"` : ""}`;
         return `<input type="${f.type || "text"}" ${common} value="${esc(val)}"${
-          f.step ? ` step="${f.step}"` : ""}${f.max ? ` maxlength="${f.max}"` : ""}>`;
+          f.step ? ` step="${f.step}"` : ""}${bounds}>`;
       };
       $("#modal-root").innerHTML = `
         <div class="modal"><div class="modal-card form-card">

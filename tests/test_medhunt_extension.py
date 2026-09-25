@@ -10,7 +10,10 @@ from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
 
 from app.database import Base, utcnow
-from app.models import AuditLog, Employer, Notification, User, UserRole, UserStatus
+from app.models import (
+    AuditLog, Employer, EmployerMember, MedhuntCreditAccount,
+    MedhuntCreditTransaction, MedhuntSmsSender, Notification, User, UserRole, UserStatus,
+)
 from app.routers import analytics, extension
 
 
@@ -101,6 +104,78 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
         self.assertEqual(detail["sources"], [{"source": "npiprofile", "checks": 1, "enriched": 1}])
         self.assertEqual(detail["activity"][0]["candidate_id"], "42")
 
+    def test_org_admin_manages_per_user_sms_sender_and_extension_reads_own_assignment(self):
+        employer = Employer(owner_user_id=self.user.user_id, org_name="Example Staffing")
+        teammate = User(email="teammate@example.com", role=UserRole.recruiter,
+                        status=UserStatus.active)
+        self.db.add_all([employer, teammate])
+        self.db.flush()
+        self.db.add(EmployerMember(employer_id=employer.employer_id,
+                                   user_id=teammate.user_id))
+        self.db.commit()
+
+        saved = extension.set_medhunt_sms_sender(
+            teammate.user_id,
+            extension.MedhuntSmsSenderPatch(
+                sender_number="(415) 555-0123", zoom_user_id="zoom-user-415",
+            ),
+            self.user, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(saved["sender_number"], "+14155550123")
+        self.assertEqual(saved["zoom_user_id"], "zoom-user-415")
+        listed = extension.list_medhunt_sms_senders(
+            self.user, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(listed["items"], [{
+            "user_id": teammate.user_id, "sender_number": "+14155550123",
+            "zoom_user_id": "zoom-user-415",
+        }])
+
+        own = extension.set_medhunt_sms_sender(
+            self.user.user_id,
+            extension.MedhuntSmsSenderPatch(
+                sender_number="+14155550124", zoom_user_id="zoom-user-own",
+            ),
+            self.user, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(
+            extension.my_medhunt_sms_sender(self.user, self.db),
+            {"sender_number": own["sender_number"], "zoom_user_id": own["zoom_user_id"]},
+        )
+
+    @patch("app.routers.extension._medhunt_request")
+    def test_assigned_user_reply_uses_their_sender_and_is_attributed(self, remote):
+        employer = Employer(owner_user_id=self.user.user_id, org_name="Example Staffing")
+        self.db.add(employer)
+        self.db.flush()
+        sender = MedhuntSmsSender(
+            employer_id=employer.employer_id, user_id=self.user.user_id,
+            sender_number="+14155550124", zoom_user_id="zoom-user-own",
+            updated_by_user_id=self.user.user_id,
+        )
+        self.db.add(sender)
+        self.db.commit()
+        thread = {
+            "id": 12, "candidate_id": "34", "initiated_by": self.user.user_id,
+            "candidate_name": "A Candidate", "status": "replied",
+            "messages": [{"direction": "inbound", "body": "Interested", "created": 2}],
+        }
+        remote.side_effect = [thread, thread]
+        result = extension.reply_to_medhunt_conversation(
+            12, extension.MedhuntConversationReply(
+                message="Can you talk tomorrow?", request_id="reply-request-123456",
+            ),
+            self.user, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(result["candidate_name"], "A Candidate")
+        self.assertEqual(remote.call_count, 2)
+        self.assertEqual(remote.call_args.args[0], "/internal/halo/conversations/12/reply")
+        payload = remote.call_args.args[1]
+        self.assertEqual(payload["actor_user_id"], self.user.user_id)
+        self.assertEqual(payload["sender_number"], "+14155550124")
+        self.assertEqual(payload["zoom_user_id"], "zoom-user-own")
+        self.assertEqual(payload["request_id"], "reply-request-123456")
+
     @patch.object(extension.settings, "medhunt_service_token", "test-shared-token")
     def test_service_replay_records_platform_provider_and_event_time(self):
         req = Request({
@@ -147,6 +222,83 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
                 device_admin=True,
             )
         self.assertEqual(denied.exception.status_code, 403)
+
+    def test_extension_lookup_credits_start_at_100_and_charge_once_per_candidate(self):
+        self.assertEqual(extension.my_medhunt_credits(self.user, self.db), {
+            "balance": 100, "lifetime_granted": 100, "lifetime_spent": 0,
+        })
+        body = extension.MedhuntCreditConsume(
+            candidate_ids=[1, 2, 2, 3], run_id="run_12345678",
+        )
+        first = extension.consume_medhunt_credits(body, self.user, self.db)
+        self.assertEqual(first["charged"], 3)
+        self.assertEqual(first["balance"], 97)
+        replay = extension.consume_medhunt_credits(body, self.user, self.db)
+        self.assertEqual(replay["charged"], 0)
+        self.assertEqual(replay["already_charged"], 3)
+        self.assertEqual(replay["balance"], 97)
+        account = self.db.scalar(select(MedhuntCreditAccount).where(
+            MedhuntCreditAccount.user_id == self.user.user_id,
+        ))
+        self.assertEqual((account.lifetime_granted, account.lifetime_spent), (100, 3))
+        ledger = self.db.scalars(select(MedhuntCreditTransaction).where(
+            MedhuntCreditTransaction.user_id == self.user.user_id,
+        )).all()
+        self.assertEqual(len(ledger), 4)
+
+    def test_extension_lookup_credits_fail_closed_without_negative_balance(self):
+        first_hundred = extension.MedhuntCreditConsume(
+            candidate_ids=list(range(1, 101)), run_id="run_12345678",
+        )
+        result = extension.consume_medhunt_credits(first_hundred, self.user, self.db)
+        self.assertEqual((result["charged"], result["balance"]), (100, 0))
+        with self.assertRaises(HTTPException) as exhausted:
+            extension.consume_medhunt_credits(
+                extension.MedhuntCreditConsume(
+                    candidate_ids=[101], run_id="run_abcdefgh",
+                ), self.user, self.db,
+            )
+        self.assertEqual(exhausted.exception.status_code, 402)
+        self.assertEqual(extension.my_medhunt_credits(self.user, self.db)["balance"], 0)
+
+    def test_manager_can_grant_extension_credits_only_to_organization_members(self):
+        manager = User(email="manager@example.com", password_hash="x",
+                       role=UserRole.recruiter, status=UserStatus.active)
+        member = User(email="member@example.com", password_hash="x",
+                      role=UserRole.recruiter, status=UserStatus.active)
+        employer = Employer(owner_user_id=self.user.user_id, org_name="Example Staffing")
+        outsider = User(email="outsider@example.com", password_hash="x",
+                        role=UserRole.recruiter, status=UserStatus.active)
+        self.db.add_all([manager, member, outsider, employer])
+        self.db.flush()
+        self.db.add_all([
+            EmployerMember(employer_id=employer.employer_id, user_id=manager.user_id,
+                           member_role="manager"),
+            EmployerMember(employer_id=employer.employer_id, user_id=member.user_id,
+                           member_role="recruiter"),
+        ])
+        self.db.commit()
+        listed = extension.list_medhunt_team_credits(
+            manager, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(len(listed["items"]), 3)
+        result = extension.grant_medhunt_team_credits(
+            member.user_id, extension.MedhuntCreditGrant(amount=25, note="Month-end top-up"),
+            manager, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(result, {"balance": 125, "granted": 25})
+        with self.assertRaises(HTTPException) as member_denied:
+            extension.grant_medhunt_team_credits(
+                manager.user_id, extension.MedhuntCreditGrant(amount=1),
+                member, self.db, employer_id=employer.employer_id,
+            )
+        self.assertEqual(member_denied.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as denied:
+            extension.grant_medhunt_team_credits(
+                outsider.user_id, extension.MedhuntCreditGrant(amount=1),
+                manager, self.db, employer_id=employer.employer_id,
+            )
+        self.assertEqual(denied.exception.status_code, 404)
 
     @patch("app.routers.extension._medhunt_request")
     def test_halo_assignment_updates_extension_and_notifies_recruiter(self, remote):

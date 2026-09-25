@@ -34,6 +34,8 @@ from .credits import (
     CreditTransaction,
     WeeklyUsageReportDelivery,
 )
+from .medhunt_credits import MedhuntCreditAccount, MedhuntCreditTransaction
+from .medhunt_sms import MedhuntSmsSender
 from .enums import (
     ApplicationStatus,
     ConnectionStatus,
@@ -96,6 +98,8 @@ __all__ = [
     # credits
     "CreditAccount", "CreditTransaction", "DEFAULT_COSTS",
     "COST_REVEAL_CONTACT", "WeeklyUsageReportDelivery",
+    "MedhuntCreditAccount", "MedhuntCreditTransaction",
+    "MedhuntSmsSender",
     # outreach
     "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",
     "MERGE_FIELDS", "SEND_STATUSES",

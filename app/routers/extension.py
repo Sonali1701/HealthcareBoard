@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import io
+import re
 import secrets
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -19,7 +20,8 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
+from sqlalchemy.exc import IntegrityError
 
 from ..config import settings
 from ..database import utcnow
@@ -27,11 +29,13 @@ from ..deps import CurrentUser, DbSession, IngestUser
 from ..models import (
     AuditLog, EmailVerificationToken, Employer, EmployerMember, Notification,
     NotificationType, User, UserRole, UserStatus,
+    MedhuntCreditAccount, MedhuntCreditTransaction, MedhuntSmsSender,
 )
 from ..ratelimit import auth_rate_limit
 from ..security import sha256
 from ..services.email import send_medhunt_login_code
 from ..services import org_roles
+from ..services.notifications import notify
 
 router = APIRouter(prefix="/api/extension", tags=["extension"])
 
@@ -150,6 +154,90 @@ def _medhunt_scope(db, user: User, *, employer_id: str = "", device_admin: bool 
     return {"all_users": False, "user_ids": sorted(member_ids)}, employer
 
 
+def _normalise_sms_sender_number(value: str) -> str:
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) == 10:
+        digits = "1" + digits
+    if not 8 <= len(digits) <= 15 or digits.startswith("0"):
+        raise HTTPException(422, "Enter a valid international SMS sender number.")
+    return "+" + digits
+
+
+@router.get("/medhunt/sms-sender")
+def my_medhunt_sms_sender(user: IngestUser, db: DbSession):
+    _require_recruiter(user)
+    senders = db.scalars(select(MedhuntSmsSender).where(
+        MedhuntSmsSender.user_id == user.user_id,
+    )).all()
+    if not senders:
+        raise HTTPException(409, "Ask your organization admin to configure your SMS sender number.")
+    identities = {(sender.sender_number, sender.zoom_user_id) for sender in senders}
+    if len(identities) != 1:
+        raise HTTPException(409, "Your organizations have different SMS sender assignments. Ask an admin to align them before sending.")
+    sender = senders[0]
+    return {"sender_number": sender.sender_number, "zoom_user_id": sender.zoom_user_id}
+
+
+@router.get("/medhunt/sms-senders")
+def list_medhunt_sms_senders(user: CurrentUser, db: DbSession, employer_id: str = ""):
+    _scope, employer = _medhunt_scope(db, user, employer_id=employer_id, device_admin=True)
+    if not employer:
+        raise HTTPException(400, "Choose an organization to manage SMS sender numbers.")
+    ids = _employer_user_ids(db, employer)
+    rows = db.scalars(select(MedhuntSmsSender).where(
+        MedhuntSmsSender.employer_id == employer.employer_id,
+        MedhuntSmsSender.user_id.in_(ids),
+    )).all()
+    return {"items": [{"user_id": row.user_id, "sender_number": row.sender_number,
+                        "zoom_user_id": row.zoom_user_id} for row in rows]}
+
+
+@router.put("/medhunt/sms-senders/{target_user_id}")
+def set_medhunt_sms_sender(target_user_id: str, body: MedhuntSmsSenderPatch,
+                           user: CurrentUser, db: DbSession, employer_id: str = ""):
+    _scope, employer = _medhunt_scope(db, user, employer_id=employer_id, device_admin=True)
+    if not employer:
+        raise HTTPException(400, "Choose an organization to manage SMS sender numbers.")
+    if target_user_id not in _employer_user_ids(db, employer):
+        raise HTTPException(404, "That user is not a member of your organization.")
+    target = db.get(User, target_user_id)
+    if (not target or target.deleted_at is not None or target.status != UserStatus.active
+            or target.role not in {UserRole.recruiter, UserRole.admin}):
+        raise HTTPException(404, "Active recruiter organization user not found.")
+    sender = db.scalar(select(MedhuntSmsSender).where(
+        MedhuntSmsSender.employer_id == employer.employer_id,
+        MedhuntSmsSender.user_id == target_user_id,
+    ))
+    number = _normalise_sms_sender_number(body.sender_number)
+    zoom_user_id = body.zoom_user_id.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.@-]{1,80}", zoom_user_id):
+        raise HTTPException(422, "Enter the Zoom Phone user ID associated with this number.")
+    if not sender:
+        sender = MedhuntSmsSender(
+            employer_id=employer.employer_id, user_id=target_user_id,
+            sender_number=number, zoom_user_id=zoom_user_id,
+            updated_by_user_id=user.user_id,
+        )
+        db.add(sender)
+    else:
+        sender.sender_number = number
+        sender.zoom_user_id = zoom_user_id
+        sender.updated_by_user_id = user.user_id
+    db.add(AuditLog(
+        actor_user_id=user.user_id, action="medhunt_sms_sender_configured",
+        entity_type="user", entity_id=target_user_id,
+        meta={"employer_id": employer.employer_id,
+              "sender_number": number, "zoom_user_id": zoom_user_id},
+    ))
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "That SMS sender number is already assigned to another teammate.") from exc
+    return {"user_id": target_user_id, "sender_number": number,
+            "zoom_user_id": zoom_user_id}
+
+
 @router.get("/medhunt/devices")
 def list_medhunt_devices(user: CurrentUser, db: DbSession, employer_id: str = ""):
     scope, _ = _medhunt_scope(db, user, employer_id=employer_id, device_admin=True)
@@ -170,14 +258,123 @@ def approve_medhunt_device(device_id: int, user: CurrentUser, db: DbSession,
 def list_medhunt_conversations(user: CurrentUser, db: DbSession,
                                employer_id: str = ""):
     scope, _ = _medhunt_scope(db, user, employer_id=employer_id)
-    return _medhunt_request("/internal/halo/conversations", scope)
+    result = _medhunt_request("/internal/halo/conversations", scope)
+    ids = {str(item.get(key) or "") for item in result.get("items", [])
+           for key in ("initiated_by", "assigned_recruiter_id", "last_outbound_user_id")
+           if item.get(key)}
+    people = {person.user_id: person.email for person in db.scalars(
+        select(User).where(User.user_id.in_(ids))
+    ).all()} if ids else {}
+    for item in result.get("items", []):
+        item["initiated_by_email"] = people.get(str(item.get("initiated_by") or ""), "")
+        item["assigned_recruiter_email"] = (
+            item.get("assigned_recruiter_email")
+            or people.get(str(item.get("assigned_recruiter_id") or ""), "")
+        )
+        item["last_outbound_user_email"] = people.get(
+            str(item.get("last_outbound_user_id") or ""), "",
+        )
+    return result
+
+
+@router.get("/medhunt/my-replies")
+def list_my_medhunt_replies(user: CurrentUser):
+    _require_recruiter(user)
+    # Recruiters see only conversations they initiated or that were assigned
+    # to them; managers continue to use the organization-wide reply queue.
+    data = _medhunt_request(
+        "/internal/halo/conversations",
+        {"all_users": False, "user_ids": [user.user_id]},
+    )
+    return {"items": [item for item in data.get("items", []) if item.get("has_reply")]}
 
 
 @router.get("/medhunt/conversations/{conversation_id}")
 def get_medhunt_conversation(conversation_id: int, user: CurrentUser, db: DbSession,
                              employer_id: str = ""):
+    organization = db.get(Employer, employer_id) if employer_id else _user_employer(db, user.user_id)
+    organization_role = org_roles.role_of(db, organization, user) if organization else None
+    if not org_roles.can(organization_role, "analytics") and user.role != UserRole.admin:
+        data = _medhunt_request(
+            "/internal/halo/conversations",
+            {"all_users": False, "user_ids": [user.user_id]},
+        )
+        item = next((c for c in data.get("items", [])
+                     if int(c.get("id") or 0) == conversation_id and c.get("has_reply")), None)
+        if not item:
+            raise HTTPException(404, "Candidate reply not found")
+        conversation = _medhunt_request(
+            f"/internal/halo/conversations/{conversation_id}",
+            {"all_users": False, "user_ids": [user.user_id]},
+        )
+        conversation = _decorate_medhunt_conversation(conversation, db)
+        conversation["can_reply"] = user.user_id in {
+            str(conversation.get("initiated_by") or ""),
+            str(conversation.get("assigned_recruiter_id") or ""),
+        }
+        return conversation
     scope, _ = _medhunt_scope(db, user, employer_id=employer_id)
-    return _medhunt_request(f"/internal/halo/conversations/{conversation_id}", scope)
+    conversation = _medhunt_request(f"/internal/halo/conversations/{conversation_id}", scope)
+    conversation = _decorate_medhunt_conversation(conversation, db)
+    conversation["can_reply"] = user.user_id in {
+        str(conversation.get("initiated_by") or ""),
+        str(conversation.get("assigned_recruiter_id") or ""),
+    }
+    return conversation
+
+
+def _decorate_medhunt_conversation(conversation: dict, db: DbSession) -> dict:
+    ids = {str(conversation.get("initiated_by") or ""),
+           str(conversation.get("assigned_recruiter_id") or "")}
+    ids.update(str(message.get("sender_user_id") or "")
+               for message in conversation.get("messages", []))
+    ids.discard("")
+    people = {person.user_id: person.email for person in db.scalars(
+        select(User).where(User.user_id.in_(ids))
+    ).all()} if ids else {}
+    conversation["initiated_by_email"] = people.get(str(conversation.get("initiated_by") or ""), "")
+    for message in conversation.get("messages", []):
+        if message.get("sender_user_id"):
+            message["sender_name"] = people.get(str(message["sender_user_id"]), "Team member")
+    return conversation
+
+
+@router.post("/medhunt/conversations/{conversation_id}/reply")
+def reply_to_medhunt_conversation(conversation_id: int, body: MedhuntConversationReply,
+                                  user: CurrentUser, db: DbSession,
+                                  employer_id: str = ""):
+    organization = db.get(Employer, employer_id) if employer_id else _user_employer(db, user.user_id)
+    organization_role = org_roles.role_of(db, organization, user) if organization else None
+    if not org_roles.can(organization_role, "analytics") and user.role != UserRole.admin:
+        scope = {"all_users": False, "user_ids": [user.user_id]}
+        employer = organization
+    else:
+        scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
+    if not employer or user.user_id not in _employer_user_ids(db, employer):
+        raise HTTPException(403, "An organization member account is required to reply.")
+    conversation = _medhunt_request(
+        f"/internal/halo/conversations/{conversation_id}", scope,
+    )
+    if conversation.get("status") == "opted_out":
+        raise HTTPException(409, "This candidate opted out and cannot be messaged.")
+    if not any(m.get("direction") == "inbound" for m in conversation.get("messages", [])):
+        raise HTTPException(409, "Wait for a candidate reply before replying.")
+    sender = db.scalar(select(MedhuntSmsSender).where(
+        MedhuntSmsSender.employer_id == employer.employer_id,
+        MedhuntSmsSender.user_id == user.user_id,
+    ))
+    if not sender:
+        raise HTTPException(409, "Ask your organization admin to configure your SMS sender number.")
+    text = body.message.strip()
+    if not text:
+        raise HTTPException(422, "Reply cannot be blank.")
+    result = _medhunt_request(
+        f"/internal/halo/conversations/{conversation_id}/reply",
+        {**scope, "actor_user_id": user.user_id, "actor_name": user.email, "message": text,
+         "sender_number": sender.sender_number, "zoom_user_id": sender.zoom_user_id,
+         "request_id": body.request_id or secrets.token_urlsafe(24)},
+    )
+    return _decorate_medhunt_conversation(result, db)
 
 
 @router.get("/medhunt/conversations/{conversation_id}/recruiters")
@@ -211,8 +408,29 @@ class MedhuntMessageEvent(BaseModel):
     candidate_name: str = Field(default="", max_length=320)
     initiated_by_user_id: str = Field(default="", max_length=80)
     assigned_recruiter_user_id: str = Field(default="", max_length=80)
+    sender_user_id: str = Field(default="", max_length=80)
     event_type: str = Field(min_length=1, max_length=40)
     message_preview: str = Field(default="", max_length=240)
+
+
+class MedhuntConversationReply(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    request_id: str = Field(default="", max_length=120)
+
+
+class MedhuntCreditConsume(BaseModel):
+    candidate_ids: list[int] = Field(min_length=1, max_length=100)
+    run_id: str = Field(default="", max_length=120)
+
+
+class MedhuntCreditGrant(BaseModel):
+    amount: int = Field(gt=0, le=10000)
+    note: str = Field(default="", max_length=300)
+
+
+class MedhuntSmsSenderPatch(BaseModel):
+    sender_number: str = Field(min_length=7, max_length=40)
+    zoom_user_id: str = Field(min_length=1, max_length=80)
 
 
 def _user_employer(db, user_id: str) -> Employer | None:
@@ -230,6 +448,163 @@ def _employer_user_ids(db, employer: Employer) -> set[str]:
     )).all())
     member_ids.add(employer.owner_user_id)
     return member_ids
+
+
+def _ensure_medhunt_credit_account(db, user_id: str) -> MedhuntCreditAccount:
+    account = db.scalar(select(MedhuntCreditAccount).where(
+        MedhuntCreditAccount.user_id == user_id,
+    ))
+    if account:
+        return account
+    account = MedhuntCreditAccount(
+        user_id=user_id, balance=100, lifetime_granted=100, lifetime_spent=0,
+    )
+    db.add(account)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        account = db.scalar(select(MedhuntCreditAccount).where(
+            MedhuntCreditAccount.user_id == user_id,
+        ))
+        if account:
+            return account
+        raise
+    db.add(MedhuntCreditTransaction(
+        account_id=account.account_id, user_id=user_id, delta=100,
+        balance_after=100, reason="signup_bonus", note="Starting Medhunt enrichment credits",
+    ))
+    return account
+
+
+def _medhunt_credit_summary(db, user_id: str) -> dict:
+    account = _ensure_medhunt_credit_account(db, user_id)
+    return {
+        "balance": int(account.balance),
+        "lifetime_granted": int(account.lifetime_granted),
+        "lifetime_spent": int(account.lifetime_spent),
+    }
+
+
+@router.get("/medhunt/credits")
+def my_medhunt_credits(user: IngestUser, db: DbSession):
+    _require_recruiter(user)
+    summary = _medhunt_credit_summary(db, user.user_id)
+    db.commit()
+    return summary
+
+
+@router.post("/medhunt/credits/consume")
+def consume_medhunt_credits(body: MedhuntCreditConsume, user: IngestUser,
+                            db: DbSession):
+    """Atomically spend one extension credit per distinct candidate, once per user."""
+    _require_recruiter(user)
+    candidate_ids = list(dict.fromkeys(int(cid) for cid in body.candidate_ids if int(cid) > 0))
+    if not candidate_ids:
+        raise HTTPException(422, "At least one valid candidate ID is required.")
+    account = _ensure_medhunt_credit_account(db, user.user_id)
+    # Serialize balance checks for this user. The idempotency ledger then makes
+    # retries and overlapping concurrent batches charge only once per candidate.
+    db.scalar(select(MedhuntCreditAccount).where(
+        MedhuntCreditAccount.user_id == user.user_id,
+    ).with_for_update())
+    keys = {
+        candidate_id: f"medhunt-enrichment:{user.user_id}:{candidate_id}"
+        for candidate_id in candidate_ids
+    }
+    already = set(db.scalars(select(MedhuntCreditTransaction.idempotency_key).where(
+        MedhuntCreditTransaction.idempotency_key.in_(list(keys.values())),
+    )).all())
+    charge_ids = [cid for cid, key in keys.items() if key not in already]
+    if charge_ids:
+        changed = db.execute(text(
+            "UPDATE medhunt_credit_accounts SET balance = balance - :n, "
+            "lifetime_spent = lifetime_spent + :n, updated_at = :now "
+            "WHERE user_id = :uid AND balance >= :n"
+        ), {"n": len(charge_ids), "now": utcnow(), "uid": user.user_id}).rowcount
+        if not changed:
+            db.refresh(account)
+            raise HTTPException(
+                402,
+                f"Not enough extension credits: need {len(charge_ids)}, "
+                f"you have {account.balance}. Ask your organization admin or manager for more.",
+            )
+        db.refresh(account)
+        for index, candidate_id in enumerate(charge_ids):
+            db.add(MedhuntCreditTransaction(
+                account_id=account.account_id, user_id=user.user_id,
+                delta=-1,
+                balance_after=account.balance + len(charge_ids) - index - 1,
+                reason="enrichment_lookup", idempotency_key=keys[candidate_id],
+                note=f"Candidate {candidate_id} enrichment lookup",
+            ))
+    db.commit()
+    return {
+        "balance": int(account.balance),
+        "charged": len(charge_ids),
+        "already_charged": len(candidate_ids) - len(charge_ids),
+    }
+
+
+@router.get("/medhunt/credits/team")
+def list_medhunt_team_credits(user: CurrentUser, db: DbSession,
+                              employer_id: str = ""):
+    scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
+    if not employer:
+        raise HTTPException(400, "Choose an organization to manage extension credits.")
+    role = org_roles.role_of(db, employer, user)
+    if not org_roles.can(role, "medhunt_credits"):
+        raise HTTPException(403, "You cannot manage Medhunt extension credits.")
+    member_ids = _employer_user_ids(db, employer)
+    members = db.scalars(select(User).where(
+        User.user_id.in_(member_ids), User.deleted_at.is_(None),
+    )).all()
+    items = []
+    for member in members:
+        items.append({
+            "user_id": member.user_id,
+            "email": member.email,
+            "balance": _medhunt_credit_summary(db, member.user_id)["balance"],
+        })
+    db.commit()
+    return {"items": sorted(items, key=lambda item: (item["email"] or "").lower())}
+
+
+@router.post("/medhunt/credits/team/{target_user_id}/grant")
+def grant_medhunt_team_credits(target_user_id: str, body: MedhuntCreditGrant,
+                               user: CurrentUser, db: DbSession,
+                               employer_id: str = ""):
+    _scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
+    if not employer:
+        raise HTTPException(400, "Choose an organization to manage extension credits.")
+    role = org_roles.role_of(db, employer, user)
+    if not org_roles.can(role, "medhunt_credits"):
+        raise HTTPException(403, "You cannot manage Medhunt extension credits.")
+    if target_user_id not in _employer_user_ids(db, employer):
+        raise HTTPException(404, "That user is not a member of your organization.")
+    target = db.get(User, target_user_id)
+    if not target or target.deleted_at is not None:
+        raise HTTPException(404, "User not found.")
+    account = _ensure_medhunt_credit_account(db, target_user_id)
+    db.execute(text(
+        "UPDATE medhunt_credit_accounts SET balance = balance + :n, "
+        "lifetime_granted = lifetime_granted + :n, updated_at = :now "
+        "WHERE user_id = :uid"
+    ), {"n": body.amount, "now": utcnow(), "uid": target_user_id})
+    db.refresh(account)
+    db.add(MedhuntCreditTransaction(
+        account_id=account.account_id, user_id=target_user_id,
+        delta=body.amount, balance_after=account.balance, reason="manager_grant",
+        note=body.note.strip() or f"Granted by {user.email}", actor_user_id=user.user_id,
+    ))
+    db.add(AuditLog(
+        actor_user_id=user.user_id, action="medhunt_extension_credits_granted",
+        entity_type="user", entity_id=target_user_id,
+        meta={"amount": body.amount, "balance": account.balance,
+              "employer_id": employer.employer_id, "note": body.note.strip()},
+    ))
+    db.commit()
+    return {"balance": int(account.balance), "granted": body.amount}
 
 
 def _code_digest(email: str, code: str, nonce: str) -> str:
@@ -370,6 +745,17 @@ def assign_medhunt_conversation(body: MedhuntAssignment, user: CurrentUser, db: 
     if not any(message.get("direction") == "inbound"
                for message in conversation.get("messages", [])):
         raise HTTPException(409, "Wait for a candidate reply before assigning")
+    latest_inbound = max((float(message.get("created") or 0)
+                          for message in conversation.get("messages", [])
+                          if message.get("direction") == "inbound"), default=0)
+    latest_outbound = max((float(message.get("created") or 0)
+                           for message in conversation.get("messages", [])
+                           if message.get("direction") == "outbound"
+                           and message.get("status") in {"accepted", "sent", "delivered"}), default=0)
+    if latest_outbound > latest_inbound:
+        raise HTTPException(409, "This conversation has already been answered; reassignment is no longer available.")
+    if conversation.get("status") == "opted_out":
+        raise HTTPException(409, "An opted-out candidate cannot be reassigned for outreach.")
     employer = scoped_employer or _user_employer(
         db, str(conversation.get("initiated_by") or ""),
     )
@@ -401,8 +787,8 @@ def assign_medhunt_conversation(body: MedhuntAssignment, user: CurrentUser, db: 
                 "source": "medhunt",
             },
         ))
-        db.add(Notification(
-            user_id=recruiter.user_id,
+        notify(
+            db, user_id=recruiter.user_id,
             type=NotificationType.message,
             title="Medhunt candidate reply assigned",
             body=f"{conversation.get('candidate_name') or 'A candidate'} was assigned to you.",
@@ -411,7 +797,8 @@ def assign_medhunt_conversation(body: MedhuntAssignment, user: CurrentUser, db: 
                 "candidate_id": body.candidate_id,
                 "nexus_candidate_id": str(conversation.get("nexus_candidate_id") or ""),
             },
-        ))
+            email=True,
+        )
         db.commit()
     return {"user_id": recruiter.user_id, "email": recruiter.email, "name": recruiter.email}
 
@@ -431,7 +818,8 @@ def record_medhunt_message_event(body: MedhuntMessageEvent, request: Request, db
     )):
         return {"recorded": False, "event_id": body.event_id}
     recipient_id = body.assigned_recruiter_user_id or body.initiated_by_user_id
-    actor_id = recipient_id if db.get(User, recipient_id) else None
+    actor_id = body.sender_user_id or recipient_id
+    actor_id = actor_id if db.get(User, actor_id) else None
     db.add(AuditLog(
         actor_user_id=actor_id,
         action=f"medhunt_sms_{body.event_type}",
@@ -440,17 +828,18 @@ def record_medhunt_message_event(body: MedhuntMessageEvent, request: Request, db
         meta={**body.model_dump(), "source": "medhunt"},
     ))
     if actor_id and body.event_type == "received":
-        db.add(Notification(
-            user_id=actor_id,
+        notify(
+            db, user_id=actor_id,
             type=NotificationType.message,
             title="New Medhunt candidate reply",
-            body=f"{body.candidate_name or 'A candidate'} replied: {body.message_preview}"[:500],
+            body=f"{body.candidate_name or 'A candidate'} replied. Open Halo to review the message.",
             data={
                 "source": "medhunt", "conversation_id": body.conversation_id,
                 "candidate_id": body.candidate_id,
                 "nexus_candidate_id": body.nexus_candidate_id,
             },
-        ))
+            email=True,
+        )
     db.commit()
     return {"recorded": True, "event_id": body.event_id}
 

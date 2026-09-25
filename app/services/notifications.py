@@ -26,7 +26,8 @@ def notify(db, *, user_id: str, type: NotificationType, title: str,
         user = db.get(User, user_id)
         if user and user.email:
             from .email import send_notification_email
-            page = _LINK_PAGE.get(type)
+            page = ("medhuntreplies" if (data or {}).get("source") == "medhunt"
+                    else _LINK_PAGE.get(type))
             link = (settings.frontend_base_url.rstrip("/") + f"/?page={page}") if page else None
             # Never let an email failure break the request that triggered it.
             try:

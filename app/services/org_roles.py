@@ -14,6 +14,7 @@ Capabilities:
   manage_members  add / remove members and send invites
   manage_roles    change a member's role (incl. making someone an admin/manager)
   billing         view and manage the org's credits / billing
+  medhunt_credits grant candidate-enrichment credits to teammates
   analytics       see org-wide usage ("track user usage")
   settings        edit the organization profile
   use_tools       use the sourcing workspace (everyone in the org)
@@ -38,6 +39,7 @@ _CAPS: dict[str, set[str]] = {
     "manage_members": {"owner", "admin", "manager"},
     "manage_roles":   {"owner", "admin"},
     "billing":        {"owner", "admin"},
+    "medhunt_credits": {"owner", "admin", "manager"},
     "analytics":      {"owner", "admin", "manager"},
     "settings":       {"owner", "admin"},
     "use_tools":      {"owner", "admin", "manager", "recruiter"},
