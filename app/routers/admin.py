@@ -221,6 +221,8 @@ def list_users(
         "last_ip": ips.get(u.user_id),
         "created_at": u.created_at,
         "is_self": u.user_id == admin.user_id,
+        "medhunt_ceipal_enabled": bool(u.medhunt_ceipal_enabled),
+        "medhunt_nexus_enabled": bool(u.medhunt_nexus_enabled),
     } for u in users]
 
     return {"users": rows, "total": total, "limit": limit, "offset": offset}
@@ -229,6 +231,8 @@ def list_users(
 class UserPatch(BaseModel):
     status: Optional[str] = None
     role: Optional[str] = None
+    medhunt_ceipal_enabled: Optional[bool] = None
+    medhunt_nexus_enabled: Optional[bool] = None
 
 
 def _active_admin_count(db: DbSession, exclude_id: str) -> int:
@@ -281,6 +285,13 @@ def update_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbSession) 
         user.status = new_status
         if new_status == UserStatus.deleted:
             user.deleted_at = utcnow()
+
+    if body.medhunt_ceipal_enabled is not None:
+        user.medhunt_ceipal_enabled = body.medhunt_ceipal_enabled
+        changes["medhunt_ceipal_enabled"] = body.medhunt_ceipal_enabled
+    if body.medhunt_nexus_enabled is not None:
+        user.medhunt_nexus_enabled = body.medhunt_nexus_enabled
+        changes["medhunt_nexus_enabled"] = body.medhunt_nexus_enabled
 
     if not changes:
         raise HTTPException(400, "Nothing to update.")
@@ -469,6 +480,8 @@ def user_detail(user_id: str, admin: AdminUser, db: DbSession) -> dict:
         "last_ip": ips.get(user_id),
         "created_at": user.created_at,
         "is_self": user.user_id == admin.user_id,
+        "medhunt_ceipal_enabled": bool(user.medhunt_ceipal_enabled),
+        "medhunt_nexus_enabled": bool(user.medhunt_nexus_enabled),
         "credits": {
             "balance": acct.balance if acct else 0,
             "lifetime_granted": acct.lifetime_granted if acct else 0,

@@ -713,7 +713,15 @@ def verify_medhunt_code(body: MedhuntCodeVerify, request: Request, db: DbSession
 @router.get("/auth/me")
 def medhunt_me(user: IngestUser):
     _require_recruiter(user)
-    return {"user_id": user.user_id, "email": user.email, "role": user.role.value}
+    return {
+        "user_id": user.user_id,
+        "email": user.email,
+        "role": user.role.value,
+        "delivery_targets": {
+            "ceipal": bool(user.medhunt_ceipal_enabled),
+            "nexus": bool(user.medhunt_nexus_enabled),
+        },
+    }
 
 
 @router.get("/team/recruiters")

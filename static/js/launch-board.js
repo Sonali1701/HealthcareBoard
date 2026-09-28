@@ -368,7 +368,7 @@
   // ---- Admin console (platform super-admin) --------------------------------
   const ADMIN = { tab: "overview", uOffset: 0, uLimit: 25, oOffset: 0, oLimit: 25,
                   lOffset: 0, lLimit: 50, jOffset: 0, jLimit: 25, auOffset: 0, auLimit: 50 };
-  const ADMIN_COLS = 8, ADMIN_ORG_COLS = 9, ADMIN_LOGIN_COLS = 5, ADMIN_JOB_COLS = 7, ADMIN_AUDIT_COLS = 5;
+  const ADMIN_COLS = 10, ADMIN_ORG_COLS = 9, ADMIN_LOGIN_COLS = 5, ADMIN_JOB_COLS = 7, ADMIN_AUDIT_COLS = 5;
   const ROLE_LABEL = {job_seeker:"Job seeker", recruiter:"Recruiter", employer:"Employer", admin:"Admin"};
   const STATUS_LABEL = {active:"Active", suspended:"Suspended", pending_verify:"Pending", deleted:"Deleted"};
   const adminDate = iso => iso ? new Date(iso).toLocaleDateString([], {year:"numeric", month:"short", day:"numeric"}) : "—";
@@ -671,6 +671,8 @@
       <td class="admin-user-cell">${name}${verified}</td>
       <td>${roleSel}</td>
       <td><span class="admin-badge ${statusCls}">${STATUS_LABEL[u.status] || u.status}</span></td>
+      <td><input type="checkbox" data-admin-ats="ceipal" data-user-id="${esc(u.user_id)}"${u.medhunt_ceipal_enabled ? " checked" : ""} aria-label="Send ${esc(u.email)} candidates to CEIPAL"></td>
+      <td><input type="checkbox" data-admin-ats="nexus" data-user-id="${esc(u.user_id)}"${u.medhunt_nexus_enabled ? " checked" : ""} aria-label="Send ${esc(u.email)} candidates to Nexus"></td>
       <td>${u.credit_balance == null ? "—" : Number(u.credit_balance).toLocaleString()}</td>
       <td>${u.last_login_at ? adminDate(u.last_login_at) : "Never"}</td>
       <td class="admin-ip">${esc(u.last_ip || "—")}</td>
@@ -863,6 +865,14 @@
               <button class="btn ghost small" id="au-deduct"><i class="fas fa-minus"></i>Deduct</button>
             </div>
           </div>
+          <div class="admin-credit-box">
+            <div><b>Medhunt candidate delivery</b><div class="admin-sub">Route candidates enriched by ${esc(u.email)}.</div></div>
+            <div class="admin-credit-actions">
+              <label><input type="checkbox" id="au-ceipal"${u.medhunt_ceipal_enabled ? " checked" : ""}> CEIPAL</label>
+              <label><input type="checkbox" id="au-nexus"${u.medhunt_nexus_enabled ? " checked" : ""}> Nexus</label>
+              <button class="btn ghost small" id="au-save-routing">Save</button>
+            </div>
+          </div>
           <div><label>Organizations</label><div class="admin-chips">${orgs}</div></div>
           <div><label>Recent logins</label><div class="admin-recent">${logins}</div></div>
         </div>`;
@@ -871,6 +881,16 @@
         try { await post(`/api/admin/users/${userId}/verify`, {}); toast("Email verified.", {title:"User"});
           openAdminUser(userId); loadAdminUsers(); }
         catch(e){ toast(e.message || "Failed.", {kind:"err"}); }
+      };
+      $("#au-save-routing").onclick = async () => {
+        try {
+          await patch(`/api/admin/users/${userId}`, {
+            medhunt_ceipal_enabled: $("#au-ceipal").checked,
+            medhunt_nexus_enabled: $("#au-nexus").checked,
+          });
+          toast("Candidate delivery routing saved.", {title:"Medhunt"});
+          openAdminUser(userId); loadAdminUsers();
+        } catch(e) { toast(e.message || "Could not save routing.", {title:"Medhunt", kind:"err"}); }
       };
       $("#au-grant").onclick = () => adminAdjustCredits({title:`Grant credits · ${u.email}`, sign:1,
         url:`/api/admin/users/${userId}/credits`, after:() => openAdminUser(userId)});
@@ -3503,6 +3523,10 @@
     document.body.addEventListener("change", e => {
       const rs = e.target.closest("[data-admin-role]");
       if (rs) adminUpdateUser(rs.dataset.adminRole, {role: rs.value});
+      const ats = e.target.closest("[data-admin-ats]");
+      if (ats) adminUpdateUser(ats.dataset.userId, {
+        [`medhunt_${ats.dataset.adminAts}_enabled`]: ats.checked,
+      });
     });
     // Admin: search + filter controls (debounced search, immediate selects).
     let adminUserT, adminOrgT;
