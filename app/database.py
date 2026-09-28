@@ -149,8 +149,8 @@ def ensure_schema() -> list[str]:
     that already exists. That gap is why every feature so far shipped with a
     hand-written ``app/migrate_*.py`` that had to be run against the database
     before the code that needed the column went live — miss it and the deploy
-    500s. This closes the gap: after create_all, any *optional* (nullable)
-    column the models declare but the database lacks is added in place.
+    500s. This closes the gap: after create_all, any nullable column, or required
+    column with a server default, that the database lacks is added in place.
 
     Deliberately conservative and safe on the populated production database:
       * additive only — it never drops or retypes a column;
@@ -167,6 +167,7 @@ def ensure_schema() -> list[str]:
     insp = inspect(engine)
     existing_tables = set(insp.get_table_names())
     is_pg = engine.dialect.name == "postgresql"
+    preparer = engine.dialect.identifier_preparer
     added: list[str] = []
     needs_manual: list[str] = []
 
@@ -183,9 +184,25 @@ def ensure_schema() -> list[str]:
                 needs_manual.append(f"{table.name}.{col.name}")
                 continue
             coltype = col.type.compile(dialect=engine.dialect)
+            default_sql = ""
+            if col.server_default is not None:
+                default_arg = col.server_default.arg
+                if hasattr(default_arg, "compile"):
+                    compiled_default = default_arg.compile(
+                        dialect=engine.dialect,
+                        compile_kwargs={"literal_binds": True},
+                    )
+                    default_sql = f" DEFAULT {compiled_default}"
+                else:
+                    default_sql = f" DEFAULT {default_arg}"
+            nullability_sql = " NOT NULL" if not col.nullable else ""
             exists_guard = "IF NOT EXISTS " if is_pg else ""
-            ddl = (f'ALTER TABLE "{table.name}" '
-                   f'ADD COLUMN {exists_guard}"{col.name}" {coltype}')
+            table_name = preparer.quote(table.name)
+            column_name = preparer.quote(col.name)
+            ddl = (
+                f"ALTER TABLE {table_name} ADD COLUMN {exists_guard}"
+                f"{column_name} {coltype}{default_sql}{nullability_sql}"
+            )
             try:
                 with engine.begin() as conn:
                     conn.execute(text(ddl))
