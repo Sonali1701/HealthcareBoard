@@ -1443,6 +1443,12 @@ tr.is-selected{background:var(--accent-soft)}
 .oa-meta{margin-top:4px;font-size:13px;color:var(--muted)}
 .oa-roleplate{text-align:right}
 .oa-roleplate > div{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.medhunt-credit-bulkbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:12px 0;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--soft)}
+.medhunt-credit-bulkbar label{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;font-weight:600}
+.medhunt-credit-bulkbar input[type="number"]{width:92px}
+.medhunt-credit-bulkbar input[type="text"]{flex:1;min-width:160px}
+.medhunt-credit-bulkbar input:not([type="checkbox"]){border:1px solid var(--line-2);border-radius:7px;background:var(--white);padding:7px 9px;color:var(--ink);font:inherit;font-size:12px}
+.medhunt-credit-bulkbar input:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
 
 /* --- Job AI: seeker result cards ---------------------------------------- */
 .jai-results{display:flex;flex-direction:column;gap:10px}

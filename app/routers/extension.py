@@ -428,6 +428,12 @@ class MedhuntCreditGrant(BaseModel):
     note: str = Field(default="", max_length=300)
 
 
+class MedhuntCreditBulkAdjust(BaseModel):
+    user_ids: list[str] = Field(min_length=1, max_length=500)
+    amount: int = Field(ge=-10000, le=10000)
+    note: str = Field(default="", max_length=300)
+
+
 class MedhuntSmsSenderPatch(BaseModel):
     sender_number: str = Field(min_length=7, max_length=40)
     zoom_user_id: str = Field(min_length=1, max_length=80)
@@ -605,6 +611,79 @@ def grant_medhunt_team_credits(target_user_id: str, body: MedhuntCreditGrant,
     ))
     db.commit()
     return {"balance": int(account.balance), "granted": body.amount}
+
+
+@router.post("/medhunt/credits/team/bulk-adjust")
+def adjust_medhunt_team_credits_bulk(body: MedhuntCreditBulkAdjust,
+                                     user: CurrentUser, db: DbSession,
+                                     employer_id: str = ""):
+    """Add or remove extension credits for selected team members as one batch."""
+    _scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
+    if not employer:
+        raise HTTPException(400, "Choose an organization to manage extension credits.")
+    role = org_roles.role_of(db, employer, user)
+    if role not in {"owner", "admin"}:
+        raise HTTPException(403, "Only organization admins can adjust credits in bulk.")
+    if body.amount == 0:
+        raise HTTPException(422, "Enter a non-zero credit adjustment.")
+
+    requested_ids = list(dict.fromkeys(str(value).strip() for value in body.user_ids if str(value).strip()))
+    if not requested_ids:
+        raise HTTPException(422, "Select at least one team member.")
+    member_ids = _employer_user_ids(db, employer)
+    outside_org = sorted(set(requested_ids) - member_ids)
+    if outside_org:
+        raise HTTPException(404, "One or more selected users are not members of this organization.")
+    members = db.scalars(select(User).where(
+        User.user_id.in_(requested_ids), User.deleted_at.is_(None),
+    )).all()
+    if len(members) != len(requested_ids):
+        raise HTTPException(404, "One or more selected users are unavailable.")
+
+    # Initialize missing accounts before taking locks, then serialize balances
+    # in a stable order so concurrent admin changes cannot overwrite each other.
+    for target_id in sorted(requested_ids):
+        _ensure_medhunt_credit_account(db, target_id)
+    accounts = db.scalars(select(MedhuntCreditAccount).where(
+        MedhuntCreditAccount.user_id.in_(requested_ids),
+    ).order_by(MedhuntCreditAccount.user_id).with_for_update()).all()
+    note = body.note.strip() or f"Bulk adjustment by {user.email}"
+    results = []
+    for account in accounts:
+        old_balance = int(account.balance)
+        new_balance = max(0, old_balance + body.amount)
+        actual_delta = new_balance - old_balance
+        account.balance = new_balance
+        if actual_delta > 0:
+            account.lifetime_granted = int(account.lifetime_granted or 0) + actual_delta
+        target = next(member for member in members if member.user_id == account.user_id)
+        if actual_delta:
+            db.add(MedhuntCreditTransaction(
+                account_id=account.account_id, user_id=account.user_id,
+                delta=actual_delta, balance_after=new_balance,
+                reason="admin_bulk_adjustment", note=note,
+                actor_user_id=user.user_id,
+            ))
+        results.append({
+            "user_id": account.user_id,
+            "email": target.email,
+            "balance": new_balance,
+            "adjusted": actual_delta,
+        })
+
+    db.add(AuditLog(
+        actor_user_id=user.user_id,
+        action="medhunt_extension_credits_bulk_adjusted",
+        entity_type="organization", entity_id=employer.employer_id,
+        meta={
+            "requested_amount": body.amount,
+            "user_ids": requested_ids,
+            "note": note,
+            "results": results,
+        },
+    ))
+    db.commit()
+    return {"items": results, "requested_amount": body.amount}
 
 
 def _code_digest(email: str, code: str, nonce: str) -> str:

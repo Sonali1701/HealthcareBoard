@@ -13,6 +13,7 @@
     threads:[], activeThread:null, threadPoll:null, msgFilter:"",
     threadsReq:0, threadReq:0,
     pools:[], activePool:null, poolStage:"", poolMembership:new Map(), poolsReq:0,
+    selectedMedhuntCreditUsers:new Set(),
     // Candidate matching
     jobsById:new Map(), matchJobId:null, matchRun:null,
     // Bulk selection in the directory / AI results
@@ -1913,6 +1914,10 @@
         return;
       }
       const mem = await get(`/api/employers/${emp.employer_id}/members`);
+      const currentMemberIds = new Set((mem.items || []).map(m => m.user_id));
+      S.selectedMedhuntCreditUsers = new Set(
+        [...S.selectedMedhuntCreditUsers].filter(id => currentMemberIds.has(id))
+      );
       const perms = mem.permissions || {manage_members:false, manage_roles:false, analytics:false, settings:false};
       S.teamPerms = perms;
       const myRole = mem.my_role || "recruiter";
@@ -1934,6 +1939,7 @@
       }
       const medhuntCreditByUser = new Map(medhuntCredits.map(item => [item.user_id, item.balance]));
       const medhuntSmsSenderByUser = new Map(medhuntSmsSenders.map(item => [item.user_id, item]));
+      const canBulkAdjustMedhuntCredits = perms.manage_roles && perms.medhunt_credits;
       $("#orgadmin-sub").textContent = emp.org_name;
 
       const kpiCards = [["Members", (mem.items || []).length],
@@ -1952,6 +1958,7 @@
             }</select>`
           : `<span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.member_role] || m.member_role)}</span>`;
       const memberRows = (mem.items || []).map(m => `<tr>
+        ${canBulkAdjustMedhuntCredits ? `<td><input type="checkbox" aria-label="Select ${esc(m.email || m.name || "team member")} for bulk credit adjustment" data-medhunt-credit-select="${esc(m.user_id)}"${S.selectedMedhuntCreditUsers.has(m.user_id) ? " checked" : ""}></td>` : ""}
         <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
         <td>${roleCell(m)}</td>
         ${perms.medhunt_credits ? `<td><b>${Number(medhuntCreditByUser.get(m.user_id) || 0).toLocaleString()}</b>
@@ -1991,8 +1998,16 @@
             : perms.medhunt_credits
               ? "Managers can grant extension enrichment credits to team members when their balance runs low."
               : "The people in your organization. Talent pools, submissions and jobs are shared across the team."}</p>
+          ${canBulkAdjustMedhuntCredits ? `<div class="medhunt-credit-bulkbar">
+            <label><input type="checkbox" id="medhunt-credit-select-all"> Select all team members</label>
+            <label for="medhunt-credit-bulk-amount">Credits per person</label>
+            <input id="medhunt-credit-bulk-amount" type="number" min="1" max="10000" value="25" inputmode="numeric">
+            <input id="medhunt-credit-bulk-note" type="text" maxlength="300" placeholder="Reason (optional)" aria-label="Bulk adjustment reason">
+            <button class="btn ghost small" id="medhunt-credit-bulk-add"><i class="fas fa-plus"></i>Add</button>
+            <button class="btn ghost small" id="medhunt-credit-bulk-remove"><i class="fas fa-minus"></i>Remove</button>
+          </div>` : ""}
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Member</th><th>Role</th>${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_roles ? "<th>SMS sender number</th>" : ""}<th class="th-actions"></th></tr></thead>
+            <thead><tr>${canBulkAdjustMedhuntCredits ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th>${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_roles ? "<th>SMS sender number</th>" : ""}<th class="th-actions"></th></tr></thead>
             <tbody>${memberRows}</tbody></table></div>
           ${invites.length ? `<div class="team-head" style="margin-top:20px"><h2>Pending invitations</h2></div>
             <div class="table-wrap"><table class="table"><thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
@@ -2019,6 +2034,22 @@
       $$("#orgadmin-panel [data-member-role]").forEach(s => s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
       $$("#orgadmin-panel [data-medhunt-credit-grant]").forEach(b => b.onclick = () => grantMedhuntExtensionCredits(
         b.dataset.medhuntCreditGrant, b.dataset.medhuntCreditEmail, emp.employer_id));
+      const selectAllCredits = $("#medhunt-credit-select-all");
+      if (selectAllCredits) selectAllCredits.onchange = () => {
+        S.selectedMedhuntCreditUsers = new Set(selectAllCredits.checked
+          ? (mem.items || []).map(m => m.user_id)
+          : []);
+        $$("#orgadmin-panel [data-medhunt-credit-select]").forEach(box => { box.checked = selectAllCredits.checked; });
+      };
+      $$("#orgadmin-panel [data-medhunt-credit-select]").forEach(box => box.onchange = () => {
+        if (box.checked) S.selectedMedhuntCreditUsers.add(box.dataset.medhuntCreditSelect);
+        else S.selectedMedhuntCreditUsers.delete(box.dataset.medhuntCreditSelect);
+        if (selectAllCredits) selectAllCredits.checked = S.selectedMedhuntCreditUsers.size === (mem.items || []).length;
+      });
+      const bulkAdd = $("#medhunt-credit-bulk-add");
+      const bulkRemove = $("#medhunt-credit-bulk-remove");
+      if (bulkAdd) bulkAdd.onclick = () => bulkAdjustMedhuntExtensionCredits(emp.employer_id, 1);
+      if (bulkRemove) bulkRemove.onclick = () => bulkAdjustMedhuntExtensionCredits(emp.employer_id, -1);
       $$("#orgadmin-panel [data-medhunt-sms-sender]").forEach(b => b.onclick = () => configureMedhuntSmsSender(
         b.dataset.medhuntSmsSender, b.dataset.medhuntSmsEmail, emp.employer_id,
         medhuntSmsSenderByUser.get(b.dataset.medhuntSmsSender) || {}));
@@ -2065,6 +2096,31 @@
       toast(`Balance is now ${Number(result.balance).toLocaleString()} extension credits.`, {title:"Extension credits updated"});
       await loadOrgAdmin();
     } catch(e){ toast(e.message || "Could not grant extension credits.", {title:"Extension credits", kind:"err"}); }
+  }
+
+  async function bulkAdjustMedhuntExtensionCredits(employerId, direction){
+    const userIds = [...S.selectedMedhuntCreditUsers];
+    if (!userIds.length){ toast("Select at least one team member.", {title:"Extension credits", kind:"err"}); return; }
+    const amount = Number($("#medhunt-credit-bulk-amount")?.value || 0);
+    if (!Number.isInteger(amount) || amount < 1 || amount > 10000){
+      toast("Enter a whole number from 1 to 10,000.", {title:"Extension credits", kind:"err"}); return;
+    }
+    const signedAmount = amount * direction;
+    const action = direction > 0 ? "add" : "remove";
+    const note = $("#medhunt-credit-bulk-note")?.value.trim() || "";
+    const confirmed = window.confirm(
+      `${action === "add" ? "Add" : "Remove"} ${amount.toLocaleString()} credits ${action === "add" ? "to" : "from"} each of ${userIds.length} selected team members? Credits cannot go below zero.`
+    );
+    if (!confirmed) return;
+    try {
+      const result = await post(`/api/extension/medhunt/credits/team/bulk-adjust?employer_id=${encodeURIComponent(employerId)}`, {
+        user_ids: userIds, amount: signedAmount, note,
+      });
+      const changed = (result.items || []).reduce((sum, item) => sum + Math.abs(Number(item.adjusted) || 0), 0);
+      S.selectedMedhuntCreditUsers.clear();
+      toast(`${action === "add" ? "Added" : "Removed"} ${changed.toLocaleString()} credits across ${(result.items || []).length} users.`, {title:"Extension credits updated"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not adjust extension credits.", {title:"Extension credits", kind:"err"}); }
   }
 
   async function inviteTeammate(){
