@@ -2005,6 +2005,9 @@
             <input id="medhunt-credit-bulk-note" type="text" maxlength="300" placeholder="Reason (optional)" aria-label="Bulk adjustment reason">
             <button class="btn ghost small" id="medhunt-credit-bulk-add"><i class="fas fa-plus"></i>Add</button>
             <button class="btn ghost small" id="medhunt-credit-bulk-remove"><i class="fas fa-minus"></i>Remove</button>
+            <label for="medhunt-credit-bulk-set-amount">Set balance to</label>
+            <input id="medhunt-credit-bulk-set-amount" type="number" min="0" max="10000" value="0" inputmode="numeric">
+            <button class="btn ghost small" id="medhunt-credit-bulk-set"><i class="fas fa-equals"></i>Set balance</button>
           </div>` : ""}
           <div class="table-wrap"><table class="table">
             <thead><tr>${canBulkAdjustMedhuntCredits ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th>${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_roles ? "<th>SMS sender number</th>" : ""}<th class="th-actions"></th></tr></thead>
@@ -2048,8 +2051,10 @@
       });
       const bulkAdd = $("#medhunt-credit-bulk-add");
       const bulkRemove = $("#medhunt-credit-bulk-remove");
+      const bulkSet = $("#medhunt-credit-bulk-set");
       if (bulkAdd) bulkAdd.onclick = () => bulkAdjustMedhuntExtensionCredits(emp.employer_id, 1);
       if (bulkRemove) bulkRemove.onclick = () => bulkAdjustMedhuntExtensionCredits(emp.employer_id, -1);
+      if (bulkSet) bulkSet.onclick = () => bulkSetMedhuntExtensionCredits(emp.employer_id);
       $$("#orgadmin-panel [data-medhunt-sms-sender]").forEach(b => b.onclick = () => configureMedhuntSmsSender(
         b.dataset.medhuntSmsSender, b.dataset.medhuntSmsEmail, emp.employer_id,
         medhuntSmsSenderByUser.get(b.dataset.medhuntSmsSender) || {}));
@@ -2121,6 +2126,26 @@
       toast(`${action === "add" ? "Added" : "Removed"} ${changed.toLocaleString()} credits across ${(result.items || []).length} users.`, {title:"Extension credits updated"});
       await loadOrgAdmin();
     } catch(e){ toast(e.message || "Could not adjust extension credits.", {title:"Extension credits", kind:"err"}); }
+  }
+
+  async function bulkSetMedhuntExtensionCredits(employerId){
+    const userIds = [...S.selectedMedhuntCreditUsers];
+    if (!userIds.length){ toast("Select at least one team member.", {title:"Extension credits", kind:"err"}); return; }
+    const balance = Number($("#medhunt-credit-bulk-set-amount")?.value);
+    if (!Number.isInteger(balance) || balance < 0 || balance > 10000){
+      toast("Enter a whole-number balance from 0 to 10,000.", {title:"Extension credits", kind:"err"}); return;
+    }
+    const note = $("#medhunt-credit-bulk-note")?.value.trim() || "";
+    if (!window.confirm(`Set the credit balance to ${balance.toLocaleString()} for each of ${userIds.length} selected users? This replaces their current balances.`)) return;
+    try {
+      const result = await post(`/api/extension/medhunt/credits/team/bulk-set?employer_id=${encodeURIComponent(employerId)}`, {
+        user_ids: userIds, balance, note,
+      });
+      const changed = (result.items || []).filter(item => Number(item.adjusted) !== 0).length;
+      S.selectedMedhuntCreditUsers.clear();
+      toast(`Set the balance to ${balance.toLocaleString()} for ${(result.items || []).length} users (${changed} balances changed).`, {title:"Extension credits updated"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not set extension credit balances.", {title:"Extension credits", kind:"err"}); }
   }
 
   async function inviteTeammate(){

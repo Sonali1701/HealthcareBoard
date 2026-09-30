@@ -434,6 +434,12 @@ class MedhuntCreditBulkAdjust(BaseModel):
     note: str = Field(default="", max_length=300)
 
 
+class MedhuntCreditBulkSet(BaseModel):
+    user_ids: list[str] = Field(min_length=1, max_length=500)
+    balance: int = Field(ge=0, le=10000)
+    note: str = Field(default="", max_length=300)
+
+
 class MedhuntSmsSenderPatch(BaseModel):
     sender_number: str = Field(min_length=7, max_length=40)
     zoom_user_id: str = Field(min_length=1, max_length=80)
@@ -618,16 +624,36 @@ def adjust_medhunt_team_credits_bulk(body: MedhuntCreditBulkAdjust,
                                      user: CurrentUser, db: DbSession,
                                      employer_id: str = ""):
     """Add or remove extension credits for selected team members as one batch."""
+    return _apply_medhunt_team_credit_bulk(
+        user_ids=body.user_ids, amount=body.amount, note=body.note,
+        user=user, db=db, employer_id=employer_id, set_balance=False,
+    )
+
+
+@router.post("/medhunt/credits/team/bulk-set")
+def set_medhunt_team_credits_bulk(body: MedhuntCreditBulkSet,
+                                  user: CurrentUser, db: DbSession,
+                                  employer_id: str = ""):
+    """Set the selected members' extension-credit balances to an exact value."""
+    return _apply_medhunt_team_credit_bulk(
+        user_ids=body.user_ids, amount=body.balance, note=body.note,
+        user=user, db=db, employer_id=employer_id, set_balance=True,
+    )
+
+
+def _apply_medhunt_team_credit_bulk(*, user_ids: list[str], amount: int,
+                                    note: str, user: CurrentUser, db: DbSession,
+                                    employer_id: str, set_balance: bool):
     _scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
     if not employer:
         raise HTTPException(400, "Choose an organization to manage extension credits.")
     role = org_roles.role_of(db, employer, user)
     if role not in {"owner", "admin"}:
         raise HTTPException(403, "Only organization admins can adjust credits in bulk.")
-    if body.amount == 0:
+    if amount == 0 and not set_balance:
         raise HTTPException(422, "Enter a non-zero credit adjustment.")
 
-    requested_ids = list(dict.fromkeys(str(value).strip() for value in body.user_ids if str(value).strip()))
+    requested_ids = list(dict.fromkeys(str(value).strip() for value in user_ids if str(value).strip()))
     if not requested_ids:
         raise HTTPException(422, "Select at least one team member.")
     member_ids = _employer_user_ids(db, employer)
@@ -647,11 +673,11 @@ def adjust_medhunt_team_credits_bulk(body: MedhuntCreditBulkAdjust,
     accounts = db.scalars(select(MedhuntCreditAccount).where(
         MedhuntCreditAccount.user_id.in_(requested_ids),
     ).order_by(MedhuntCreditAccount.user_id).with_for_update()).all()
-    note = body.note.strip() or f"Bulk adjustment by {user.email}"
+    note = note.strip() or f"Bulk {'balance set' if set_balance else 'adjustment'} by {user.email}"
     results = []
     for account in accounts:
         old_balance = int(account.balance)
-        new_balance = max(0, old_balance + body.amount)
+        new_balance = amount if set_balance else max(0, old_balance + amount)
         actual_delta = new_balance - old_balance
         account.balance = new_balance
         if actual_delta > 0:
@@ -661,7 +687,8 @@ def adjust_medhunt_team_credits_bulk(body: MedhuntCreditBulkAdjust,
             db.add(MedhuntCreditTransaction(
                 account_id=account.account_id, user_id=account.user_id,
                 delta=actual_delta, balance_after=new_balance,
-                reason="admin_bulk_adjustment", note=note,
+                reason="admin_bulk_set" if set_balance else "admin_bulk_adjustment",
+                note=note,
                 actor_user_id=user.user_id,
             ))
         results.append({
@@ -673,17 +700,20 @@ def adjust_medhunt_team_credits_bulk(body: MedhuntCreditBulkAdjust,
 
     db.add(AuditLog(
         actor_user_id=user.user_id,
-        action="medhunt_extension_credits_bulk_adjusted",
+        action="medhunt_extension_credits_bulk_set" if set_balance
+            else "medhunt_extension_credits_bulk_adjusted",
         entity_type="organization", entity_id=employer.employer_id,
         meta={
-            "requested_amount": body.amount,
+            "operation": "set" if set_balance else "adjust",
+            "requested_amount": amount,
             "user_ids": requested_ids,
             "note": note,
             "results": results,
         },
     ))
     db.commit()
-    return {"items": results, "requested_amount": body.amount}
+    return {"items": results, "requested_amount": amount,
+            "operation": "set" if set_balance else "adjust"}
 
 
 def _code_digest(email: str, code: str, nonce: str) -> str:
