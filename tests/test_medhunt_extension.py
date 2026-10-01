@@ -300,6 +300,48 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
             )
         self.assertEqual(denied.exception.status_code, 404)
 
+    def test_admin_can_set_selected_team_credit_balances_to_zero_then_add_in_bulk(self):
+        first = User(email="first@example.com", password_hash="x",
+                     role=UserRole.recruiter, status=UserStatus.active)
+        second = User(email="second@example.com", password_hash="x",
+                      role=UserRole.recruiter, status=UserStatus.active)
+        manager = User(email="manager@example.com", password_hash="x",
+                       role=UserRole.recruiter, status=UserStatus.active)
+        employer = Employer(owner_user_id=self.user.user_id, org_name="Example Staffing")
+        self.db.add_all([first, second, manager, employer])
+        self.db.flush()
+        self.db.add_all([
+            EmployerMember(employer_id=employer.employer_id, user_id=first.user_id),
+            EmployerMember(employer_id=employer.employer_id, user_id=second.user_id),
+            EmployerMember(employer_id=employer.employer_id, user_id=manager.user_id,
+                           member_role="manager"),
+        ])
+        self.db.commit()
+
+        selected = [first.user_id, second.user_id]
+        reset = extension.set_medhunt_team_credits_bulk(
+            extension.MedhuntCreditBulkSet(user_ids=selected, balance=0, note="Quarter reset"),
+            self.user, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(reset["operation"], "set")
+        self.assertEqual({item["balance"] for item in reset["items"]}, {0})
+        self.assertEqual({item["adjusted"] for item in reset["items"]}, {-100})
+
+        added = extension.adjust_medhunt_team_credits_bulk(
+            extension.MedhuntCreditBulkAdjust(user_ids=selected, amount=25),
+            self.user, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(added["operation"], "adjust")
+        self.assertEqual({item["balance"] for item in added["items"]}, {25})
+        self.assertEqual({item["adjusted"] for item in added["items"]}, {25})
+
+        with self.assertRaises(HTTPException) as denied:
+            extension.set_medhunt_team_credits_bulk(
+                extension.MedhuntCreditBulkSet(user_ids=selected, balance=10),
+                manager, self.db, employer_id=employer.employer_id,
+            )
+        self.assertEqual(denied.exception.status_code, 403)
+
     @patch("app.routers.extension._medhunt_request")
     def test_halo_assignment_updates_extension_and_notifies_recruiter(self, remote):
         employer = Employer(owner_user_id=self.user.user_id, org_name="Example Staffing")
