@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select, update
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import delete, func, select, update
 
 from datetime import timedelta
 
@@ -14,10 +14,15 @@ from ..database import utcnow
 from ..deps import CurrentUser, DbSession
 from ..models import (
     Application,
+    AuditLog,
     Employer,
     EmployerMember,
     JobPosting,
+    MedhuntMessagingPermission,
+    MedhuntSmsSender,
     Notification,
+    OrganizationTeam,
+    OrganizationTeamMember,
     Profile,
     TeamInvite,
     User,
@@ -27,6 +32,7 @@ from ..schemas.common import Page
 from ..schemas.job import EmployerCreate, EmployerOut, EmployerUpdate
 from ..security import generate_opaque_token, sha256
 from ..services import org_roles
+from ..services import team_access
 from ..services.email import send_team_invite
 
 router = APIRouter(prefix="/api/employers", tags=["employers"])
@@ -35,6 +41,7 @@ router = APIRouter(prefix="/api/employers", tags=["employers"])
 class MemberInvite(BaseModel):
     email: EmailStr
     member_role: str = "recruiter"
+    team_id: Optional[str] = None
 
 
 def _require_cap(db: DbSession, employer: Employer, user: CurrentUser, capability: str) -> str:
@@ -194,6 +201,207 @@ def update_employer(employer_id: str, body: EmployerUpdate, user: CurrentUser, d
     return employer
 
 
+# --- Organization teams --------------------------------------------------
+
+
+class OrganizationTeamCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+
+class OrganizationTeamUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    status: Optional[str] = Field(default=None, pattern=r"^(active|archived)$")
+
+
+class OrganizationTeamMemberChange(BaseModel):
+    user_id: str = Field(min_length=1, max_length=80)
+    team_role: str = Field(default="member", pattern=r"^(manager|member)$")
+    status: str = Field(default="active", pattern=r"^(active|paused)$")
+
+
+def _organization_team(db: DbSession, employer_id: str, team_id: str) -> OrganizationTeam:
+    team = db.scalar(select(OrganizationTeam).where(
+        OrganizationTeam.team_id == team_id,
+        OrganizationTeam.employer_id == employer_id,
+    ))
+    if not team:
+        raise HTTPException(404, "Team not found")
+    return team
+
+
+def _require_team_manager(db: DbSession, employer: Employer, team: OrganizationTeam,
+                          user: CurrentUser) -> str:
+    role = org_roles.role_of(db, employer, user)
+    if role in {"owner", "admin"}:
+        return role
+    managed = team_access.managed_team_ids(db, employer, user)
+    if role != "manager" or team.team_id not in managed:
+        raise HTTPException(403, "You can manage only teams assigned to you.")
+    return role
+
+
+@router.get("/{employer_id}/teams")
+def list_organization_teams(employer_id: str, user: CurrentUser, db: DbSession):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(404, "Employer not found")
+    role = org_roles.role_of(db, employer, user)
+    if role is None:
+        raise HTTPException(403, "Not a member of this organisation")
+    team_ids = team_access.accessible_team_ids(db, employer, user)
+    teams = db.scalars(select(OrganizationTeam).where(
+        OrganizationTeam.employer_id == employer_id,
+        OrganizationTeam.team_id.in_(team_ids),
+    ).order_by(OrganizationTeam.name)).all() if team_ids else []
+    memberships = db.scalars(select(OrganizationTeamMember).where(
+        OrganizationTeamMember.team_id.in_(team_ids),
+    )).all() if team_ids else []
+    by_team: dict[str, list[OrganizationTeamMember]] = {}
+    for membership in memberships:
+        by_team.setdefault(membership.team_id, []).append(membership)
+    return {
+        "items": [{
+            "team_id": team.team_id,
+            "name": team.name,
+            "status": team.status,
+            "member_count": len(by_team.get(team.team_id, [])),
+            "manager_user_ids": sorted(
+                member.user_id for member in by_team.get(team.team_id, [])
+                if member.team_role == "manager" and member.status == "active"
+            ),
+        } for team in teams],
+        "can_create": role in {"owner", "admin"},
+        "managed_team_ids": sorted(team_access.managed_team_ids(db, employer, user)),
+    }
+
+
+@router.post("/{employer_id}/teams", status_code=201)
+def create_organization_team(employer_id: str, body: OrganizationTeamCreate,
+                             user: CurrentUser, db: DbSession):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(404, "Employer not found")
+    role = _require_cap(db, employer, user, "manage_roles")
+    name = " ".join(body.name.split())
+    duplicate = db.scalar(select(OrganizationTeam.team_id).where(
+        OrganizationTeam.employer_id == employer_id,
+        func.lower(OrganizationTeam.name) == name.lower(),
+    ))
+    if duplicate:
+        raise HTTPException(409, "A team with that name already exists.")
+    team = OrganizationTeam(
+        employer_id=employer_id, name=name, created_by_user_id=user.user_id,
+    )
+    db.add(team)
+    db.flush()
+    db.add(AuditLog(
+        actor_user_id=user.user_id, action="organization_team_created",
+        entity_type="organization_team", entity_id=team.team_id,
+        meta={"employer_id": employer_id, "name": name, "actor_role": role},
+    ))
+    db.commit()
+    return {"team_id": team.team_id, "name": team.name, "status": team.status}
+
+
+@router.patch("/{employer_id}/teams/{team_id}")
+def update_organization_team(employer_id: str, team_id: str,
+                             body: OrganizationTeamUpdate,
+                             user: CurrentUser, db: DbSession):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(404, "Employer not found")
+    _require_cap(db, employer, user, "manage_roles")
+    team = _organization_team(db, employer_id, team_id)
+    changes = {}
+    if body.name is not None:
+        team.name = " ".join(body.name.split())
+        changes["name"] = team.name
+    if body.status is not None:
+        team.status = body.status
+        changes["status"] = team.status
+    if not changes:
+        raise HTTPException(400, "Nothing to update.")
+    db.add(AuditLog(
+        actor_user_id=user.user_id, action="organization_team_updated",
+        entity_type="organization_team", entity_id=team.team_id,
+        meta={"employer_id": employer_id, **changes},
+    ))
+    db.commit()
+    return {"team_id": team.team_id, "name": team.name, "status": team.status}
+
+
+@router.post("/{employer_id}/teams/{team_id}/members", status_code=201)
+def add_organization_team_member(employer_id: str, team_id: str,
+                                 body: OrganizationTeamMemberChange,
+                                 user: CurrentUser, db: DbSession):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(404, "Employer not found")
+    team = _organization_team(db, employer_id, team_id)
+    actor_role = _require_team_manager(db, employer, team, user)
+    if body.user_id not in team_access.organization_member_ids(db, employer):
+        raise HTTPException(404, "User is not an organization member.")
+    if body.team_role == "manager" and actor_role not in {"owner", "admin"}:
+        raise HTTPException(403, "Only organization admins can assign team managers.")
+    if actor_role == "manager":
+        target_membership = db.scalar(select(EmployerMember).where(
+            EmployerMember.employer_id == employer_id,
+            EmployerMember.user_id == body.user_id,
+        ))
+        if (not target_membership
+                or org_roles.normalize_role(target_membership.member_role) != "recruiter"):
+            raise HTTPException(403, "Managers can assign only organization members to their teams.")
+    membership = db.scalar(select(OrganizationTeamMember).where(
+        OrganizationTeamMember.team_id == team_id,
+        OrganizationTeamMember.user_id == body.user_id,
+    ))
+    if membership:
+        membership.team_role = body.team_role
+        membership.status = body.status
+    else:
+        membership = OrganizationTeamMember(
+            team_id=team_id, user_id=body.user_id,
+            team_role=body.team_role, status=body.status,
+            created_by_user_id=user.user_id,
+        )
+        db.add(membership)
+    db.add(AuditLog(
+        actor_user_id=user.user_id, action="organization_team_member_added",
+        entity_type="organization_team", entity_id=team_id,
+        meta={"employer_id": employer_id, "user_id": body.user_id,
+              "team_role": body.team_role, "status": body.status},
+    ))
+    db.commit()
+    return {"team_id": team_id, "user_id": body.user_id,
+            "team_role": membership.team_role, "status": membership.status}
+
+
+@router.delete("/{employer_id}/teams/{team_id}/members/{member_user_id}", status_code=204)
+def remove_organization_team_member(employer_id: str, team_id: str,
+                                    member_user_id: str,
+                                    user: CurrentUser, db: DbSession):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        return
+    team = _organization_team(db, employer_id, team_id)
+    actor_role = _require_team_manager(db, employer, team, user)
+    membership = db.scalar(select(OrganizationTeamMember).where(
+        OrganizationTeamMember.team_id == team_id,
+        OrganizationTeamMember.user_id == member_user_id,
+    ))
+    if not membership:
+        return
+    if membership.team_role == "manager" and actor_role not in {"owner", "admin"}:
+        raise HTTPException(403, "Managers cannot remove another team manager.")
+    db.delete(membership)
+    db.add(AuditLog(
+        actor_user_id=user.user_id, action="organization_team_member_removed",
+        entity_type="organization_team", entity_id=team_id,
+        meta={"employer_id": employer_id, "user_id": member_user_id},
+    ))
+    db.commit()
+
+
 # --- Team members ---------------------------------------------------------
 # Shared pools, team submissions and "everyone at my agency" visibility all key
 # off EmployerMember rows, but until now the only row ever created was the
@@ -224,8 +432,30 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
 
     my_role = org_roles.role_of(db, employer, user)
     perms = org_roles.permissions(my_role)
+    visible_ids = (team_access.manageable_member_ids(db, employer, user)
+                   if perms.get("manage_members")
+                   else team_access.scoped_member_ids(db, employer, user))
+    visible_team_ids = team_access.accessible_team_ids(db, employer, user)
+    team_memberships = db.execute(
+        select(OrganizationTeamMember, OrganizationTeam)
+        .join(OrganizationTeam, OrganizationTeam.team_id == OrganizationTeamMember.team_id)
+        .where(
+            OrganizationTeam.employer_id == employer_id,
+            OrganizationTeam.team_id.in_(visible_team_ids),
+        )
+    ).all() if visible_team_ids else []
+    teams_by_user: dict[str, list[dict]] = {}
+    for membership, team in team_memberships:
+        teams_by_user.setdefault(membership.user_id, []).append({
+            "team_id": team.team_id,
+            "team_name": team.name,
+            "team_role": membership.team_role,
+            "status": membership.status,
+        })
     items = []
     for m in members:
+        if m.user_id not in visible_ids:
+            continue
         u = users.get(m.user_id)
         is_owner = m.user_id == employer.owner_user_id
         role = "owner" if is_owner else org_roles.normalize_role(m.member_role)
@@ -236,6 +466,9 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
             "member_role": role,
             "role_label": org_roles.ROLE_LABELS.get(role, role),
             "is_owner": is_owner,
+            "teams": sorted(teams_by_user.get(m.user_id, []), key=lambda item: item["team_name"].lower()),
+            "messaging_status": team_access.messaging_status(db, employer, m.user_id),
+            "can_manage_member": team_access.can_manage_member(db, employer, user, m.user_id),
         })
     items.sort(key=lambda x: (-org_roles.rank(x["member_role"]),
                               (x["name"] or x["email"] or "").lower()))
@@ -248,6 +481,28 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
             "owner_user_id": employer.owner_user_id}
 
 
+def _team_for_new_member(db: DbSession, employer: Employer, actor: CurrentUser,
+                         requested_team_id: str | None) -> OrganizationTeam:
+    role = org_roles.role_of(db, employer, actor)
+    if requested_team_id:
+        team = _organization_team(db, employer.employer_id, requested_team_id)
+        if role == "manager" and team.team_id not in team_access.managed_team_ids(db, employer, actor):
+            raise HTTPException(403, "You can add members only to teams assigned to you.")
+        return team
+    if role == "manager":
+        managed = team_access.managed_team_ids(db, employer, actor)
+        if len(managed) != 1:
+            raise HTTPException(422, "Choose which managed team this member should join.")
+        return _organization_team(db, employer.employer_id, next(iter(managed)))
+    team = db.scalar(select(OrganizationTeam).where(
+        OrganizationTeam.employer_id == employer.employer_id,
+        OrganizationTeam.status == "active",
+    ).order_by(func.lower(OrganizationTeam.name) != "general", OrganizationTeam.name).limit(1))
+    if not team:
+        raise HTTPException(409, "Create an active organization team before adding members.")
+    return team
+
+
 @router.post("/{employer_id}/members", status_code=201)
 def invite_member(employer_id: str, body: MemberInvite, user: CurrentUser, db: DbSession):
     """Add an existing MedHunt user to the organisation by email."""
@@ -257,6 +512,7 @@ def invite_member(employer_id: str, body: MemberInvite, user: CurrentUser, db: D
     actor_role = _require_cap(db, employer, user, "manage_members")
     role = org_roles.normalize_role(body.member_role)
     _guard_role_assignment(actor_role, role)
+    team = _team_for_new_member(db, employer, user, body.team_id)
 
     invitee = db.scalar(select(User).where(
         func.lower(User.email) == body.email.strip().lower()))
@@ -273,6 +529,12 @@ def invite_member(employer_id: str, body: MemberInvite, user: CurrentUser, db: D
 
     db.add(EmployerMember(employer_id=employer_id, user_id=invitee.user_id,
                           member_role=role))
+    db.add(OrganizationTeamMember(
+        team_id=team.team_id,
+        user_id=invitee.user_id,
+        team_role="manager" if role == "manager" else "member",
+        created_by_user_id=user.user_id,
+    ))
     from ..models.enums import UserRole as _UR
     if invitee.role == _UR.job_seeker:
         invitee.role = _UR.recruiter
@@ -284,7 +546,8 @@ def invite_member(employer_id: str, body: MemberInvite, user: CurrentUser, db: D
     db.commit()
     if invitee.email:
         send_team_invite(invitee.email, employer.org_name)
-    return {"added": True, "user_id": invitee.user_id, "email": invitee.email}
+    return {"added": True, "user_id": invitee.user_id, "email": invitee.email,
+            "team_id": team.team_id}
 
 
 @router.delete("/{employer_id}/members/{member_user_id}", status_code=204)
@@ -305,6 +568,63 @@ def remove_member(employer_id: str, member_user_id: str, user: CurrentUser, db: 
                 and org_roles.rank(target_role) >= org_roles.rank(actor_role):
             raise HTTPException(status_code=403,
                                 detail="You can't remove a member at or above your own role")
+        if actor_role == "manager":
+            managed = team_access.managed_team_ids(db, employer, user)
+            memberships = db.scalars(select(OrganizationTeamMember).where(
+                OrganizationTeamMember.team_id.in_(managed),
+                OrganizationTeamMember.user_id == member_user_id,
+            )).all() if managed else []
+            removable = [row for row in memberships if row.team_role == "member"]
+            if not removable:
+                raise HTTPException(403, "This member is not assigned to a team you manage.")
+            for membership in removable:
+                db.delete(membership)
+            remaining = db.scalar(select(OrganizationTeamMember.team_member_id)
+                                  .join(OrganizationTeam)
+                                  .where(
+                                      OrganizationTeam.employer_id == employer_id,
+                                      OrganizationTeamMember.user_id == member_user_id,
+                                      OrganizationTeamMember.team_id.not_in(
+                                          [row.team_id for row in removable]
+                                      ),
+                                      OrganizationTeamMember.status == "active",
+                                  ))
+            if not remaining:
+                permission = team_access.messaging_permission(db, employer_id, member_user_id)
+                if permission:
+                    permission.status = "paused"
+                    permission.reason = "Removed from all active teams"
+                    permission.updated_by_user_id = user.user_id
+                    permission.permission_version += 1
+            db.add(AuditLog(
+                actor_user_id=user.user_id, action="organization_team_member_removed",
+                entity_type="user", entity_id=member_user_id,
+                meta={"employer_id": employer_id,
+                      "team_ids": [row.team_id for row in removable]},
+            ))
+            db.commit()
+            return
+        team_ids = list(db.scalars(select(OrganizationTeam.team_id).where(
+            OrganizationTeam.employer_id == employer_id,
+        )).all())
+        if team_ids:
+            db.execute(delete(OrganizationTeamMember).where(
+                OrganizationTeamMember.team_id.in_(team_ids),
+                OrganizationTeamMember.user_id == member_user_id,
+            ))
+        db.execute(delete(MedhuntSmsSender).where(
+            MedhuntSmsSender.employer_id == employer_id,
+            MedhuntSmsSender.user_id == member_user_id,
+        ))
+        db.execute(delete(MedhuntMessagingPermission).where(
+            MedhuntMessagingPermission.employer_id == employer_id,
+            MedhuntMessagingPermission.user_id == member_user_id,
+        ))
+        db.add(AuditLog(
+            actor_user_id=user.user_id, action="organization_member_removed",
+            entity_type="user", entity_id=member_user_id,
+            meta={"employer_id": employer_id, "previous_role": target_role},
+        ))
         db.delete(m)
         db.commit()
 
@@ -351,7 +671,8 @@ def org_usage(employer_id: str, user: CurrentUser, db: DbSession):
 
     members = db.scalars(select(EmployerMember).where(
         EmployerMember.employer_id == employer_id)).all()
-    ids = list({employer.owner_user_id, *[m.user_id for m in members]})
+    scoped_ids = team_access.scoped_member_ids(db, employer, user)
+    ids = sorted(scoped_ids)
     role_by = {m.user_id: org_roles.normalize_role(m.member_role) for m in members}
     role_by[employer.owner_user_id] = "owner"
 
@@ -406,6 +727,7 @@ _INVITE_ROLES = {"admin", "manager", "recruiter"}
 class InviteCreate(BaseModel):
     email: EmailStr
     role: str = "recruiter"          # admin | manager | recruiter
+    team_id: Optional[str] = None
 
 
 class InviteAccept(BaseModel):
@@ -421,6 +743,7 @@ def create_invite(employer_id: str, body: InviteCreate, user: CurrentUser, db: D
     actor_role = _require_cap(db, employer, user, "manage_members")
     role = org_roles.normalize_role(body.role) if body.role in _INVITE_ROLES else "recruiter"
     _guard_role_assignment(actor_role, role)
+    team = _team_for_new_member(db, employer, user, body.team_id)
     email = body.email.strip().lower()
 
     existing = db.scalar(select(User).where(func.lower(User.email) == email))
@@ -435,7 +758,7 @@ def create_invite(employer_id: str, body: InviteCreate, user: CurrentUser, db: D
         TeamInvite.status == "pending").values(status="revoked"))
 
     raw = generate_opaque_token()
-    inv = TeamInvite(employer_id=employer_id, email=email, role=role,
+    inv = TeamInvite(employer_id=employer_id, team_id=team.team_id, email=email, role=role,
                      token_hash=sha256(raw), status="pending",
                      invited_by_user_id=user.user_id,
                      expires_at=utcnow() + timedelta(days=14))
@@ -443,7 +766,8 @@ def create_invite(employer_id: str, body: InviteCreate, user: CurrentUser, db: D
     db.commit()
     link = f"{settings.frontend_base_url.rstrip('/')}/?invite={raw}"
     send_team_invite(email, employer.org_name, accept_link=link)
-    return {"invite_id": inv.invite_id, "email": email, "role": role, "status": "pending"}
+    return {"invite_id": inv.invite_id, "email": email, "role": role,
+            "team_id": team.team_id, "status": "pending"}
 
 
 @router.get("/{employer_id}/invites")
@@ -451,11 +775,14 @@ def list_invites(employer_id: str, user: CurrentUser, db: DbSession):
     employer = db.get(Employer, employer_id)
     if not employer:
         raise HTTPException(status_code=404, detail="Employer not found")
-    _require_cap(db, employer, user, "manage_members")
-    invs = db.scalars(select(TeamInvite).where(
-        TeamInvite.employer_id == employer_id, TeamInvite.status == "pending")
+    role = _require_cap(db, employer, user, "manage_members")
+    filters = [TeamInvite.employer_id == employer_id, TeamInvite.status == "pending"]
+    if role == "manager":
+        filters.append(TeamInvite.team_id.in_(team_access.managed_team_ids(db, employer, user)))
+    invs = db.scalars(select(TeamInvite).where(*filters)
         .order_by(TeamInvite.created_at.desc())).all()
     return {"items": [{"invite_id": i.invite_id, "email": i.email, "role": i.role,
+                       "team_id": i.team_id,
                        "created_at": i.created_at, "expires_at": i.expires_at} for i in invs]}
 
 
@@ -464,9 +791,11 @@ def revoke_invite(employer_id: str, invite_id: str, user: CurrentUser, db: DbSes
     employer = db.get(Employer, employer_id)
     if not employer:
         return
-    _require_cap(db, employer, user, "manage_members")
+    role = _require_cap(db, employer, user, "manage_members")
     inv = db.get(TeamInvite, invite_id)
     if inv and inv.employer_id == employer_id and inv.status == "pending":
+        if role == "manager" and inv.team_id not in team_access.managed_team_ids(db, employer, user):
+            raise HTTPException(403, "You can revoke invites only for teams you manage.")
         inv.status = "revoked"
         db.commit()
 
@@ -496,6 +825,26 @@ def accept_invite(body: InviteAccept, user: CurrentUser, db: DbSession):
     if not already:
         db.add(EmployerMember(employer_id=inv.employer_id, user_id=user.user_id,
                               member_role=inv.role))
+        team = db.get(OrganizationTeam, inv.team_id) if inv.team_id else None
+        if not team or team.employer_id != inv.employer_id or team.status != "active":
+            team = db.scalar(select(OrganizationTeam).where(
+                OrganizationTeam.employer_id == inv.employer_id,
+                OrganizationTeam.status == "active",
+            ).order_by(func.lower(OrganizationTeam.name) != "general", OrganizationTeam.name))
+        if not team:
+            team = OrganizationTeam(
+                employer_id=inv.employer_id,
+                name="General",
+                created_by_user_id=inv.invited_by_user_id,
+            )
+            db.add(team)
+            db.flush()
+        db.add(OrganizationTeamMember(
+            team_id=team.team_id,
+            user_id=user.user_id,
+            team_role="manager" if inv.role == "manager" else "member",
+            created_by_user_id=inv.invited_by_user_id,
+        ))
     # Invitees need recruiter-level platform access for the organization pages
     # and sourcing tools, regardless of which public sign-up role was selected.
     if user.role == UserRole.job_seeker:

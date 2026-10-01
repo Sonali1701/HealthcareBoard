@@ -12,7 +12,9 @@ from starlette.requests import Request
 from app.database import Base, utcnow
 from app.models import (
     AuditLog, Employer, EmployerMember, MedhuntCreditAccount,
-    MedhuntCreditTransaction, MedhuntSmsSender, Notification, User, UserRole, UserStatus,
+    MedhuntCreditTransaction, MedhuntMessagingPermission, MedhuntSmsSender,
+    Notification, OrganizationTeam, OrganizationTeamMember,
+    User, UserRole, UserStatus,
 )
 from app.routers import analytics, extension
 
@@ -129,6 +131,7 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
         self.assertEqual(listed["items"], [{
             "user_id": teammate.user_id, "sender_number": "+14155550123",
             "zoom_user_id": "zoom-user-415",
+            "messaging_status": "disabled",
         }])
 
         own = extension.set_medhunt_sms_sender(
@@ -138,10 +141,15 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
             ),
             self.user, self.db, employer_id=employer.employer_id,
         )
-        self.assertEqual(
-            extension.my_medhunt_sms_sender(self.user, self.db),
-            {"sender_number": own["sender_number"], "zoom_user_id": own["zoom_user_id"]},
+        extension.set_medhunt_messaging_permission(
+            self.user.user_id,
+            extension.MedhuntMessagingPermissionPatch(status="enabled"),
+            self.user, self.db, employer_id=employer.employer_id,
         )
+        mine = extension.my_medhunt_sms_sender(self.user, self.db)
+        self.assertEqual(mine["sender_number"], own["sender_number"])
+        self.assertEqual(mine["zoom_user_id"], own["zoom_user_id"])
+        self.assertEqual(mine["messaging_status"], "enabled")
 
     @patch("app.routers.extension._medhunt_request")
     def test_assigned_user_reply_uses_their_sender_and_is_attributed(self, remote):
@@ -175,6 +183,101 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
         self.assertEqual(payload["sender_number"], "+14155550124")
         self.assertEqual(payload["zoom_user_id"], "zoom-user-own")
         self.assertEqual(payload["request_id"], "reply-request-123456")
+
+    def test_manager_controls_messaging_only_for_members_of_managed_team(self):
+        manager = User(email="manager@example.com", role=UserRole.recruiter,
+                       status=UserStatus.active)
+        own_member = User(email="own@example.com", role=UserRole.recruiter,
+                          status=UserStatus.active)
+        other_member = User(email="other@example.com", role=UserRole.recruiter,
+                            status=UserStatus.active)
+        employer = Employer(owner_user_id=self.user.user_id, org_name="Example Staffing")
+        self.db.add_all([manager, own_member, other_member, employer])
+        self.db.flush()
+        own_team = OrganizationTeam(employer_id=employer.employer_id, name="North",
+                                    created_by_user_id=self.user.user_id)
+        other_team = OrganizationTeam(employer_id=employer.employer_id, name="South",
+                                      created_by_user_id=self.user.user_id)
+        self.db.add_all([own_team, other_team])
+        self.db.flush()
+        self.db.add_all([
+            EmployerMember(employer_id=employer.employer_id, user_id=manager.user_id,
+                           member_role="manager"),
+            EmployerMember(employer_id=employer.employer_id, user_id=own_member.user_id),
+            EmployerMember(employer_id=employer.employer_id, user_id=other_member.user_id),
+            OrganizationTeamMember(team_id=own_team.team_id, user_id=manager.user_id,
+                                   team_role="manager", created_by_user_id=self.user.user_id),
+            OrganizationTeamMember(team_id=own_team.team_id, user_id=own_member.user_id,
+                                   team_role="member", created_by_user_id=self.user.user_id),
+            OrganizationTeamMember(team_id=other_team.team_id, user_id=other_member.user_id,
+                                   team_role="member", created_by_user_id=self.user.user_id),
+            MedhuntSmsSender(employer_id=employer.employer_id, user_id=own_member.user_id,
+                             sender_number="+14155550125", zoom_user_id="zoom-own",
+                             updated_by_user_id=self.user.user_id),
+            MedhuntSmsSender(employer_id=employer.employer_id, user_id=other_member.user_id,
+                             sender_number="+14155550126", zoom_user_id="zoom-other",
+                             updated_by_user_id=self.user.user_id),
+        ])
+        self.db.commit()
+
+        scope, _ = extension._medhunt_scope(
+            self.db, manager, employer_id=employer.employer_id,
+        )
+        self.assertEqual(set(scope["user_ids"]), {manager.user_id, own_member.user_id})
+        enabled = extension.set_medhunt_messaging_permission(
+            own_member.user_id,
+            extension.MedhuntMessagingPermissionPatch(status="enabled"),
+            manager, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(enabled["status"], "enabled")
+        self.assertEqual(
+            extension.my_medhunt_sms_sender(own_member, self.db)["sender_number"],
+            "+14155550125",
+        )
+        paused = extension.set_medhunt_messaging_permission(
+            own_member.user_id,
+            extension.MedhuntMessagingPermissionPatch(
+                status="paused", reason="Coaching review",
+            ),
+            manager, self.db, employer_id=employer.employer_id,
+        )
+        self.assertEqual(paused["status"], "paused")
+        with self.assertRaises(HTTPException) as blocked:
+            extension.my_medhunt_sms_sender(own_member, self.db)
+        self.assertEqual(blocked.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as cross_team:
+            extension.set_medhunt_messaging_permission(
+                other_member.user_id,
+                extension.MedhuntMessagingPermissionPatch(status="paused"),
+                manager, self.db, employer_id=employer.employer_id,
+            )
+        self.assertEqual(cross_team.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as self_grant:
+            extension.set_medhunt_messaging_permission(
+                manager.user_id,
+                extension.MedhuntMessagingPermissionPatch(status="enabled"),
+                manager, self.db, employer_id=employer.employer_id,
+            )
+        self.assertEqual(self_grant.exception.status_code, 403)
+
+        self.db.add_all([
+            AuditLog(actor_user_id=own_member.user_id,
+                     action=extension.MEDHUNT_ENRICHED_ACTION,
+                     entity_type="medhunt_event", entity_id="north-event",
+                     meta={"candidate_id": "north-candidate", "source": "indeed"}),
+            AuditLog(actor_user_id=other_member.user_id,
+                     action=extension.MEDHUNT_ENRICHED_ACTION,
+                     entity_type="medhunt_event", entity_id="south-event",
+                     meta={"candidate_id": "south-candidate", "source": "indeed"}),
+        ])
+        self.db.commit()
+        report = analytics.medhunt_extension_activity(
+            manager, self.db, days=30, employer_id=employer.employer_id,
+        )
+        self.assertEqual(report["scope"], "team")
+        self.assertEqual(report["summary"]["checks"], 1)
+        self.assertEqual({item["user_id"] for item in report["member_options"]},
+                         {manager.user_id, own_member.user_id})
 
     @patch.object(extension.settings, "medhunt_service_token", "test-shared-token")
     def test_service_replay_records_platform_provider_and_event_time(self):
@@ -277,11 +380,21 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
             EmployerMember(employer_id=employer.employer_id, user_id=member.user_id,
                            member_role="recruiter"),
         ])
+        team = OrganizationTeam(employer_id=employer.employer_id, name="General",
+                                created_by_user_id=self.user.user_id)
+        self.db.add(team)
+        self.db.flush()
+        self.db.add_all([
+            OrganizationTeamMember(team_id=team.team_id, user_id=manager.user_id,
+                                   team_role="manager", created_by_user_id=self.user.user_id),
+            OrganizationTeamMember(team_id=team.team_id, user_id=member.user_id,
+                                   team_role="member", created_by_user_id=self.user.user_id),
+        ])
         self.db.commit()
         listed = extension.list_medhunt_team_credits(
             manager, self.db, employer_id=employer.employer_id,
         )
-        self.assertEqual(len(listed["items"]), 3)
+        self.assertEqual(len(listed["items"]), 2)
         result = extension.grant_medhunt_team_credits(
             member.user_id, extension.MedhuntCreditGrant(amount=25, note="Month-end top-up"),
             manager, self.db, employer_id=employer.employer_id,

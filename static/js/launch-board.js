@@ -1914,12 +1914,20 @@
         return;
       }
       const mem = await get(`/api/employers/${emp.employer_id}/members`);
+      const teamData = await get(`/api/employers/${emp.employer_id}/teams`);
+      const orgTeams = teamData.items || [];
+      S.orgTeams = orgTeams;
+      S.managedTeamIds = new Set(teamData.managed_team_ids || []);
       const currentMemberIds = new Set((mem.items || []).map(m => m.user_id));
       S.selectedMedhuntCreditUsers = new Set(
         [...S.selectedMedhuntCreditUsers].filter(id => currentMemberIds.has(id))
       );
       const perms = mem.permissions || {manage_members:false, manage_roles:false, analytics:false, settings:false};
       S.teamPerms = perms;
+      let zoomIntegration = null;
+      if (perms.settings){
+        try { zoomIntegration = await get(`/api/integrations/zoom/status?employer_id=${encodeURIComponent(emp.employer_id)}`); } catch(_){}
+      }
       const myRole = mem.my_role || "recruiter";
       let invites = [];
       if (perms.manage_members){
@@ -1934,7 +1942,7 @@
         try { medhuntCredits = (await get(`/api/extension/medhunt/credits/team?employer_id=${encodeURIComponent(emp.employer_id)}`)).items || []; } catch(_){}
       }
       let medhuntSmsSenders = [];
-      if (perms.manage_roles){
+      if (perms.manage_members){
         try { medhuntSmsSenders = (await get(`/api/extension/medhunt/sms-senders?employer_id=${encodeURIComponent(emp.employer_id)}`)).items || []; } catch(_){}
       }
       const medhuntCreditByUser = new Map(medhuntCredits.map(item => [item.user_id, item.balance]));
@@ -1957,17 +1965,25 @@
                 `<option value="${r}"${r === m.member_role ? " selected" : ""}>${ORG_ROLE_LABEL[r]}</option>`).join("")
             }</select>`
           : `<span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.member_role] || m.member_role)}</span>`;
-      const memberRows = (mem.items || []).map(m => `<tr>
+      const memberRows = (mem.items || []).map(m => {
+        const sms = medhuntSmsSenderByUser.get(m.user_id) || {};
+        const messagingStatus = m.messaging_status || sms.messaging_status || "disabled";
+        const teamNames = (m.teams || []).map(t => `${t.team_name}${t.status === "paused" ? " (paused)" : ""}`).join(", ") || "Unassigned";
+        return `<tr>
         ${canBulkAdjustMedhuntCredits ? `<td><input type="checkbox" aria-label="Select ${esc(m.email || m.name || "team member")} for bulk credit adjustment" data-medhunt-credit-select="${esc(m.user_id)}"${S.selectedMedhuntCreditUsers.has(m.user_id) ? " checked" : ""}></td>` : ""}
         <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
         <td>${roleCell(m)}</td>
+        <td><span class="badge">${esc(teamNames)}</span>
+          ${m.can_manage_member ? `<button class="btn ghost small" data-member-teams="${esc(m.user_id)}" data-member-email="${esc(m.email || m.name || "member")}"><i class="fas fa-people-group"></i>Manage</button>` : ""}</td>
         ${perms.medhunt_credits ? `<td><b>${Number(medhuntCreditByUser.get(m.user_id) || 0).toLocaleString()}</b>
-          <button class="btn ghost small" data-medhunt-credit-grant="${esc(m.user_id)}" data-medhunt-credit-email="${esc(m.email || "user")}"><i class="fas fa-plus"></i>Grant</button></td>` : ""}
-        ${perms.manage_roles ? `<td>${esc(medhuntSmsSenderByUser.get(m.user_id)?.sender_number || "Not configured")}
-          <button class="btn ghost small" data-medhunt-sms-sender="${esc(m.user_id)}" data-medhunt-sms-email="${esc(m.email || "user")}"><i class="fas fa-phone"></i>Set sender</button></td>` : ""}
-        <td class="td-actions">${(perms.manage_members && !m.is_owner)
+          ${m.can_manage_member ? `<button class="btn ghost small" data-medhunt-credit-grant="${esc(m.user_id)}" data-medhunt-credit-email="${esc(m.email || "user")}"><i class="fas fa-plus"></i>Grant</button>` : ""}</td>` : ""}
+        ${perms.manage_members ? `<td><div>${esc(sms.sender_number || "Not configured")}</div>
+          <span class="status-pill ${messagingStatus === "enabled" ? "ok" : messagingStatus === "paused" ? "warn" : "no"}">${esc(messagingStatus)}</span>
+          ${m.can_manage_member ? `<button class="btn ghost small" data-medhunt-sms-sender="${esc(m.user_id)}" data-medhunt-sms-email="${esc(m.email || "user")}"><i class="fas fa-phone"></i>Set sender</button>
+          ${sms.sender_number ? `<button class="btn ghost small" data-medhunt-messaging-status="${messagingStatus === "enabled" ? "paused" : "enabled"}" data-medhunt-messaging-user="${esc(m.user_id)}">${messagingStatus === "enabled" ? "Pause" : "Allow"}</button>` : ""}` : ""}</td>` : ""}
+        <td class="td-actions">${(m.can_manage_member && !m.is_owner)
           ? `<button class="btn small" data-member-remove="${esc(m.user_id)}" title="Remove from organization"><i class="fas fa-user-minus"></i></button>` : ""}</td>
-      </tr>`).join("");
+      </tr>`}).join("");
       const inviteRows = invites.map(i => `<tr>
         <td><div class="cell-name">${esc(i.email)}</div><div class="cell-sub">Invitation pending</div></td>
         <td><span class="badge">${esc(ORG_ROLE_LABEL[i.role] || i.role)}</span></td>
@@ -1990,6 +2006,28 @@
         <div class="emp-kpis" style="margin:16px 0 4px">${kpiCards.map(([l, n]) =>
           `<div class="emp-kpi"><b>${Number(n || 0).toLocaleString()}</b><span>${esc(l)}</span></div>`).join("")}</div>
 
+        ${perms.settings ? `<div class="an-section" style="margin-top:22px">
+          <div class="team-head"><h2>Zoom Phone integration</h2><div>
+            ${zoomIntegration?.connected
+              ? `<button class="btn ghost small" id="oa-zoom-sync"><i class="fas fa-rotate"></i>Sync users</button>
+                 <button class="btn ghost small danger" id="oa-zoom-disconnect"><i class="fas fa-link-slash"></i>Disconnect</button>`
+              : `<button class="btn primary small" id="oa-zoom-connect"><i class="fas fa-link"></i>Connect Zoom</button>`}
+          </div></div>
+          <p class="team-note">${zoomIntegration?.connected
+            ? `Connected${zoomIntegration.zoom_account_id ? ` · account ${esc(zoomIntegration.zoom_account_id)}` : ""}. Sync matches Zoom Phone users to Halo members by email. New senders require approval below.`
+            : zoomIntegration?.configured === false
+              ? "Zoom OAuth credentials must be configured on the Halo backend before an organization can connect."
+              : "Connect once as a Zoom account administrator, then sync member phone numbers automatically."}</p>
+          ${zoomIntegration?.last_error ? `<div class="notice warn">${esc(zoomIntegration.last_error)}</div>` : ""}
+        </div>` : ""}
+
+        <div class="an-section" style="margin-top:22px">
+          <div class="team-head"><h2>Teams</h2>${teamData.can_create
+            ? `<button class="btn ghost small" id="oa-team-create"><i class="fas fa-plus"></i>Create team</button>` : ""}</div>
+          <p class="team-note">Managers can manage members and messaging only inside their assigned teams.</p>
+          <div class="admin-chips">${orgTeams.length ? orgTeams.map(t => `<span class="badge">${esc(t.name)} · ${Number(t.member_count || 0)} members</span>`).join("") : "No teams configured"}</div>
+        </div>
+
         <div class="an-section" style="margin-top:22px">
           <div class="team-head"><h2>Members &amp; roles</h2>${perms.manage_members
             ? `<button class="btn ghost small" id="oa-invite"><i class="fas fa-user-plus"></i>Invite teammate</button>` : ""}</div>
@@ -2010,7 +2048,7 @@
             <button class="btn ghost small" id="medhunt-credit-bulk-set"><i class="fas fa-equals"></i>Set balance</button>
           </div>` : ""}
           <div class="table-wrap"><table class="table">
-            <thead><tr>${canBulkAdjustMedhuntCredits ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th>${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_roles ? "<th>SMS sender number</th>" : ""}<th class="th-actions"></th></tr></thead>
+            <thead><tr>${canBulkAdjustMedhuntCredits ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th><th>Team</th>${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_members ? "<th>Zoom messaging</th>" : ""}<th class="th-actions"></th></tr></thead>
             <tbody>${memberRows}</tbody></table></div>
           ${invites.length ? `<div class="team-head" style="margin-top:20px"><h2>Pending invitations</h2></div>
             <div class="table-wrap"><table class="table"><thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
@@ -2031,10 +2069,17 @@
         ${perms.manage_roles ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
       `;
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
+      const zoomConnect = $("#oa-zoom-connect"); if (zoomConnect) zoomConnect.onclick = () => connectOrganizationZoom(emp.employer_id);
+      const zoomSync = $("#oa-zoom-sync"); if (zoomSync) zoomSync.onclick = () => syncOrganizationZoom(emp.employer_id);
+      const zoomDisconnect = $("#oa-zoom-disconnect"); if (zoomDisconnect) zoomDisconnect.onclick = () => disconnectOrganizationZoom(emp.employer_id);
+      const createTeam = $("#oa-team-create"); if (createTeam) createTeam.onclick = () => createOrganizationTeam(emp.employer_id);
       const iv = $("#oa-invite"); if (iv) iv.onclick = inviteTeammate;
       $$("#orgadmin-panel [data-member-remove]").forEach(b => b.onclick = () => removeTeammate(b.dataset.memberRemove));
       $$("#orgadmin-panel [data-invite-revoke]").forEach(b => b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
       $$("#orgadmin-panel [data-member-role]").forEach(s => s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
+      $$("#orgadmin-panel [data-member-teams]").forEach(b => b.onclick = () => manageMemberTeams(
+        b.dataset.memberTeams, b.dataset.memberEmail, emp.employer_id,
+        (mem.items || []).find(m => m.user_id === b.dataset.memberTeams)?.teams || []));
       $$("#orgadmin-panel [data-medhunt-credit-grant]").forEach(b => b.onclick = () => grantMedhuntExtensionCredits(
         b.dataset.medhuntCreditGrant, b.dataset.medhuntCreditEmail, emp.employer_id));
       const selectAllCredits = $("#medhunt-credit-select-all");
@@ -2058,6 +2103,8 @@
       $$("#orgadmin-panel [data-medhunt-sms-sender]").forEach(b => b.onclick = () => configureMedhuntSmsSender(
         b.dataset.medhuntSmsSender, b.dataset.medhuntSmsEmail, emp.employer_id,
         medhuntSmsSenderByUser.get(b.dataset.medhuntSmsSender) || {}));
+      $$("#orgadmin-panel [data-medhunt-messaging-status]").forEach(b => b.onclick = () => setMedhuntMessagingStatus(
+        b.dataset.medhuntMessagingUser, b.dataset.medhuntMessagingStatus, emp.employer_id));
       if (perms.analytics) loadMedhuntReplies("#org-medhunt-replies", emp.employer_id);
       if (perms.manage_roles) loadMedhuntDevices("#org-medhunt-devices", emp.employer_id);
     } catch(e) { box.innerHTML = errorState("Could not load your organization.", e.message || ""); }
@@ -2081,6 +2128,104 @@
       toast("SMS sender saved.", {title:"Extension messaging"});
       await loadOrgAdmin();
     } catch(e){ toast(e.message || "Could not save the SMS sender.", {title:"Extension messaging", kind:"err"}); }
+  }
+
+  async function connectOrganizationZoom(employerId){
+    try {
+      const result = await get(`/api/integrations/zoom/connect?employer_id=${encodeURIComponent(employerId)}`);
+      window.location.assign(result.authorization_url);
+    } catch(e){ toast(e.message || "Could not start the Zoom connection.", {title:"Zoom Phone", kind:"err"}); }
+  }
+
+  async function syncOrganizationZoom(employerId){
+    try {
+      const result = await post(`/api/integrations/zoom/sync?employer_id=${encodeURIComponent(employerId)}`, {});
+      toast(`Matched ${Number(result.matched_members || 0)} members and configured ${Number(result.configured_senders || 0)} senders.`, {title:"Zoom sync complete"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not sync Zoom users.", {title:"Zoom Phone", kind:"err"}); }
+  }
+
+  async function disconnectOrganizationZoom(employerId){
+    if (!await confirmDialog({title:"Disconnect Zoom", body:"New messages will stop until Zoom is connected again.", confirm:"Disconnect", danger:true})) return;
+    try {
+      await del(`/api/integrations/zoom?employer_id=${encodeURIComponent(employerId)}`);
+      toast("Zoom disconnected.", {title:"Zoom Phone"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not disconnect Zoom.", {title:"Zoom Phone", kind:"err"}); }
+  }
+
+  async function setMedhuntMessagingStatus(userId, status, employerId){
+    const verb = status === "enabled" ? "allow" : "pause";
+    if (!await confirmDialog({
+      title: `${verb === "allow" ? "Allow" : "Pause"} messaging`,
+      body: `${verb === "allow" ? "This member will be able to send Zoom messages." : "This member will immediately be blocked from sending new Zoom messages and replies."}`,
+      confirm: verb === "allow" ? "Allow" : "Pause",
+      danger: verb !== "allow",
+    })) return;
+    try {
+      await patch(`/api/extension/medhunt/messaging-permissions/${encodeURIComponent(userId)}?employer_id=${encodeURIComponent(employerId)}`, {status, reason:"Changed from Organization settings"});
+      toast(`Messaging ${status}.`, {title:"Zoom messaging"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not update messaging access.", {title:"Zoom messaging", kind:"err"}); }
+  }
+
+  async function createOrganizationTeam(employerId){
+    const v = await formDialog({
+      title:"Create team",
+      intro:"Managers assigned to this team will only manage its members, conversations and messaging access.",
+      submit:"Create team",
+      fields:[{name:"name", label:"Team name", type:"text", required:true, maxlength:160, placeholder:"Nursing — East"}],
+    });
+    if (!v) return;
+    try {
+      await post(`/api/employers/${encodeURIComponent(employerId)}/teams`, {name:v.name.trim()});
+      toast("Team created.", {title:"Organization teams"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not create the team.", {title:"Organization teams", kind:"err"}); }
+  }
+
+  async function manageMemberTeams(userId, email, employerId, currentTeams=[]){
+    const teams = (S.orgTeams || []).filter(team => S.teamPerms?.manage_roles || S.managedTeamIds?.has(team.team_id));
+    if (!teams.length){
+      toast("Create a team before assigning members.", {title:"Organization teams", kind:"err"});
+      return;
+    }
+    const currentIds = new Set(currentTeams.filter(t => t.status === "active").map(t => t.team_id));
+    const options = teams.map(team => ({
+      value:team.team_id,
+      label:`${team.name}${(team.manager_user_ids || []).includes(userId) ? " (manager)" : ""}`,
+    }));
+    const v = await formDialog({
+      title:`Team assignment · ${email}`,
+      intro:"Choose a team and the member's access inside that team. Organization admins can assign team managers; team managers can assign members.",
+      submit:"Save assignment",
+      fields:[
+        {name:"team_id", label:"Team", type:"select", required:true, value:options[0]?.value || "", options},
+        {name:"action", label:"Action", type:"select", required:true, value:"active", options:[
+          {value:"active", label:"Add or activate"},
+          {value:"paused", label:"Pause team access"},
+          {value:"remove", label:"Remove from team"},
+        ]},
+        {name:"team_role", label:"Team access", type:"select", required:true, value:"member", options:[
+          {value:"member", label:"Member"},
+          ...(S.teamPerms?.manage_roles ? [{value:"manager", label:"Team manager"}] : []),
+        ]},
+      ],
+    });
+    if (!v) return;
+    try {
+      const path = `/api/employers/${encodeURIComponent(employerId)}/teams/${encodeURIComponent(v.team_id)}/members`;
+      if (v.action === "remove") {
+        await del(`${path}/${encodeURIComponent(userId)}`);
+        toast("Member removed from team.", {title:"Organization teams"});
+      } else {
+        await post(path, {user_id:userId, team_role:v.team_role || "member", status:v.action});
+        const message = v.action === "paused" ? "Team access paused."
+          : currentIds.has(v.team_id) ? "Team access updated." : "Member assigned to team.";
+        toast(message, {title:"Organization teams"});
+      }
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not update the team assignment.", {title:"Organization teams", kind:"err"}); }
   }
 
   async function grantMedhuntExtensionCredits(userId, email, employerId){
@@ -2157,6 +2302,13 @@
       {value:"manager", label:"Manager — also manage members"},
       {value:"admin", label:"Admin — also manage roles & billing"},
     ] : [{value:"recruiter", label:"Member — source and submit candidates"}];
+    const teamOptions = (S.orgTeams || [])
+      .filter(t => canElevate || S.managedTeamIds?.has(t.team_id))
+      .map(t => ({value:t.team_id, label:t.name}));
+    if (!teamOptions.length){
+      toast("Create a team before inviting a teammate.", {title:"Organization teams", kind:"err"});
+      return;
+    }
     const v = await formDialog({
       title: "Invite a teammate",
       intro: "They'll get an email invitation to join your organisation. They don't "
@@ -2165,13 +2317,14 @@
       fields: [
         {name:"email", label:"Their email", type:"email", required:true, wide:true,
          placeholder:"colleague@youragency.com"},
+        {name:"team_id", label:"Team", type:"select", required:true, value:teamOptions[0].value, options:teamOptions},
         {name:"role", label:"Role", type:"select", value:"recruiter", options: roleOptions},
       ],
     });
     if (!v) return;
     try {
       await post(`/api/employers/${S.employer.employer_id}/invites`,
-                 {email: v.email.trim(), role: v.role || "recruiter"});
+                 {email: v.email.trim(), role: v.role || "recruiter", team_id:v.team_id});
       toast(`Invitation sent to ${v.email.trim()}.`, {title:"Teammate invited"});
       afterTeamChange();
     } catch(e) {

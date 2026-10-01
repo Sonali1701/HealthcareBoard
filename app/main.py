@@ -24,7 +24,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi import _rate_limit_exceeded_handler
 
 from . import __version__
-from .bootstrap import ensure_admin
+from .bootstrap import ensure_admin, ensure_enterprise_organization_data
 from .config import settings
 from .database import SessionLocal, init_db
 from .deps import CurrentUser, DbSession
@@ -92,6 +92,7 @@ if settings.sentry_dsn:
 async def lifespan(app: FastAPI):
     init_db()
     ensure_admin()
+    ensure_enterprise_organization_data()
     usage_task = None
     if settings.weekly_usage_emails_enabled:
         from .services.weekly_usage_reports import scheduler

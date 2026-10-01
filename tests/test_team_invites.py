@@ -8,7 +8,10 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, utcnow
-from app.models import AuditLog, Employer, EmployerMember, TeamInvite, User, UserRole, UserStatus
+from app.models import (
+    AuditLog, Employer, EmployerMember, OrganizationTeam,
+    OrganizationTeamMember, TeamInvite, User, UserRole, UserStatus,
+)
 from app.routers import analytics, employers
 from app.routers.extension import MEDHUNT_ATTEMPT_ACTION, MEDHUNT_ENRICHED_ACTION
 from app.security import sha256
@@ -74,6 +77,12 @@ class TeamInviteAcceptanceTests(unittest.TestCase):
         self.assertEqual(self.invitee.role, UserRole.recruiter)
         self.assertEqual(invite.status, "accepted")
         self.assertEqual(result["employer"]["employer_id"], self.org.employer_id)
+        team_membership = self.db.scalar(select(OrganizationTeamMember).where(
+            OrganizationTeamMember.user_id == self.invitee.user_id,
+        ))
+        self.assertIsNotNone(team_membership)
+        team = self.db.get(OrganizationTeam, team_membership.team_id)
+        self.assertEqual(team.name, "General")
         dashboard = employers.my_employer_dashboard(
             self.invitee, self.db, employer_id=self.org.employer_id
         )

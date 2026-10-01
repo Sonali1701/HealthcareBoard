@@ -29,12 +29,13 @@ from ..deps import CurrentUser, DbSession, IngestUser
 from ..models import (
     AuditLog, EmailVerificationToken, Employer, EmployerMember, Notification,
     NotificationType, User, UserRole, UserStatus,
-    MedhuntCreditAccount, MedhuntCreditTransaction, MedhuntSmsSender,
+    MedhuntCreditAccount, MedhuntCreditTransaction, MedhuntMessagingPermission,
+    MedhuntSmsSender,
 )
 from ..ratelimit import auth_rate_limit
 from ..security import sha256
 from ..services.email import send_medhunt_login_code
-from ..services import org_roles
+from ..services import org_roles, team_access
 from ..services.notifications import notify
 
 router = APIRouter(prefix="/api/extension", tags=["extension"])
@@ -134,7 +135,7 @@ def _medhunt_scope(db, user: User, *, employer_id: str = "", device_admin: bool 
     allowed = {"owner", "admin"} if device_admin else {"owner", "admin", "manager"}
     if role not in allowed:
         raise HTTPException(403, "Organization admin access is required")
-    member_ids = _employer_user_ids(db, employer)
+    member_ids = team_access.scoped_member_ids(db, employer, user)
     if not device_admin:
         # SMS conversations currently carry an initiating user, not an org ID.
         # A person in two organizations cannot be attributed safely to either.
@@ -166,39 +167,54 @@ def _normalise_sms_sender_number(value: str) -> str:
 @router.get("/medhunt/sms-sender")
 def my_medhunt_sms_sender(user: IngestUser, db: DbSession):
     _require_recruiter(user)
+    organizations = team_access.active_organization_for_sender(db, user.user_id)
+    organization_ids = {organization.employer_id for organization in organizations}
     senders = db.scalars(select(MedhuntSmsSender).where(
         MedhuntSmsSender.user_id == user.user_id,
-    )).all()
+        MedhuntSmsSender.employer_id.in_(organization_ids),
+    )).all() if organization_ids else []
+    senders = [sender for sender in senders if team_access.messaging_status(
+        db, next(org for org in organizations if org.employer_id == sender.employer_id), user.user_id,
+    ) == "enabled"]
     if not senders:
-        raise HTTPException(409, "Ask your organization admin to configure your SMS sender number.")
+        raise HTTPException(403, "Your organization has not enabled Zoom messaging for your account.")
     identities = {(sender.sender_number, sender.zoom_user_id) for sender in senders}
     if len(identities) != 1:
         raise HTTPException(409, "Your organizations have different SMS sender assignments. Ask an admin to align them before sending.")
     sender = senders[0]
-    return {"sender_number": sender.sender_number, "zoom_user_id": sender.zoom_user_id}
+    return {
+        "sender_number": sender.sender_number,
+        "zoom_user_id": sender.zoom_user_id,
+        "employer_id": sender.employer_id,
+        "messaging_status": "enabled",
+    }
 
 
 @router.get("/medhunt/sms-senders")
 def list_medhunt_sms_senders(user: CurrentUser, db: DbSession, employer_id: str = ""):
-    _scope, employer = _medhunt_scope(db, user, employer_id=employer_id, device_admin=True)
+    scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
     if not employer:
         raise HTTPException(400, "Choose an organization to manage SMS sender numbers.")
-    ids = _employer_user_ids(db, employer)
+    ids = set(scope["user_ids"])
     rows = db.scalars(select(MedhuntSmsSender).where(
         MedhuntSmsSender.employer_id == employer.employer_id,
         MedhuntSmsSender.user_id.in_(ids),
     )).all()
-    return {"items": [{"user_id": row.user_id, "sender_number": row.sender_number,
-                        "zoom_user_id": row.zoom_user_id} for row in rows]}
+    return {"items": [{
+        "user_id": row.user_id,
+        "sender_number": row.sender_number,
+        "zoom_user_id": row.zoom_user_id,
+        "messaging_status": team_access.messaging_status(db, employer, row.user_id),
+    } for row in rows]}
 
 
 @router.put("/medhunt/sms-senders/{target_user_id}")
 def set_medhunt_sms_sender(target_user_id: str, body: MedhuntSmsSenderPatch,
                            user: CurrentUser, db: DbSession, employer_id: str = ""):
-    _scope, employer = _medhunt_scope(db, user, employer_id=employer_id, device_admin=True)
+    _scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
     if not employer:
         raise HTTPException(400, "Choose an organization to manage SMS sender numbers.")
-    if target_user_id not in _employer_user_ids(db, employer):
+    if not team_access.can_manage_member(db, employer, user, target_user_id):
         raise HTTPException(404, "That user is not a member of your organization.")
     target = db.get(User, target_user_id)
     if (not target or target.deleted_at is not None or target.status != UserStatus.active
@@ -219,6 +235,14 @@ def set_medhunt_sms_sender(target_user_id: str, body: MedhuntSmsSenderPatch,
             updated_by_user_id=user.user_id,
         )
         db.add(sender)
+        if not team_access.messaging_permission(db, employer.employer_id, target_user_id):
+            db.add(MedhuntMessagingPermission(
+                employer_id=employer.employer_id,
+                user_id=target_user_id,
+                status="disabled",
+                reason="Zoom sender assigned; awaiting messaging approval",
+                updated_by_user_id=user.user_id,
+            ))
     else:
         sender.sender_number = number
         sender.zoom_user_id = zoom_user_id
@@ -235,7 +259,8 @@ def set_medhunt_sms_sender(target_user_id: str, body: MedhuntSmsSenderPatch,
         db.rollback()
         raise HTTPException(409, "That SMS sender number is already assigned to another teammate.") from exc
     return {"user_id": target_user_id, "sender_number": number,
-            "zoom_user_id": zoom_user_id}
+            "zoom_user_id": zoom_user_id,
+            "messaging_status": team_access.messaging_status(db, employer, target_user_id)}
 
 
 @router.get("/medhunt/devices")
@@ -350,7 +375,7 @@ def reply_to_medhunt_conversation(conversation_id: int, body: MedhuntConversatio
         employer = organization
     else:
         scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
-    if not employer or user.user_id not in _employer_user_ids(db, employer):
+    if not employer or user.user_id not in team_access.organization_member_ids(db, employer):
         raise HTTPException(403, "An organization member account is required to reply.")
     conversation = _medhunt_request(
         f"/internal/halo/conversations/{conversation_id}", scope,
@@ -365,6 +390,8 @@ def reply_to_medhunt_conversation(conversation_id: int, body: MedhuntConversatio
     ))
     if not sender:
         raise HTTPException(409, "Ask your organization admin to configure your SMS sender number.")
+    if team_access.messaging_status(db, employer, user.user_id) != "enabled":
+        raise HTTPException(403, "Your organization has paused or disabled your messaging access.")
     text = body.message.strip()
     if not text:
         raise HTTPException(422, "Reply cannot be blank.")
@@ -389,8 +416,9 @@ def recruiters_for_medhunt_conversation(conversation_id: int, user: CurrentUser,
     )
     if not employer:
         return {"items": []}
+    visible_ids = set(scope.get("user_ids") or [])
     users = db.scalars(select(User).where(
-        User.user_id.in_(_employer_user_ids(db, employer)),
+        User.user_id.in_(visible_ids),
         User.deleted_at.is_(None), User.status == UserStatus.active,
     )).all()
     return {"items": [
@@ -443,6 +471,91 @@ class MedhuntCreditBulkSet(BaseModel):
 class MedhuntSmsSenderPatch(BaseModel):
     sender_number: str = Field(min_length=7, max_length=40)
     zoom_user_id: str = Field(min_length=1, max_length=80)
+
+
+class MedhuntMessagingPermissionPatch(BaseModel):
+    status: str = Field(pattern=r"^(enabled|paused|disabled)$")
+    reason: str = Field(default="", max_length=500)
+
+
+class MedhuntZoomAccessRequest(BaseModel):
+    employer_id: str = Field(min_length=1, max_length=80)
+
+
+@router.post("/medhunt/zoom-access")
+def medhunt_zoom_access(body: MedhuntZoomAccessRequest, request: Request, db: DbSession):
+    supplied = request.headers.get("x-medhunt-service-token", "")
+    if not settings.medhunt_service_token or not hmac.compare_digest(
+        supplied, settings.medhunt_service_token,
+    ):
+        raise HTTPException(401, "Invalid Medhunt service token")
+    from ..models import ZoomOrganizationIntegration
+    from ..services import zoom_oauth
+
+    integration = db.scalar(select(ZoomOrganizationIntegration).where(
+        ZoomOrganizationIntegration.employer_id == body.employer_id,
+    ))
+    if not integration:
+        raise HTTPException(409, "This organization has not connected Zoom.")
+    return {"access_token": zoom_oauth.access_token(db, integration),
+            "employer_id": body.employer_id}
+
+
+@router.patch("/medhunt/messaging-permissions/{target_user_id}")
+def set_medhunt_messaging_permission(
+    target_user_id: str,
+    body: MedhuntMessagingPermissionPatch,
+    user: CurrentUser,
+    db: DbSession,
+    employer_id: str = "",
+):
+    _scope, employer = _medhunt_scope(db, user, employer_id=employer_id)
+    if not employer:
+        raise HTTPException(400, "Choose an organization to manage messaging access.")
+    if not team_access.can_manage_member(db, employer, user, target_user_id):
+        raise HTTPException(403, "You can manage messaging only for members of your teams.")
+    target = db.get(User, target_user_id)
+    if not target or target.deleted_at is not None or target.status != UserStatus.active:
+        raise HTTPException(404, "Choose an active organization member.")
+    if body.status == "enabled" and not db.scalar(select(MedhuntSmsSender.sender_id).where(
+        MedhuntSmsSender.employer_id == employer.employer_id,
+        MedhuntSmsSender.user_id == target_user_id,
+    )):
+        raise HTTPException(409, "Sync or assign a Zoom Phone sender before enabling messaging.")
+    permission = team_access.messaging_permission(db, employer.employer_id, target_user_id)
+    previous = permission.status if permission else team_access.messaging_status(db, employer, target_user_id)
+    if not permission:
+        permission = MedhuntMessagingPermission(
+            employer_id=employer.employer_id,
+            user_id=target_user_id,
+            status=body.status,
+            reason=body.reason.strip() or None,
+            updated_by_user_id=user.user_id,
+        )
+        db.add(permission)
+    else:
+        permission.status = body.status
+        permission.reason = body.reason.strip() or None
+        permission.updated_by_user_id = user.user_id
+        permission.permission_version = int(permission.permission_version or 0) + 1
+    db.add(AuditLog(
+        actor_user_id=user.user_id,
+        action=f"medhunt_messaging_{body.status}",
+        entity_type="user",
+        entity_id=target_user_id,
+        meta={
+            "employer_id": employer.employer_id,
+            "previous_status": previous,
+            "status": body.status,
+            "reason": body.reason.strip(),
+        },
+    ))
+    db.commit()
+    return {
+        "user_id": target_user_id,
+        "status": permission.status,
+        "permission_version": permission.permission_version,
+    }
 
 
 def _user_employer(db, user_id: str) -> Employer | None:
@@ -567,7 +680,7 @@ def list_medhunt_team_credits(user: CurrentUser, db: DbSession,
     role = org_roles.role_of(db, employer, user)
     if not org_roles.can(role, "medhunt_credits"):
         raise HTTPException(403, "You cannot manage Medhunt extension credits.")
-    member_ids = _employer_user_ids(db, employer)
+    member_ids = set(scope.get("user_ids") or [])
     members = db.scalars(select(User).where(
         User.user_id.in_(member_ids), User.deleted_at.is_(None),
     )).all()
@@ -592,8 +705,12 @@ def grant_medhunt_team_credits(target_user_id: str, body: MedhuntCreditGrant,
     role = org_roles.role_of(db, employer, user)
     if not org_roles.can(role, "medhunt_credits"):
         raise HTTPException(403, "You cannot manage Medhunt extension credits.")
-    if target_user_id not in _employer_user_ids(db, employer):
+    if target_user_id not in set(_scope.get("user_ids") or []):
         raise HTTPException(404, "That user is not a member of your organization.")
+    if role == "manager" and not team_access.can_manage_member(
+        db, employer, user, target_user_id,
+    ):
+        raise HTTPException(403, "Managers can grant credits only to members of their teams.")
     target = db.get(User, target_user_id)
     if not target or target.deleted_at is not None:
         raise HTTPException(404, "User not found.")
@@ -840,7 +957,7 @@ def medhunt_recruiters(user: IngestUser, db: DbSession):
     if not employer:
         return {"items": []}
     users = db.scalars(select(User).where(
-        User.user_id.in_(_employer_user_ids(db, employer)),
+        User.user_id.in_(team_access.scoped_member_ids(db, employer, user)),
         User.deleted_at.is_(None),
     )).all()
     return {"items": [
@@ -876,7 +993,7 @@ def assign_medhunt_conversation(body: MedhuntAssignment, user: CurrentUser, db: 
     employer = scoped_employer or _user_employer(
         db, str(conversation.get("initiated_by") or ""),
     )
-    if not employer or body.recruiter_user_id not in _employer_user_ids(db, employer):
+    if not employer or body.recruiter_user_id not in set(scope.get("user_ids") or []):
         raise HTTPException(status_code=403, detail="Recruiter is not on your team")
     recruiter = db.get(User, body.recruiter_user_id)
     if not recruiter or recruiter.deleted_at is not None or recruiter.status != UserStatus.active \

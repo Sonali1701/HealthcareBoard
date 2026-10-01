@@ -12,6 +12,7 @@ python-multipart==0.0.20
 httpx==0.28.1
 jinja2==3.1.4              # server-rendered templates
 itsdangerous==2.2.0        # signed session/flash cookies
+cryptography==50.0.2       # encryption for organization OAuth refresh tokens
 
 # --- Production ---
 sendgrid==6.11.0            # transactional email

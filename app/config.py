@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     # Keep the deployment override in sync when GSA publishes a new fiscal year.
     gsa_fiscal_year: int = 2026
 
+    # --- Zoom organization OAuth ---
+    zoom_oauth_client_id: str = ""
+    zoom_oauth_client_secret: str = ""
+    zoom_oauth_redirect_uri: str = ""
+    zoom_oauth_authorize_url: str = "https://zoom.us/oauth/authorize"
+    zoom_oauth_token_url: str = "https://zoom.us/oauth/token"
+    zoom_api_base_url: str = "https://api.zoom.us/v2"
+    zoom_oauth_scopes: str = ""
+    integration_encryption_key: str = ""
+
     # --- Credits ---
     # One credit per candidate, spent when their contact is revealed. Nothing
     # else is metered: once a recruiter has paid for a candidate, emailing them

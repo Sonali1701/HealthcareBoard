@@ -36,6 +36,12 @@ from .credits import (
 )
 from .medhunt_credits import MedhuntCreditAccount, MedhuntCreditTransaction
 from .medhunt_sms import MedhuntSmsSender
+from .organization_team import (
+    MedhuntMessagingPermission,
+    OrganizationTeam,
+    OrganizationTeamMember,
+)
+from .zoom_integration import ZoomOrganizationIntegration
 from .enums import (
     ApplicationStatus,
     ConnectionStatus,
@@ -99,7 +105,9 @@ __all__ = [
     "CreditAccount", "CreditTransaction", "DEFAULT_COSTS",
     "COST_REVEAL_CONTACT", "WeeklyUsageReportDelivery",
     "MedhuntCreditAccount", "MedhuntCreditTransaction",
-    "MedhuntSmsSender",
+    "MedhuntSmsSender", "MedhuntMessagingPermission",
+    "OrganizationTeam", "OrganizationTeamMember",
+    "ZoomOrganizationIntegration",
     # outreach
     "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",
     "MERGE_FIELDS", "SEND_STATUSES",

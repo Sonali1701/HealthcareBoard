@@ -4,10 +4,19 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from .database import SessionLocal, utcnow
 from .config import settings
-from .models import User
+from .models import (
+    Employer,
+    EmployerMember,
+    MedhuntMessagingPermission,
+    MedhuntSmsSender,
+    OrganizationTeam,
+    OrganizationTeamMember,
+    User,
+)
 from .models.enums import UserRole, UserStatus
 from .security import hash_password
 
@@ -52,5 +61,74 @@ def ensure_admin() -> None:
         ))
         db.commit()
         logger.info("Bootstrapped admin user %s", settings.admin_email)
+    finally:
+        db.close()
+
+
+def ensure_enterprise_organization_data() -> None:
+    """Backfill a safe default team and explicit permissions for live orgs.
+
+    New tables are created by ``init_db``. This idempotent bootstrap handles
+    existing organizations without requiring a maintenance window: current
+    members join a General team, existing managers manage it, and users who
+    already have a configured sender retain their current messaging access.
+    """
+    db = SessionLocal()
+    try:
+        changed = False
+        for employer in db.scalars(select(Employer)).all():
+            team = db.scalar(select(OrganizationTeam).where(
+                OrganizationTeam.employer_id == employer.employer_id,
+                OrganizationTeam.name == "General",
+            ))
+            if not team:
+                team = OrganizationTeam(
+                    employer_id=employer.employer_id,
+                    name="General",
+                    created_by_user_id=employer.owner_user_id,
+                )
+                db.add(team)
+                db.flush()
+                changed = True
+            members = db.scalars(select(EmployerMember).where(
+                EmployerMember.employer_id == employer.employer_id,
+            )).all()
+            existing_team_users = set(db.scalars(select(OrganizationTeamMember.user_id).where(
+                OrganizationTeamMember.team_id == team.team_id,
+            )).all())
+            for member in members:
+                if member.user_id in existing_team_users:
+                    continue
+                db.add(OrganizationTeamMember(
+                    team_id=team.team_id,
+                    user_id=member.user_id,
+                    team_role="manager" if member.member_role == "manager" else "member",
+                    created_by_user_id=employer.owner_user_id,
+                ))
+                changed = True
+            sender_user_ids = set(db.scalars(select(MedhuntSmsSender.user_id).where(
+                MedhuntSmsSender.employer_id == employer.employer_id,
+            )).all())
+            permitted_user_ids = set(db.scalars(select(MedhuntMessagingPermission.user_id).where(
+                MedhuntMessagingPermission.employer_id == employer.employer_id,
+            )).all())
+            for user_id in sender_user_ids - permitted_user_ids:
+                db.add(MedhuntMessagingPermission(
+                    employer_id=employer.employer_id,
+                    user_id=user_id,
+                    status="enabled",
+                    reason="Backfilled from existing Zoom sender assignment",
+                    updated_by_user_id=employer.owner_user_id,
+                ))
+                changed = True
+        if changed:
+            try:
+                db.commit()
+                logger.info("Backfilled enterprise organization teams and messaging permissions")
+            except IntegrityError:
+                # Gunicorn workers boot concurrently. Another worker may have
+                # completed the same idempotent backfill first.
+                db.rollback()
+                logger.info("Enterprise organization backfill was completed by another worker")
     finally:
         db.close()

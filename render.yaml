@@ -25,6 +25,19 @@ services:
         sync: false
       - key: FRONTEND_BASE_URL
         sync: false
+      # Zoom General OAuth app. The redirect must exactly match
+      # https://<halo-domain>/api/integrations/zoom/callback in Zoom Marketplace.
+      - key: ZOOM_OAUTH_CLIENT_ID
+        sync: false
+      - key: ZOOM_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: ZOOM_OAUTH_REDIRECT_URI
+        sync: false
+      - key: ZOOM_OAUTH_SCOPES
+        value: ""
+      # Stable key used to encrypt organization refresh tokens at rest.
+      - key: INTEGRATION_ENCRYPTION_KEY
+        generateValue: true
       # Object storage (Cloudflare R2) — set these in the dashboard.
       - key: STORAGE_ENABLED
         value: "true"

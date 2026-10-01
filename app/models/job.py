@@ -83,6 +83,9 @@ class TeamInvite(Base):
 
     invite_id: Mapped[str] = uuid_pk()
     employer_id: Mapped[str] = uuid_fk("employers.employer_id")
+    team_id: Mapped[Optional[str]] = uuid_fk(
+        "organization_teams.team_id", nullable=True, ondelete="SET NULL"
+    )
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(50), default="recruiter")  # admin|recruiter
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)

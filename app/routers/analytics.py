@@ -26,7 +26,7 @@ from ..models import (
 )
 from ..models.enums import ApplicationStatus, JobStatus, OfferStatus
 from ..database import utcnow
-from ..services import org_roles
+from ..services import org_roles, team_access
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -80,13 +80,8 @@ def medhunt_extension_activity(
     if employer:
         role = org_roles.role_of(db, employer, user)
         if org_roles.can(role, "analytics"):
-            member_ids = list({
-                employer.owner_user_id,
-                *db.scalars(select(EmployerMember.user_id).where(
-                    EmployerMember.employer_id == employer.employer_id
-                )).all(),
-            })
-            scope = "organization"
+            member_ids = sorted(team_access.scoped_member_ids(db, employer, user))
+            scope = "team" if role == "manager" else "organization"
 
     since = (datetime.combine(date_from, datetime.min.time(), timezone.utc)
              if date_from else
