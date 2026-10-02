@@ -69,9 +69,10 @@ def ensure_enterprise_organization_data() -> None:
     """Backfill a safe default team and explicit permissions for live orgs.
 
     New tables are created by ``init_db``. This idempotent bootstrap handles
-    existing organizations without requiring a maintenance window: current
-    members join a General team, existing managers manage it, and users who
-    already have a configured sender retain their current messaging access.
+    existing organizations without requiring a maintenance window: members
+    without any team join a General team, existing managers manage it, and
+    users who already have a configured sender retain their messaging access.
+    Members moved out of the legacy General team are never added back.
     """
     db = SessionLocal()
     try:
@@ -93,9 +94,12 @@ def ensure_enterprise_organization_data() -> None:
             members = db.scalars(select(EmployerMember).where(
                 EmployerMember.employer_id == employer.employer_id,
             )).all()
-            existing_team_users = set(db.scalars(select(OrganizationTeamMember.user_id).where(
-                OrganizationTeamMember.team_id == team.team_id,
+            employer_team_ids = list(db.scalars(select(OrganizationTeam.team_id).where(
+                OrganizationTeam.employer_id == employer.employer_id,
             )).all())
+            existing_team_users = set(db.scalars(select(OrganizationTeamMember.user_id).where(
+                OrganizationTeamMember.team_id.in_(employer_team_ids),
+            )).all()) if employer_team_ids else set()
             for member in members:
                 if member.user_id in existing_team_users:
                     continue

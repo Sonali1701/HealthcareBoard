@@ -219,6 +219,12 @@ class OrganizationTeamMemberChange(BaseModel):
     status: str = Field(default="active", pattern=r"^(active|paused)$")
 
 
+class OrganizationTeamMemberBulkChange(BaseModel):
+    user_ids: list[str] = Field(min_length=1, max_length=500)
+    team_role: str = Field(default="member", pattern=r"^(manager|member)$")
+    mode: str = Field(default="move", pattern=r"^(move|add)$")
+
+
 def _organization_team(db: DbSession, employer_id: str, team_id: str) -> OrganizationTeam:
     team = db.scalar(select(OrganizationTeam).where(
         OrganizationTeam.team_id == team_id,
@@ -374,6 +380,61 @@ def add_organization_team_member(employer_id: str, team_id: str,
     db.commit()
     return {"team_id": team_id, "user_id": body.user_id,
             "team_role": membership.team_role, "status": membership.status}
+
+
+@router.post("/{employer_id}/teams/{team_id}/members/bulk")
+def bulk_assign_organization_team_members(
+    employer_id: str, team_id: str, body: OrganizationTeamMemberBulkChange,
+    user: CurrentUser, db: DbSession,
+):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(404, "Employer not found")
+    actor_role = _require_cap(db, employer, user, "manage_roles")
+    team = _organization_team(db, employer_id, team_id)
+    if team.status != "active":
+        raise HTTPException(409, "Choose an active team.")
+    user_ids = list(dict.fromkeys(body.user_ids))
+    organization_users = team_access.organization_member_ids(db, employer)
+    invalid = [user_id for user_id in user_ids if user_id not in organization_users]
+    if invalid:
+        raise HTTPException(404, "One or more selected users are not organization members.")
+    employer_team_ids = list(db.scalars(select(OrganizationTeam.team_id).where(
+        OrganizationTeam.employer_id == employer_id,
+    )).all())
+    if body.mode == "move" and employer_team_ids:
+        db.execute(delete(OrganizationTeamMember).where(
+            OrganizationTeamMember.team_id.in_(employer_team_ids),
+            OrganizationTeamMember.team_id != team_id,
+            OrganizationTeamMember.user_id.in_(user_ids),
+        ))
+    existing = {
+        membership.user_id: membership
+        for membership in db.scalars(select(OrganizationTeamMember).where(
+            OrganizationTeamMember.team_id == team_id,
+            OrganizationTeamMember.user_id.in_(user_ids),
+        )).all()
+    }
+    for user_id in user_ids:
+        membership = existing.get(user_id)
+        if membership:
+            membership.team_role = body.team_role
+            membership.status = "active"
+        else:
+            db.add(OrganizationTeamMember(
+                team_id=team_id, user_id=user_id, team_role=body.team_role,
+                status="active", created_by_user_id=user.user_id,
+            ))
+    db.add(AuditLog(
+        actor_user_id=user.user_id, action="organization_team_members_bulk_assigned",
+        entity_type="organization_team", entity_id=team_id,
+        meta={"employer_id": employer_id, "user_ids": user_ids,
+              "team_role": body.team_role, "mode": body.mode,
+              "actor_role": actor_role},
+    ))
+    db.commit()
+    return {"team_id": team_id, "updated": len(user_ids),
+            "team_role": body.team_role, "mode": body.mode}
 
 
 @router.delete("/{employer_id}/teams/{team_id}/members/{member_user_id}", status_code=204)
