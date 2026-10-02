@@ -601,7 +601,7 @@
       const q = data.lookup_provider || {};
       const nf = n => Number(n || 0).toLocaleString();
       box.innerHTML = statGroup("Extension API load · live", [
-        statCard("Requests running now", nf(q.active), q.oldest_active_seconds ? `oldest running ${Math.round(Number(q.oldest_active_seconds))}s` : "no requests waiting"),
+        statCard("Requests running now", nf(q.active), q.concurrency_limit ? `${nf(q.active)} of ${nf(q.concurrency_limit)} Quick Sourcer slots in use` : (q.oldest_active_seconds ? `oldest running ${Math.round(Number(q.oldest_active_seconds))}s` : "no requests waiting")),
         statCard("Candidates in queue", nf(q.queued), q.processing ? `${nf(q.processing)} processing${q.current_request_id ? ` · ${q.current_request_id}` : ""}` : "worker ready"),
         statCard("Started in 5 minutes", nf(q.started_5m), q.search_pool ? `${q.search_pool} search pool` : ""),
         statCard("Completed in 5 minutes", nf(q.completed_5m)),
