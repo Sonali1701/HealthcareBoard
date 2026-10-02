@@ -269,6 +269,13 @@ def list_medhunt_devices(user: CurrentUser, db: DbSession, employer_id: str = ""
     return _medhunt_request("/internal/halo/devices", scope)
 
 
+@router.get("/medhunt/api-monitor")
+def medhunt_api_monitor(user: CurrentUser):
+    if user.role != UserRole.admin:
+        raise HTTPException(403, "Platform admin access is required")
+    return _medhunt_request("/internal/halo/api-monitor", {})
+
+
 @router.post("/medhunt/devices/{device_id}/approve")
 def approve_medhunt_device(device_id: int, user: CurrentUser, db: DbSession,
                            employer_id: str = ""):

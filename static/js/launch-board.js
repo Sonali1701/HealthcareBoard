@@ -369,6 +369,7 @@
   // ---- Admin console (platform super-admin) --------------------------------
   const ADMIN = { tab: "overview", uOffset: 0, uLimit: 25, oOffset: 0, oLimit: 25,
                   lOffset: 0, lLimit: 50, jOffset: 0, jLimit: 25, auOffset: 0, auLimit: 50 };
+  let adminApiMonitorTimer = null;
   const ADMIN_COLS = 10, ADMIN_ORG_COLS = 9, ADMIN_LOGIN_COLS = 5, ADMIN_JOB_COLS = 7, ADMIN_AUDIT_COLS = 5;
   const ROLE_LABEL = {job_seeker:"Job seeker", recruiter:"Recruiter", employer:"Employer", admin:"Admin"};
   const STATUS_LABEL = {active:"Active", suspended:"Suspended", pending_verify:"Pending", deleted:"Deleted"};
@@ -379,10 +380,12 @@
     showAdminTab(ADMIN.tab || "overview");
   }
   function showAdminTab(name){
+    clearTimeout(adminApiMonitorTimer);
+    adminApiMonitorTimer = null;
     ADMIN.tab = name;
     $$(".admin-tab").forEach(t => t.classList.toggle("active", t.dataset.atab === name));
     $$(".admin-panel").forEach(p => p.classList.toggle("active", p.id === "admin-" + (name === "orgs" ? "orgs" : name)));
-    if (name === "overview") loadAdminOverview();
+    if (name === "overview") { loadAdminOverview(); loadAdminApiMonitor(); }
     if (name === "users") loadAdminUsers();
     if (name === "orgs") loadAdminOrgs();
     if (name === "jobs") loadAdminJobs();
@@ -589,6 +592,28 @@
     + (sub ? `<span class="admin-stat-sub">${esc(sub)}</span>` : "") + `</div>`;
   const statGroup = (title, cards) =>
     `<div class="admin-stat-group"><h3>${esc(title)}</h3><div class="admin-stat-row">${cards.join("")}</div></div>`;
+
+  async function loadAdminApiMonitor(){
+    const box = $("#admin-api-monitor");
+    if (!box || ADMIN.tab !== "overview") return;
+    try {
+      const data = await get("/api/extension/medhunt/api-monitor");
+      const q = data.lookup_provider || {};
+      const nf = n => Number(n || 0).toLocaleString();
+      box.innerHTML = statGroup("Extension API load · live", [
+        statCard("Requests running now", nf(q.active), q.oldest_active_seconds ? `oldest running ${Math.round(Number(q.oldest_active_seconds))}s` : "no requests waiting"),
+        statCard("Started in 5 minutes", nf(q.started_5m), q.search_pool ? `${q.search_pool} search pool` : ""),
+        statCard("Completed in 5 minutes", nf(q.completed_5m)),
+        statCard("Failed in 5 minutes", nf(q.failed_5m), q.configured ? "provider configured" : "provider not configured"),
+      ]);
+    } catch(e) {
+      box.innerHTML = errorState("Could not load extension API activity.", e.message || "");
+    } finally {
+      if (ADMIN.tab === "overview") {
+        adminApiMonitorTimer = setTimeout(loadAdminApiMonitor, 5000);
+      }
+    }
+  }
 
   async function loadAdminOverview(){
     const box = $("#admin-stats");
