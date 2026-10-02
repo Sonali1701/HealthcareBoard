@@ -893,7 +893,7 @@
             </div>
           </div>
           <div class="admin-credit-box">
-            <div><b>Medhunt candidate delivery</b><div class="admin-sub">Route candidates enriched by ${esc(u.email)}.</div></div>
+            <div><b>Medhunt candidate delivery</b><div class="admin-sub">Choose one destination. Unassigned recruiters use Nexus.</div></div>
             <div class="admin-credit-actions">
               <label><input type="checkbox" id="au-ceipal"${u.medhunt_ceipal_enabled ? " checked" : ""}> CEIPAL</label>
               <label><input type="checkbox" id="au-nexus"${u.medhunt_nexus_enabled ? " checked" : ""}> Nexus</label>
@@ -909,6 +909,10 @@
           openAdminUser(userId); loadAdminUsers(); }
         catch(e){ toast(e.message || "Failed.", {kind:"err"}); }
       };
+      const ceipalRoute = $("#au-ceipal");
+      const nexusRoute = $("#au-nexus");
+      ceipalRoute.onchange = () => { if (ceipalRoute.checked) nexusRoute.checked = false; };
+      nexusRoute.onchange = () => { if (nexusRoute.checked) ceipalRoute.checked = false; };
       $("#au-save-routing").onclick = async () => {
         try {
           await patch(`/api/admin/users/${userId}`, {

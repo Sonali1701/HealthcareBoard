@@ -94,6 +94,15 @@ class MedhuntServiceEnrichmentEvent(MedhuntEnrichmentEvent):
     user_id: str = Field(min_length=1, max_length=80)
 
 
+class MedhuntCeipalCandidate(BaseModel):
+    user_id: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=320)
+    location: str = Field(default="", max_length=500)
+    emails: list[str] = Field(default_factory=list, max_length=100)
+    phones: list[str] = Field(default_factory=list, max_length=100)
+    wireless_phones: list[str] = Field(default_factory=list, max_length=100)
+
+
 class MedhuntAssignment(BaseModel):
     conversation_id: str = Field(min_length=1, max_length=80, pattern=r"^\d+$")
     candidate_id: str = Field(min_length=1, max_length=80, pattern=r"^\d+$")
@@ -955,6 +964,28 @@ def medhunt_me(user: IngestUser):
             "nexus": bool(user.medhunt_nexus_enabled),
         },
     }
+
+
+@router.post("/medhunt/ceipal-candidate")
+def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db: DbSession):
+    supplied = request.headers.get("x-medhunt-service-token", "")
+    if not settings.medhunt_service_token or not hmac.compare_digest(
+        supplied, settings.medhunt_service_token
+    ):
+        raise HTTPException(401, "Invalid Medhunt service token")
+    user = db.get(User, body.user_id)
+    if not user or user.deleted_at is not None:
+        raise HTTPException(404, "Medhunt user not found")
+    if not user.medhunt_ceipal_enabled:
+        raise HTTPException(403, "This recruiter is not assigned to Ceipal")
+    from ..services.medhunt_ceipal import MedhuntCeipalError, check_and_create
+    try:
+        result = check_and_create(body.model_dump())
+    except MedhuntCeipalError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, "Ceipal candidate processing is temporarily unavailable") from exc
+    return result
 
 
 @router.get("/team/recruiters")

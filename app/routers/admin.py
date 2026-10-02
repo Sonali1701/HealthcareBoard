@@ -287,12 +287,20 @@ def update_user(user_id: str, body: UserPatch, admin: AdminUser, db: DbSession) 
         if new_status == UserStatus.deleted:
             user.deleted_at = utcnow()
 
-    if body.medhunt_ceipal_enabled is not None:
-        user.medhunt_ceipal_enabled = body.medhunt_ceipal_enabled
-        changes["medhunt_ceipal_enabled"] = body.medhunt_ceipal_enabled
-    if body.medhunt_nexus_enabled is not None:
-        user.medhunt_nexus_enabled = body.medhunt_nexus_enabled
-        changes["medhunt_nexus_enabled"] = body.medhunt_nexus_enabled
+    ceipal_target = body.medhunt_ceipal_enabled
+    nexus_target = body.medhunt_nexus_enabled
+    if ceipal_target is True and nexus_target is True:
+        raise HTTPException(400, "Choose either CEIPAL or Nexus for a recruiter, not both.")
+    if ceipal_target is True and nexus_target is None:
+        nexus_target = False
+    if nexus_target is True and ceipal_target is None:
+        ceipal_target = False
+    if ceipal_target is not None:
+        user.medhunt_ceipal_enabled = ceipal_target
+        changes["medhunt_ceipal_enabled"] = ceipal_target
+    if nexus_target is not None:
+        user.medhunt_nexus_enabled = nexus_target
+        changes["medhunt_nexus_enabled"] = nexus_target
 
     if not changes:
         raise HTTPException(400, "Nothing to update.")
