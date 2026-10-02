@@ -602,7 +602,7 @@
       const nf = n => Number(n || 0).toLocaleString();
       box.innerHTML = statGroup("Extension API load · live", [
         statCard("Requests running now", nf(q.active), q.oldest_active_seconds ? `oldest running ${Math.round(Number(q.oldest_active_seconds))}s` : "no requests waiting"),
-        statCard("Candidates in queue", nf(q.queued), q.processing ? `${nf(q.processing)} being processed` : "worker ready"),
+        statCard("Candidates in queue", nf(q.queued), q.processing ? `${nf(q.processing)} processing${q.current_request_id ? ` · ${q.current_request_id}` : ""}` : "worker ready"),
         statCard("Started in 5 minutes", nf(q.started_5m), q.search_pool ? `${q.search_pool} search pool` : ""),
         statCard("Completed in 5 minutes", nf(q.completed_5m)),
         statCard("Failed in 5 minutes", nf(q.failed_5m), q.configured ? "provider configured" : "provider not configured"),
