@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, Index, Integer, String, Text, UniqueConstraint, false, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..database import Base, created_col, updated_col, uuid_fk, uuid_pk
@@ -22,6 +22,9 @@ class OrganizationTeam(Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default="active", index=True,
+    )
+    quick_sourcer_dedicated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false(),
     )
     created_by_user_id: Mapped[Optional[str]] = uuid_fk(
         "users.user_id", nullable=True, ondelete="SET NULL",

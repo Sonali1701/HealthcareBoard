@@ -28,6 +28,8 @@ from ..models import (
     AuditLog,
     Certification,
     License,
+    OrganizationTeam,
+    OrganizationTeamMember,
     Profile,
     ProfileSkill,
     WorkHistory,
@@ -72,6 +74,45 @@ def _is_recruiter_or_admin(user: CurrentUser) -> bool:
 def _require_provider_directory_access(user: CurrentUser) -> None:
     if not _is_recruiter_or_admin(user):
         raise HTTPException(status_code=403, detail="Providers are available to recruiters only")
+
+
+def _quick_sourcer_team_settings(db: DbSession, user: CurrentUser) -> tuple[str | None, bool]:
+    memberships = db.execute(
+        select(OrganizationTeam.team_id, OrganizationTeam.quick_sourcer_dedicated)
+        .join(OrganizationTeamMember, OrganizationTeamMember.team_id == OrganizationTeam.team_id)
+        .where(
+            OrganizationTeamMember.user_id == user.user_id,
+            OrganizationTeamMember.status == "active",
+            OrganizationTeam.status == "active",
+        )
+    ).all()
+    by_id = {str(team_id): bool(dedicated) for team_id, dedicated in memberships}
+    if len(by_id) != 1:
+        return None, False
+    team_id, dedicated = next(iter(by_id.items()))
+    return team_id, dedicated
+
+
+def _record_quick_sourcer_request(
+    db: DbSession,
+    request: Request,
+    user: CurrentUser,
+    team_id: str | None,
+    response_ms: float,
+    dedicated: bool,
+    outcome: str,
+) -> None:
+    if not team_id:
+        return
+    db.add(AuditLog(
+        actor_user_id=user.user_id,
+        action="quick_sourcer.request",
+        entity_type="organization_team",
+        entity_id=team_id,
+        meta={"response_ms": round(response_ms, 1), "dedicated": dedicated,
+              "outcome": outcome},
+        ip_address=request.client.host if request.client else None,
+    ))
 
 
 def _compute_completion(p: Profile) -> int:
@@ -1995,12 +2036,14 @@ async def lookup_profile_contact(
     location = ", ".join(b for b in (profile.city, profile.state_code) if b) or None
     already_released = bool(_released_profile_ids(db, user, [profile.profile_id]))
     prior_candidate_id = _last_lookup_candidate_id(db, profile.profile_id)
+    team_id, dedicated_lookup = _quick_sourcer_team_settings(db, user)
 
     # Everything above is read. End the transaction before the long call so a
     # pooled DB connection is not held open for a minute and a half; the profile
     # is re-fetched below for the write.
     db.rollback()
 
+    lookup_started = time.perf_counter()
     try:
         if prior_candidate_id is not None:
             try:
@@ -2008,13 +2051,24 @@ async def lookup_profile_contact(
             except quick_sourcer.QuickSourcerError:
                 # The source may expire old candidate ids; retry by name rather
                 # than surfacing a transient Hub error to the recruiter.
-                match = await quick_sourcer.find(name, location)
+                match = await quick_sourcer.find(name, location, dedicated_ip=dedicated_lookup)
             if not match.found:        # the Hub forgot the id — search again
-                match = await quick_sourcer.find(name, location)
+                match = await quick_sourcer.find(name, location, dedicated_ip=dedicated_lookup)
         else:
-            match = await quick_sourcer.find(name, location)
+            match = await quick_sourcer.find(name, location, dedicated_ip=dedicated_lookup)
     except quick_sourcer.QuickSourcerError as exc:
+        _record_quick_sourcer_request(
+            db, request, user, team_id,
+            (time.perf_counter() - lookup_started) * 1000,
+            dedicated_lookup, "failed",
+        )
+        db.commit()
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    lookup_response_ms = (time.perf_counter() - lookup_started) * 1000
+    _record_quick_sourcer_request(
+        db, request, user, team_id, lookup_response_ms,
+        dedicated_lookup, "completed",
+    )
 
     profile = db.get(Profile, profile_id)
     if not profile:                     # deleted while we were searching
@@ -2024,7 +2078,9 @@ async def lookup_profile_contact(
         db.add(AuditLog(
             actor_user_id=user.user_id, action=LOOKUP_ACTION,
             entity_type="profile", entity_id=profile.profile_id,
-            meta={"found": False, "searched": name, "location": location},
+            meta={"found": False, "searched": name, "location": location,
+                  "response_ms": round(lookup_response_ms, 1),
+                  "dedicated": dedicated_lookup},
             ip_address=request.client.host if request.client else None,
         ))
         db.commit()
@@ -2084,6 +2140,8 @@ async def lookup_profile_contact(
         meta={"found": True, "searched": name, "location": location,
               "source": match.source, "candidate_id": match.candidate_id,
               "filled": filled,
+              "response_ms": round(lookup_response_ms, 1),
+              "dedicated": dedicated_lookup,
               "email_found": bool(match.email), "phone_found": bool(match.phone)},
         ip_address=request.client.host if request.client else None,
     ))

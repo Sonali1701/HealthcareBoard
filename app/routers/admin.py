@@ -35,6 +35,7 @@ from ..models import (
     EmployerMember,
     JobPosting,
     Message,
+    OrganizationTeam,
     Offer,
     Profile,
     SavedJob,
@@ -625,6 +626,21 @@ def organization_detail(employer_id: str, admin: AdminUser, db: DbSession) -> di
     jobs_active = db.scalar(select(func.count()).select_from(JobPosting)
                             .where(JobPosting.employer_id == employer_id,
                                    JobPosting.status == JobStatus.active)) or 0
+    teams = db.scalars(select(OrganizationTeam).where(
+        OrganizationTeam.employer_id == employer_id,
+    ).order_by(OrganizationTeam.name)).all()
+    team_ids = [team.team_id for team in teams]
+    lookup_events = db.scalars(select(AuditLog).where(
+        AuditLog.action == "quick_sourcer.request",
+        AuditLog.entity_type == "organization_team",
+        AuditLog.entity_id.in_(team_ids) if team_ids else AuditLog.entity_id == "",
+        AuditLog.created_at >= utcnow() - timedelta(minutes=5),
+    )).all()
+    durations_by_team: dict[str, list[float]] = {}
+    for event in lookup_events:
+        response_ms = (event.meta or {}).get("response_ms")
+        if isinstance(response_ms, (int, float)) and event.entity_id:
+            durations_by_team.setdefault(event.entity_id, []).append(float(response_ms))
     return {
         "employer_id": org.employer_id,
         "org_name": org.org_name,
@@ -640,6 +656,17 @@ def organization_detail(employer_id: str, admin: AdminUser, db: DbSession) -> di
         "owner_credits": owner_acct.balance if owner_acct else 0,
         "jobs": jobs,
         "jobs_active": jobs_active,
+        "teams": [{
+            "team_id": team.team_id,
+            "name": team.name,
+            "status": team.status,
+            "quick_sourcer_dedicated": bool(team.quick_sourcer_dedicated),
+            "quick_sourcer_requests_5m": len(durations_by_team.get(team.team_id, [])),
+            "quick_sourcer_average_response_ms_5m": (
+                round(sum(durations_by_team[team.team_id]) / len(durations_by_team[team.team_id]), 1)
+                if durations_by_team.get(team.team_id) else None
+            ),
+        } for team in teams],
         "members": members,
         "created_at": org.created_at,
     }
@@ -650,6 +677,37 @@ class OrgPatch(BaseModel):
     org_type: Optional[str] = None
     is_verified: Optional[bool] = None
     subscription_tier: Optional[str] = None
+
+
+class OrganizationTeamQuickSourcerPatch(BaseModel):
+    quick_sourcer_dedicated: bool
+
+
+@router.patch("/organizations/{employer_id}/teams/{team_id}")
+def update_organization_team_quick_sourcer(
+    employer_id: str,
+    team_id: str,
+    body: OrganizationTeamQuickSourcerPatch,
+    admin: AdminUser,
+    db: DbSession,
+) -> dict:
+    _require_org(db, employer_id)
+    team = db.scalar(select(OrganizationTeam).where(
+        OrganizationTeam.team_id == team_id,
+        OrganizationTeam.employer_id == employer_id,
+    ))
+    if team is None:
+        raise HTTPException(404, "Team not found")
+    team.quick_sourcer_dedicated = body.quick_sourcer_dedicated
+    db.add(AuditLog(
+        actor_user_id=admin.user_id,
+        action="admin.organization_team_quick_sourcer_update",
+        entity_type="organization_team",
+        entity_id=team_id,
+        meta={"quick_sourcer_dedicated": body.quick_sourcer_dedicated},
+    ))
+    db.commit()
+    return {"team_id": team_id, "quick_sourcer_dedicated": team.quick_sourcer_dedicated}
 
 
 @router.patch("/organizations/{employer_id}")

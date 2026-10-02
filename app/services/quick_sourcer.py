@@ -199,7 +199,12 @@ async def _request(method: str, path: str, *, json: dict | None = None) -> Any:
             "The contact lookup service returned an unreadable response.") from exc
 
 
-async def find(name: str, location: str | None = None) -> ContactMatch:
+async def find(
+    name: str,
+    location: str | None = None,
+    *,
+    dedicated_ip: bool = False,
+) -> ContactMatch:
     """Search for a person by name, plus a location to disambiguate a common one.
 
     Takes 30-90 seconds. A miss is not proof there is nothing out there — the
@@ -210,10 +215,12 @@ async def find(name: str, location: str | None = None) -> ContactMatch:
     if not name:
         raise QuickSourcerError("A name is needed to search.", status=400)
 
-    body: dict[str, str] = {"name": name}
+    body: dict[str, Any] = {"name": name}
     location = (location or "").strip()
     if location:
         body["location"] = location
+    if dedicated_ip:
+        body["dedicated_ip"] = True
     return parse_match(await _request("POST", "/find", json=body))
 
 

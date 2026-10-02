@@ -938,6 +938,11 @@
             }</select>`}</td>
         <td class="td-actions">${m.is_owner ? "" : `<button class="btn ghost small danger" data-org-member-remove="${esc(m.user_id)}" title="Remove from org"><i class="fas fa-user-minus"></i></button>`}</td>
       </tr>`).join("");
+      const teams = (o.teams || []).map(t => `<tr>
+        <td><b>${esc(t.name)}</b><div class="admin-sub">${esc(t.status || "active")}</div></td>
+        <td>${t.quick_sourcer_average_response_ms_5m == null ? "—" : `${Number(t.quick_sourcer_average_response_ms_5m).toLocaleString()} ms`}<div class="admin-sub">${Number(t.quick_sourcer_requests_5m || 0)} requests · last 5 min</div></td>
+        <td><label><input type="checkbox" data-admin-qs-team="${esc(t.team_id)}"${t.quick_sourcer_dedicated ? " checked" : ""}> Dedicated pool</label></td>
+      </tr>`).join("");
       $("#admin-modal-body").innerHTML = `
         <div class="admin-detail">
           <div class="admin-detail-head">
@@ -951,6 +956,11 @@
             <div><label>Owner credits</label><div>${Number(o.owner_credits).toLocaleString()} <button class="btn ghost small" id="ao-grant"><i class="fas fa-plus"></i>Grant</button></div></div>
           </div>
           <div class="admin-members">
+            <div class="admin-members-head"><label>Team Quick Sourcer settings</label></div>
+            <p class="admin-sub">Dedicated routing requires a Search Endpoint marked Dedicated in Hub Settings.</p>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Team</th><th>Average response</th><th>Pool</th></tr></thead><tbody>${teams || `<tr><td colspan="3">No organization teams configured.</td></tr>`}</tbody></table></div>
+          </div>
+          <div class="admin-members">
             <div class="admin-members-head"><label>Members</label><button class="btn ghost small" id="ao-add-member"><i class="fas fa-user-plus"></i>Add member</button></div>
             <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Member</th><th>Org role</th><th></th></tr></thead><tbody>${members}</tbody></table></div>
           </div>
@@ -962,6 +972,19 @@
       };
       $("#ao-grant").onclick = () => adminAdjustCredits({title:`Grant credits · ${o.org_name}`, sign:1,
         url:`/api/admin/organizations/${orgId}/credits`, after:() => openAdminOrg(orgId)});
+      $$("#admin-modal-body [data-admin-qs-team]").forEach(input => input.onchange = async () => {
+        const teamId = input.dataset.adminQsTeam;
+        try {
+          await patch(`/api/admin/organizations/${orgId}/teams/${teamId}`, {
+            quick_sourcer_dedicated: input.checked,
+          });
+          toast("Team Quick Sourcer setting saved.", {title:"Quick Sourcer"});
+          openAdminOrg(orgId);
+        } catch(e) {
+          input.checked = !input.checked;
+          toast(e.message || "Could not update the team's Quick Sourcer setting.", {title:"Quick Sourcer", kind:"err"});
+        }
+      });
       $("#ao-add-member").onclick = () => adminAddMember(orgId);
       $$("#admin-modal-body [data-org-member-role]").forEach(s => s.onchange = async () => {
         try { await patch(`/api/admin/organizations/${orgId}/members/${s.dataset.orgMemberRole}`, {role: s.value});
