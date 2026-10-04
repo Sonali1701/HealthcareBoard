@@ -43,6 +43,9 @@ class Employer(Base):
         Enum(SubscriptionTier), default=SubscriptionTier.free, index=True
     )
     job_credits_balance: Mapped[int] = mapped_column(Integer, default=0)
+    quick_sourcer_per_user_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10, server_default="10",
+    )
     created_at: Mapped[datetime] = created_col()
     updated_at: Mapped[datetime] = updated_col()
 

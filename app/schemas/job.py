@@ -41,6 +41,7 @@ class EmployerUpdate(BaseModel):
     city: Optional[str] = None
     state_code: Optional[str] = None
     bed_count: Optional[int] = None
+    quick_sourcer_per_user_limit: Optional[int] = Field(default=None, ge=1, le=80)
 
 
 class EmployerOut(ORMModel, EmployerBase):
@@ -50,6 +51,7 @@ class EmployerOut(ORMModel, EmployerBase):
     rating_avg: float
     subscription_tier: SubscriptionTier
     job_credits_balance: int
+    quick_sourcer_per_user_limit: int = 10
     created_at: datetime
 
 

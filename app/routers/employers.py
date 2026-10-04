@@ -196,6 +196,13 @@ def update_employer(employer_id: str, body: EmployerUpdate, user: CurrentUser, d
     _require_cap(db, employer, user, "settings")   # owner / admin only
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(employer, field, value)
+    if body.quick_sourcer_per_user_limit is not None:
+        db.add(AuditLog(
+            actor_user_id=user.user_id,
+            action="organization_quick_sourcer_limit_updated",
+            entity_type="employer", entity_id=employer_id,
+            meta={"quick_sourcer_per_user_limit": body.quick_sourcer_per_user_limit},
+        ))
     db.commit()
     db.refresh(employer)
     return employer

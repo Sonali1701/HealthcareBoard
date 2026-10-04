@@ -103,6 +103,10 @@ class MedhuntCeipalCandidate(BaseModel):
     wireless_phones: list[str] = Field(default_factory=list, max_length=100)
 
 
+class MedhuntLookupLimitRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=80)
+
+
 class MedhuntAssignment(BaseModel):
     conversation_id: str = Field(min_length=1, max_length=80, pattern=r"^\d+$")
     candidate_id: str = Field(min_length=1, max_length=80, pattern=r"^\d+$")
@@ -986,6 +990,34 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
     except Exception as exc:
         raise HTTPException(503, "Ceipal candidate processing is temporarily unavailable") from exc
     return result
+
+
+@router.post("/medhunt/contact-lookup-limit")
+def medhunt_contact_lookup_limit(body: MedhuntLookupLimitRequest, request: Request, db: DbSession):
+    supplied = request.headers.get("x-medhunt-service-token", "")
+    if not settings.medhunt_service_token or not hmac.compare_digest(
+        supplied, settings.medhunt_service_token
+    ):
+        raise HTTPException(401, "Invalid Medhunt service token")
+    user = db.get(User, body.user_id)
+    if not user or user.deleted_at is not None:
+        raise HTTPException(404, "Medhunt user not found")
+    employer_ids = set(db.scalars(select(Employer.employer_id).where(
+        Employer.owner_user_id == user.user_id,
+    )).all())
+    employer_ids.update(db.scalars(select(EmployerMember.employer_id).where(
+        EmployerMember.user_id == user.user_id,
+    )).all())
+    employers = db.scalars(select(Employer).where(
+        Employer.employer_id.in_(employer_ids),
+    )).all() if employer_ids else []
+    # The extension currently identifies a recruiter, not an active org. If
+    # they belong to multiple orgs, use the most restrictive org limit.
+    limit = min(
+        (int(employer.quick_sourcer_per_user_limit or 10) for employer in employers),
+        default=10,
+    )
+    return {"user_id": user.user_id, "per_user_limit": max(1, min(80, limit))}
 
 
 @router.get("/team/recruiters")

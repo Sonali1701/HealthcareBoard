@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from ...models import (
     Profile,
 )
 from ...models.enums import ApplicationStatus, NotificationType
+from ...services import org_roles
 from ..core import RedirectException, redirect, render, require_user
 
 router = APIRouter(prefix="/recruiter", tags=["web-recruiter"])
@@ -70,15 +71,19 @@ def dashboard(request: Request, db: DbDep, user=Depends(require_user)):
 @router.get("/employer")
 def employer_form(request: Request, db: DbDep, user=Depends(require_user)):
     _require_recruiter(user)
+    employer = _employer_for(db, user)
+    role = org_roles.role_of(db, employer, user) if employer else None
     return render(request, "recruiter/employer_edit.html",
-                  {"employer": _employer_for(db, user), "user": user})
+                  {"employer": employer, "user": user,
+                   "can_manage_settings": org_roles.can(role, "settings")})
 
 
 @router.post("/employer")
 def employer_save(request: Request, db: DbDep, user=Depends(require_user),
                   org_name: Annotated[str, Form()] = "", org_type: Annotated[str, Form()] = "",
                   city: Annotated[str, Form()] = "", state_code: Annotated[str, Form()] = "",
-                  website_url: Annotated[str, Form()] = "", description: Annotated[str, Form()] = ""):
+                  website_url: Annotated[str, Form()] = "", description: Annotated[str, Form()] = "",
+                  quick_sourcer_per_user_limit: Annotated[int | None, Form()] = None):
     _require_recruiter(user)
     emp = _employer_for(db, user)
     if not emp:
@@ -92,6 +97,13 @@ def employer_save(request: Request, db: DbDep, user=Depends(require_user),
     emp.state_code = state_code.strip().upper() or None
     emp.website_url = website_url.strip() or None
     emp.description = description.strip() or None
+    role = org_roles.role_of(db, emp, user)
+    if quick_sourcer_per_user_limit is not None:
+        if not org_roles.can(role, "settings"):
+            raise HTTPException(status_code=403, detail="Only organization admins can change the Quick Sourcer limit.")
+        if not 1 <= quick_sourcer_per_user_limit <= 80:
+            raise HTTPException(status_code=422, detail="The per-user limit must be between 1 and 80.")
+        emp.quick_sourcer_per_user_limit = quick_sourcer_per_user_limit
     db.commit()
     return redirect("/recruiter", flash="Organization saved.")
 
