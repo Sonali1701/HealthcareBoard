@@ -312,40 +312,21 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict) -> str:
     return ""
 
 
-def check_and_create(candidate: dict) -> dict:
-    """Search by every available email/phone, then create only if absent."""
+def upload_candidate(candidate: dict) -> dict:
+    """Upload the assigned candidate directly, without querying Ceipal."""
     if not _configured():
         raise MedhuntCeipalError("Ceipal applicant integration is not configured.")
-    if not any(
-        _email_key(value) for value in _values(candidate.get("emails"))
-    ) and not any(
-        _phone_key(value) for value in _values(candidate.get("phones"))
-    ):
-        raise MedhuntCeipalError("A verified candidate email or phone is required for Ceipal.")
     with httpx.Client(timeout=45.0) as client, _LOCK:
         token = _token(client)
-        applicants = _applicant_snapshot(client, token)
-        match = _candidate_matches(candidate, applicants)
-        if match:
-            return match
         applicant_id = _create_applicant(client, token, candidate)
-        # Keep the snapshot current for the next extension candidate rather
-        # than re-listing the tenant after every successful create.
-        created = {
-            "applicant_id": applicant_id,
-            "email": next((value for value in _values(candidate.get("emails")) if _email_key(value)), ""),
-            "mobile_number": next((value for value in _values(candidate.get("wireless_phones")) if _phone_key(value)), ""),
-            "other_phone": next((value for value in _values(candidate.get("phones")) if _phone_key(value)), ""),
-        }
-        if _APPLICANT_CACHE:
-            _APPLICANT_CACHE = (
-                time.time() + _CACHE_SECONDS,
-                [*_APPLICANT_CACHE[1], created],
-            )
         return {
-            "state": "created_in_ceipal",
+            "state": "uploaded_to_ceipal",
             "blocked": False,
-            "checked": True,
+            "checked": False,
             "applicant_id": applicant_id,
-            "matched_by": [],
         }
+
+
+def check_and_create(candidate: dict) -> dict:
+    """Backward-compatible route name; semantics are direct upload only."""
+    return upload_candidate(candidate)

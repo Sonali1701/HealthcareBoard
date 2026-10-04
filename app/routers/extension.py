@@ -978,9 +978,9 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
         raise HTTPException(404, "Medhunt user not found")
     if not user.medhunt_ceipal_enabled:
         raise HTTPException(403, "This recruiter is not assigned to Ceipal")
-    from ..services.medhunt_ceipal import MedhuntCeipalError, check_and_create
+    from ..services.medhunt_ceipal import MedhuntCeipalError, upload_candidate
     try:
-        result = check_and_create(body.model_dump())
+        result = upload_candidate(body.model_dump())
     except MedhuntCeipalError as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
