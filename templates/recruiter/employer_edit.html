@@ -29,7 +29,7 @@
       <input class="input" id="quick_sourcer_per_user_limit" name="quick_sourcer_per_user_limit"
              type="number" min="1" max="80"
              value="{{ employer.quick_sourcer_per_user_limit or 10 }}" required>
-      <small>Maximum queued or processing lookups per user. The limit is lifted after 4 p.m. Pacific.</small>
+      <small>Maximum queued or processing lookups per user. The limit is lifted after 4 p.m. Pacific and all day Saturday and Sunday (Pacific time).</small>
     </div>
     {% endif %}
     <button class="btn btn-primary" type="submit">Save organization</button>
