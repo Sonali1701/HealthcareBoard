@@ -1978,8 +1978,10 @@
       const perms = mem.permissions || {manage_members:false, manage_roles:false, analytics:false, settings:false};
       S.teamPerms = perms;
       let zoomIntegration = null;
+      let atsIntegrations = [];
       if (perms.settings){
         try { zoomIntegration = await get(`/api/integrations/zoom/status?employer_id=${encodeURIComponent(emp.employer_id)}`); } catch(_){}
+        try { atsIntegrations = (await get(`/api/integrations/ats/status?employer_id=${encodeURIComponent(emp.employer_id)}`)).items || []; } catch(_){}
       }
       const myRole = mem.my_role || "recruiter";
       let invites = [];
@@ -2000,6 +2002,7 @@
       }
       const medhuntCreditByUser = new Map(medhuntCredits.map(item => [item.user_id, item.balance]));
       const medhuntSmsSenderByUser = new Map(medhuntSmsSenders.map(item => [item.user_id, item]));
+      const atsIntegrationByProvider = new Map(atsIntegrations.map(item => [item.provider, item]));
       const canBulkAdjustMedhuntCredits = perms.manage_roles && perms.medhunt_credits;
       const canSelectMembers = !!perms.manage_roles;
       const activeTeamOptions = orgTeams.filter(team => team.status === "active")
@@ -2031,6 +2034,12 @@
         <td>${roleCell(m)}</td>
         <td><span class="badge">${esc(teamNames)}</span>
           ${m.can_manage_member ? `<button class="btn ghost small" data-member-teams="${esc(m.user_id)}" data-member-email="${esc(m.email || m.name || "member")}"><i class="fas fa-people-group"></i>Manage</button>` : ""}</td>
+        ${perms.settings ? `<td><select class="tm-role" data-member-ats="${esc(m.user_id)}">
+          ${["nexus","ceipal"].map(provider => {
+            const connected = !!atsIntegrationByProvider.get(provider)?.connected;
+            const selected = (m.ats_destination || "nexus") === provider;
+            return `<option value="${provider}"${selected ? " selected" : ""}${!connected && !selected ? " disabled" : ""}>${provider === "ceipal" ? "CEIPAL" : "Nexus"}${connected ? "" : " (not connected)"}</option>`;
+          }).join("")}</select></td>` : ""}
         ${perms.medhunt_credits ? `<td><b>${Number(medhuntCreditByUser.get(m.user_id) || 0).toLocaleString()}</b>
           ${m.can_manage_member ? `<button class="btn ghost small" data-medhunt-credit-grant="${esc(m.user_id)}" data-medhunt-credit-email="${esc(m.email || "user")}"><i class="fas fa-plus"></i>Grant</button>` : ""}</td>` : ""}
         ${perms.manage_members ? `<td><div>${esc(sms.sender_number || "Not configured")}</div>
@@ -2077,6 +2086,27 @@
           ${zoomIntegration?.last_error ? `<div class="notice warn">${esc(zoomIntegration.last_error)}</div>` : ""}
         </div>` : ""}
 
+        ${perms.settings ? `<div class="an-section" style="margin-top:22px">
+          <div class="team-head"><div><h2>ATS integrations</h2>
+            <p class="team-note">Connect the ATS accounts used by this organization. Credentials are encrypted and used only by the backend.</p></div></div>
+          <div class="admin-chips">${["nexus", "ceipal"].map(provider => {
+            const integration = atsIntegrationByProvider.get(provider) || {provider, connected:false, status:"not_connected", settings:{}};
+            const label = provider === "ceipal" ? "CEIPAL" : "Nexus";
+            return `<div class="integration-card">
+              <div><b>${label}</b> <span class="status-pill ${integration.connected ? "ok" : integration.status === "error" ? "warn" : "no"}">${esc(integration.status || "not_connected")}</span></div>
+              <div class="cell-sub">${integration.connected
+                ? esc(integration.settings?.email || integration.settings?.org_code || integration.settings?.base_url || "Connected")
+                : `Connect ${label} for candidate delivery.`}</div>
+              ${integration.last_error ? `<div class="notice warn">${esc(integration.last_error)}</div>` : ""}
+              <div style="margin-top:8px">
+                <button class="btn ${integration.connected ? "ghost" : "primary"} small" data-ats-configure="${provider}"><i class="fas fa-link"></i>${integration.connected ? "Edit" : "Connect"}</button>
+                ${integration.connected ? `<button class="btn ghost small" data-ats-test="${provider}"><i class="fas fa-plug-circle-check"></i>Test</button>
+                  <button class="btn ghost small danger" data-ats-disconnect="${provider}"><i class="fas fa-link-slash"></i>Disconnect</button>` : ""}
+              </div>
+            </div>`;
+          }).join("")}</div>
+        </div>` : ""}
+
         <div class="an-section" style="margin-top:22px">
           <div class="team-head"><h2>Teams</h2>${teamData.can_create
             ? `<button class="btn ghost small" id="oa-team-create"><i class="fas fa-plus"></i>Create team</button>` : ""}</div>
@@ -2111,7 +2141,7 @@
             <button class="btn ghost small" id="medhunt-credit-bulk-set"><i class="fas fa-equals"></i>Set balance</button>
           </div>` : ""}
           <div class="table-wrap"><table class="table">
-            <thead><tr>${canSelectMembers ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th><th>Team</th>${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_members ? "<th>Zoom messaging</th>" : ""}<th class="th-actions"></th></tr></thead>
+            <thead><tr>${canSelectMembers ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th><th>Team</th>${perms.settings ? "<th>Candidate ATS</th>" : ""}${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_members ? "<th>Zoom messaging</th>" : ""}<th class="th-actions"></th></tr></thead>
             <tbody>${memberRows}</tbody></table></div>
           ${invites.length ? `<div class="team-head" style="margin-top:20px"><h2>Pending invitations</h2></div>
             <div class="table-wrap"><table class="table"><thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
@@ -2132,6 +2162,10 @@
         ${perms.manage_roles ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
       `;
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
+      $$("#orgadmin-panel [data-ats-configure]").forEach(b => b.onclick = () => configureAtsIntegration(
+        b.dataset.atsConfigure, emp.employer_id, atsIntegrationByProvider.get(b.dataset.atsConfigure) || {}));
+      $$("#orgadmin-panel [data-ats-test]").forEach(b => b.onclick = () => testAtsIntegration(b.dataset.atsTest, emp.employer_id));
+      $$("#orgadmin-panel [data-ats-disconnect]").forEach(b => b.onclick = () => disconnectAtsIntegration(b.dataset.atsDisconnect, emp.employer_id));
       const zoomConnect = $("#oa-zoom-connect"); if (zoomConnect) zoomConnect.onclick = () => connectOrganizationZoom(emp.employer_id);
       const zoomSync = $("#oa-zoom-sync"); if (zoomSync) zoomSync.onclick = () => syncOrganizationZoom(emp.employer_id);
       const zoomDisconnect = $("#oa-zoom-disconnect"); if (zoomDisconnect) zoomDisconnect.onclick = () => disconnectOrganizationZoom(emp.employer_id);
@@ -2140,6 +2174,8 @@
       $$("#orgadmin-panel [data-member-remove]").forEach(b => b.onclick = () => removeTeammate(b.dataset.memberRemove));
       $$("#orgadmin-panel [data-invite-revoke]").forEach(b => b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
       $$("#orgadmin-panel [data-member-role]").forEach(s => s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
+      $$("#orgadmin-panel [data-member-ats]").forEach(s => s.onchange = () => setMemberAtsRoute(
+        s.dataset.memberAts, s.value, emp.employer_id));
       $$("#orgadmin-panel [data-member-teams]").forEach(b => b.onclick = () => manageMemberTeams(
         b.dataset.memberTeams, b.dataset.memberEmail, emp.employer_id,
         (mem.items || []).find(m => m.user_id === b.dataset.memberTeams)?.teams || []));
@@ -2217,6 +2253,72 @@
       toast("Zoom disconnected.", {title:"Zoom Phone"});
       await loadOrgAdmin();
     } catch(e){ toast(e.message || "Could not disconnect Zoom.", {title:"Zoom Phone", kind:"err"}); }
+  }
+
+  async function configureAtsIntegration(provider, employerId, current={}){
+    const settings = current.settings || {};
+    const secrets = current.secret_fields || {};
+    const isCeipal = provider === "ceipal";
+    const fields = isCeipal ? [
+      {name:"base_url", label:"CEIPAL API URL", type:"url", required:true, wide:true, value:settings.base_url || "https://api.ceipal.com"},
+      {name:"email", label:"CEIPAL login email", type:"email", required:true, value:settings.email || ""},
+      {name:"password", label:"Password", type:"password", required:!secrets.password, hint:secrets.password ? "leave blank to keep saved password" : ""},
+      {name:"api_key", label:"API key", type:"password", required:!secrets.api_key, hint:secrets.api_key ? "leave blank to keep saved key" : ""},
+    ] : [
+      {name:"base_url", label:"Nexus API URL", type:"url", required:true, wide:true, value:settings.base_url || "https://api-nexus.laboredge.com:9000"},
+      {name:"auth_method", label:"Authentication", type:"select", required:true, value:settings.auth_method || "password", options:[["password","Username and password"],["client_credentials","Client credentials"],["static","Static token"]]},
+      {name:"token_url", label:"Token URL", type:"url", wide:true, value:settings.token_url || "https://api-nexus.laboredge.com/auth/oauth2/token"},
+      {name:"token_payload_style", label:"Token request format", type:"select", value:settings.token_payload_style || "form", options:[["form","Form"],["json","JSON"]]},
+      {name:"org_code", label:"Organization code", value:settings.org_code || ""},
+      {name:"username", label:"Username", value:settings.username || ""},
+      {name:"password", label:"Password", type:"password", hint:secrets.password ? "leave blank to keep saved password" : ""},
+      {name:"client_id", label:"Client ID", value:settings.client_id || ""},
+      {name:"client_secret", label:"Client secret", type:"password", hint:secrets.client_secret ? "leave blank to keep saved secret" : ""},
+      {name:"token_basic", label:"Basic token", type:"password", hint:secrets.token_basic ? "leave blank to keep saved token" : ""},
+      {name:"static_token", label:"Static access token", type:"password", hint:secrets.static_token ? "leave blank to keep saved token" : ""},
+      {name:"resume_doc_type_id", label:"Resume document type ID", value:settings.resume_doc_type_id || ""},
+      {name:"default_profile", label:"Default candidate profile (JSON)", type:"textarea", wide:true, required:true, value:JSON.stringify(settings.default_profile || {}, null, 2)},
+    ];
+    const label = isCeipal ? "CEIPAL" : "Nexus";
+    const values = await formDialog({
+      title:`Connect ${label}`,
+      intro:`These credentials belong to this organization and are encrypted before storage. Existing secrets remain unchanged when their fields are left blank.`,
+      submit:current.connected ? "Update connection" : "Save connection",
+      fields,
+    });
+    if (!values) return;
+    try {
+      await put(`/api/integrations/ats/${provider}?employer_id=${encodeURIComponent(employerId)}`, {settings:values});
+      toast(`${label} connection saved.`, {title:"ATS integrations"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || `Could not connect ${label}.`, {title:"ATS integrations", kind:"err"}); }
+  }
+
+  async function setMemberAtsRoute(userId, provider, employerId){
+    try {
+      await patch(`/api/integrations/ats/members/${encodeURIComponent(userId)}?employer_id=${encodeURIComponent(employerId)}`, {provider});
+      toast(`Future enriched candidates will be sent to ${provider === "ceipal" ? "CEIPAL" : "Nexus"}.`, {title:"Candidate ATS updated"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || "Could not update the member ATS.", {title:"Candidate ATS", kind:"err"}); await loadOrgAdmin(); }
+  }
+
+  async function testAtsIntegration(provider, employerId){
+    const label = provider === "ceipal" ? "CEIPAL" : "Nexus";
+    try {
+      await post(`/api/integrations/ats/${provider}/test?employer_id=${encodeURIComponent(employerId)}`, {});
+      toast(`${label} authentication succeeded.`, {title:"ATS connection tested"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || `${label} authentication failed.`, {title:"ATS connection test", kind:"err"}); await loadOrgAdmin(); }
+  }
+
+  async function disconnectAtsIntegration(provider, employerId){
+    const label = provider === "ceipal" ? "CEIPAL" : "Nexus";
+    if (!await confirmDialog({title:`Disconnect ${label}`, body:`Candidate delivery to this organization's ${label} account will stop.`, confirm:"Disconnect", danger:true})) return;
+    try {
+      await del(`/api/integrations/ats/${provider}?employer_id=${encodeURIComponent(employerId)}`);
+      toast(`${label} disconnected.`, {title:"ATS integrations"});
+      await loadOrgAdmin();
+    } catch(e){ toast(e.message || `Could not disconnect ${label}.`, {title:"ATS integrations", kind:"err"}); }
   }
 
   async function setMedhuntMessagingStatus(userId, status, employerId){

@@ -42,6 +42,7 @@ from .organization_team import (
     OrganizationTeamMember,
 )
 from .zoom_integration import ZoomOrganizationIntegration
+from .ats_integration import AtsOrganizationIntegration
 from .enums import (
     ApplicationStatus,
     ConnectionStatus,
@@ -107,7 +108,7 @@ __all__ = [
     "MedhuntCreditAccount", "MedhuntCreditTransaction",
     "MedhuntSmsSender", "MedhuntMessagingPermission",
     "OrganizationTeam", "OrganizationTeamMember",
-    "ZoomOrganizationIntegration",
+    "ZoomOrganizationIntegration", "AtsOrganizationIntegration",
     # outreach
     "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",
     "MERGE_FIELDS", "SEND_STATUSES",

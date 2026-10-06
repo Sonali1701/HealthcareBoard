@@ -1432,6 +1432,9 @@ tr.is-selected{background:var(--accent-soft)}
 .admin-credit-box .admin-stat-label{font-size:12px;color:var(--muted)}
 .admin-credit-actions{display:flex;gap:8px}
 .admin-chips{display:flex;flex-wrap:wrap;gap:6px}
+.integration-card{flex:1 1 300px;max-width:520px;padding:14px;border:1px solid var(--line);
+  border-radius:12px;background:var(--surface,#fff)}
+.integration-card .notice{margin-top:8px}
 .admin-members-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .tm-role{border:1px solid var(--line);border-radius:6px;background:var(--white);padding:5px 8px;font-size:13px;color:var(--ink);outline:0;cursor:pointer}
 .tm-role:hover{border-color:var(--line-2)}

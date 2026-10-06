@@ -502,6 +502,11 @@ class MedhuntZoomAccessRequest(BaseModel):
     employer_id: str = Field(min_length=1, max_length=80)
 
 
+class MedhuntAtsConfigurationRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=80)
+    provider: str = Field(pattern=r"^(ceipal|nexus)$")
+
+
 @router.post("/medhunt/zoom-access")
 def medhunt_zoom_access(body: MedhuntZoomAccessRequest, request: Request, db: DbSession):
     supplied = request.headers.get("x-medhunt-service-token", "")
@@ -519,6 +524,39 @@ def medhunt_zoom_access(body: MedhuntZoomAccessRequest, request: Request, db: Db
         raise HTTPException(409, "This organization has not connected Zoom.")
     return {"access_token": zoom_oauth.access_token(db, integration),
             "employer_id": body.employer_id}
+
+
+@router.post("/medhunt/ats-configuration")
+def medhunt_ats_configuration(body: MedhuntAtsConfigurationRequest,
+                              request: Request, db: DbSession):
+    """Return one organization's decrypted ATS settings over the service channel."""
+    supplied = request.headers.get("x-medhunt-service-token", "")
+    if not settings.medhunt_service_token or not hmac.compare_digest(
+        supplied, settings.medhunt_service_token,
+    ):
+        raise HTTPException(401, "Invalid Medhunt service token")
+    user = db.get(User, body.user_id)
+    if not user or user.deleted_at is not None:
+        raise HTTPException(404, "Medhunt user not found")
+    from ..services import ats_connections
+
+    resolved = ats_connections.for_user(
+        db, user.user_id, body.provider, connected_only=False,
+    )
+    if not resolved:
+        return {"configured": False, "managed": False, "provider": body.provider}
+    employer, integration = resolved
+    if integration.status != "connected":
+        return {
+            "configured": False, "managed": True,
+            "provider": body.provider, "employer_id": employer.employer_id,
+        }
+    return {
+        "configured": True, "managed": True,
+        "provider": body.provider,
+        "employer_id": employer.employer_id,
+        "settings": ats_connections.settings(integration),
+    }
 
 
 @router.patch("/medhunt/messaging-permissions/{target_user_id}")
@@ -982,9 +1020,16 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
         raise HTTPException(404, "Medhunt user not found")
     if not user.medhunt_ceipal_enabled:
         raise HTTPException(403, "This recruiter is not assigned to Ceipal")
+    from ..services import ats_connections
     from ..services.medhunt_ceipal import MedhuntCeipalError, upload_candidate
     try:
-        result = upload_candidate(body.model_dump())
+        resolved = ats_connections.for_user(
+            db, user.user_id, "ceipal", connected_only=False,
+        )
+        if resolved and resolved[1].status != "connected":
+            raise MedhuntCeipalError("This organization's CEIPAL connection is disconnected.")
+        configuration = ats_connections.settings(resolved[1]) if resolved else None
+        result = upload_candidate(body.model_dump(), configuration)
     except MedhuntCeipalError as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:

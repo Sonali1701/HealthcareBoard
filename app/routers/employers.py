@@ -534,6 +534,7 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
             "member_role": role,
             "role_label": org_roles.ROLE_LABELS.get(role, role),
             "is_owner": is_owner,
+            "ats_destination": "ceipal" if u and u.medhunt_ceipal_enabled else "nexus",
             "teams": sorted(teams_by_user.get(m.user_id, []), key=lambda item: item["team_name"].lower()),
             "messaging_status": team_access.messaging_status(db, employer, m.user_id),
             "can_manage_member": team_access.can_manage_member(db, employer, user, m.user_id),

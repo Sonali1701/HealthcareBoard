@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import threading
 import time
@@ -15,7 +16,7 @@ _LOCK = threading.RLock()
 _APPLICANT_CACHE: tuple[float, list[dict]] | None = None
 _COUNTRY_CACHE: tuple[float, list[dict]] | None = None
 _STATE_CACHE: tuple[float, list[dict]] | None = None
-_TOKEN_CACHE: tuple[float, str] | None = None
+_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
 # CEIPAL v1's documented applicant-list endpoint paginates the whole tenant and
 # has no email/phone filter. Keep a short tenant snapshot to stay within its
 # rate limit while limiting the stale window for applicants added elsewhere.
@@ -27,29 +28,45 @@ class MedhuntCeipalError(RuntimeError):
     pass
 
 
-def _configured() -> bool:
+def _configuration(configuration: dict | None = None) -> dict:
+    if configuration:
+        return dict(configuration)
+    return {
+        "base_url": settings.ceipal_base_url,
+        "email": settings.ceipal_email,
+        "password": settings.ceipal_password,
+        "api_key": settings.ceipal_api_key,
+        "enabled": settings.ceipal_enabled,
+    }
+
+
+def _configured(configuration: dict | None = None) -> bool:
+    values = _configuration(configuration)
     return bool(
-        settings.ceipal_enabled and settings.ceipal_email
-        and settings.ceipal_password and settings.ceipal_api_key
+        values.get("enabled", True) and values.get("email")
+        and values.get("password") and values.get("api_key")
     )
 
 
-def _api_url(path: str) -> str:
-    return f"{settings.ceipal_base_url.rstrip('/')}/v1/{path.lstrip('/')}"
+def _api_url(path: str, configuration: dict | None = None) -> str:
+    base_url = str(_configuration(configuration).get("base_url") or "https://api.ceipal.com")
+    return f"{base_url.rstrip('/')}/v1/{path.lstrip('/')}"
 
 
-def _token(client: httpx.Client) -> str:
-    global _TOKEN_CACHE
-    if _TOKEN_CACHE and _TOKEN_CACHE[0] > time.time():
-        return _TOKEN_CACHE[1]
-    if not _configured():
+def _token(client: httpx.Client, configuration: dict | None = None) -> str:
+    values = _configuration(configuration)
+    cache_key = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
+    cached = _TOKEN_CACHE.get(cache_key)
+    if cached and cached[0] > time.time():
+        return cached[1]
+    if not _configured(values):
         raise MedhuntCeipalError("Ceipal applicant integration is not configured.")
     response = client.post(
-        _api_url("createAuthtoken"),
+        _api_url("createAuthtoken", values),
         json={
-            "email": settings.ceipal_email,
-            "password": settings.ceipal_password,
-            "api_key": settings.ceipal_api_key,
+            "email": values["email"],
+            "password": values["password"],
+            "api_key": values["api_key"],
         },
     )
     if response.is_error:
@@ -62,7 +79,7 @@ def _token(client: httpx.Client) -> str:
         if isinstance(source, dict):
             token = source.get("access_token") or source.get("token")
             if token:
-                _TOKEN_CACHE = (time.time() + 55 * 60, str(token))
+                _TOKEN_CACHE[cache_key] = (time.time() + 55 * 60, str(token))
                 return str(token)
     raise MedhuntCeipalError("Ceipal authentication returned no access token.")
 
@@ -86,13 +103,14 @@ def _records(body) -> tuple[list[dict], dict]:
     return [], body
 
 
-def _applicant_snapshot(client: httpx.Client, token: str) -> list[dict]:
+def _applicant_snapshot(client: httpx.Client, token: str,
+                        configuration: dict | None = None) -> list[dict]:
     global _APPLICANT_CACHE
     now = time.time()
     with _LOCK:
         if _APPLICANT_CACHE and _APPLICANT_CACHE[0] > now:
             return [dict(row) for row in _APPLICANT_CACHE[1]]
-        url = _api_url("getApplicantsList")
+        url = _api_url("getApplicantsList", configuration)
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         all_rows: list[dict] = []
         seen_ids: set[str] = set()
@@ -222,13 +240,14 @@ def _candidate_matches(candidate: dict, applicants: list[dict]) -> dict | None:
     }
 
 
-def _location_ids(client: httpx.Client, token: str, state: str) -> tuple[str, str]:
+def _location_ids(client: httpx.Client, token: str, state: str,
+                  configuration: dict | None = None) -> tuple[str, str]:
     """Resolve US country/state IDs required by the v1 applicant form."""
     global _COUNTRY_CACHE, _STATE_CACHE
     now = time.time()
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     if not _COUNTRY_CACHE or _COUNTRY_CACHE[0] <= now:
-        response = client.get(_api_url("getCountriesList"), headers=headers)
+        response = client.get(_api_url("getCountriesList", configuration), headers=headers)
         if response.is_error:
             return "", ""
         try:
@@ -246,7 +265,7 @@ def _location_ids(client: httpx.Client, token: str, state: str) -> tuple[str, st
     country_id = str(country.get("id") or "")
     if not _STATE_CACHE or _STATE_CACHE[0] <= now:
         response = client.get(
-            _api_url("getStatesList"), headers=headers, params={"country": "US"},
+            _api_url("getStatesList", configuration), headers=headers, params={"country": "US"},
         )
         if response.is_error:
             return country_id, ""
@@ -269,7 +288,8 @@ def _form_value(value: str) -> str:
     return json.dumps(str(value), ensure_ascii=False) + ","
 
 
-def _create_applicant(client: httpx.Client, token: str, candidate: dict) -> str:
+def _create_applicant(client: httpx.Client, token: str, candidate: dict,
+                      configuration: dict | None = None) -> str:
     name_parts = " ".join(str(candidate.get("name") or "").split()).split()
     if not name_parts:
         raise MedhuntCeipalError("Candidate name is required by Ceipal.")
@@ -280,7 +300,9 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict) -> str:
     location = str(candidate.get("location") or "").split(",", 1)
     city = location[0].strip() if location else ""
     state = location[1].strip() if len(location) > 1 else ""
-    country_id, state_id = _location_ids(client, token, state) if state else ("", "")
+    country_id, state_id = (
+        _location_ids(client, token, state, configuration) if state else ("", "")
+    )
     fields = {
         "standard_fields.firstname": name_parts[0],
         "standard_fields.lastname": name_parts[-1] if len(name_parts) > 1 else "",
@@ -294,7 +316,7 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict) -> str:
         fields["standard_fields.state"] = state_id
     files = {key: (None, _form_value(value)) for key, value in fields.items() if value}
     response = client.post(
-        _api_url("createApplicant"),
+        _api_url("createApplicant", configuration),
         headers={"Authorization": f"Bearer {token}"},
         files=files,
     )
@@ -312,13 +334,13 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict) -> str:
     return ""
 
 
-def upload_candidate(candidate: dict) -> dict:
+def upload_candidate(candidate: dict, configuration: dict | None = None) -> dict:
     """Upload the assigned candidate directly, without querying Ceipal."""
-    if not _configured():
+    if not _configured(configuration):
         raise MedhuntCeipalError("Ceipal applicant integration is not configured.")
     with httpx.Client(timeout=45.0) as client, _LOCK:
-        token = _token(client)
-        applicant_id = _create_applicant(client, token, candidate)
+        token = _token(client, configuration)
+        applicant_id = _create_applicant(client, token, candidate, configuration)
         return {
             "state": "uploaded_to_ceipal",
             "blocked": False,
@@ -327,6 +349,6 @@ def upload_candidate(candidate: dict) -> dict:
         }
 
 
-def check_and_create(candidate: dict) -> dict:
+def check_and_create(candidate: dict, configuration: dict | None = None) -> dict:
     """Backward-compatible route name; semantics are direct upload only."""
-    return upload_candidate(candidate)
+    return upload_candidate(candidate, configuration)
