@@ -26,3 +26,4 @@ psycopg[binary]==3.2.3     # PostgreSQL driver (production)
 openpyxl==3.1.5            # Excel (.xlsx) candidate import
 python-docx==1.1.2         # Word (.docx) candidate import
 pypdf==5.1.0               # PDF resume text extraction
+tzdata>=2024.1             # Pacific scheduling in minimal production images

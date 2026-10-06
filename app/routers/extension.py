@@ -30,7 +30,7 @@ from ..models import (
     AuditLog, EmailVerificationToken, Employer, EmployerMember, Notification,
     NotificationType, User, UserRole, UserStatus,
     MedhuntCreditAccount, MedhuntCreditTransaction, MedhuntMessagingPermission,
-    MedhuntSmsSender,
+    MedhuntSmsSender, Profile, ProfileContactBackfill,
 )
 from ..ratelimit import auth_rate_limit
 from ..security import sha256
@@ -105,6 +105,16 @@ class MedhuntCeipalCandidate(BaseModel):
 
 class MedhuntLookupLimitRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=80)
+
+
+class MedhuntContactBackfillResult(BaseModel):
+    profile_id: str = Field(min_length=1, max_length=80)
+    candidate_id: int
+    status: str = Field(min_length=1, max_length=24)
+    attempts: int = Field(default=0, ge=0, le=20)
+    emails: list[str] = Field(default_factory=list, max_length=100)
+    phones: list[str] = Field(default_factory=list, max_length=100)
+    phone_contacts: list[dict] = Field(default_factory=list, max_length=100)
 
 
 class MedhuntAssignment(BaseModel):
@@ -287,6 +297,90 @@ def medhunt_api_monitor(user: CurrentUser):
     if user.role != UserRole.admin:
         raise HTTPException(403, "Platform admin access is required")
     return _medhunt_request("/internal/halo/api-monitor", {})
+
+
+@router.post("/medhunt/contact-backfill-result")
+def medhunt_contact_backfill_result(body: MedhuntContactBackfillResult,
+                                    request: Request, db: DbSession):
+    """Persist a completed shared-queue lookup into Halo's Neon profile."""
+    supplied = request.headers.get("x-medhunt-service-token", "")
+    if not settings.medhunt_service_token or not hmac.compare_digest(
+        supplied, settings.medhunt_service_token,
+    ):
+        raise HTTPException(401, "Invalid Medhunt service token")
+    profile = db.get(Profile, body.profile_id)
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    state = db.get(ProfileContactBackfill, body.profile_id)
+    if state is None:
+        state = ProfileContactBackfill(profile_id=body.profile_id)
+        db.add(state)
+
+    now = utcnow()
+    if body.status == "processing":
+        state.status = "processing"
+        state.medhunt_candidate_id = body.candidate_id
+        state.attempts = max(state.attempts or 0, body.attempts)
+        state.last_attempt_at = now
+        state.last_error = None
+        db.commit()
+        return {"recorded": True, "profile_id": profile.profile_id,
+                "status": "processing", "filled": []}
+
+    emails = list(dict.fromkeys(
+        value.strip()[:255] for value in body.emails if value and value.strip()
+    ))
+    phones = list(dict.fromkeys(
+        value.strip()[:30] for value in body.phones if value and value.strip()
+    ))
+    mobile = next((
+        str(row.get("value") or "").strip()[:30]
+        for row in body.phone_contacts
+        if str(row.get("kind") or "").casefold() == "mobile"
+        and str(row.get("value") or "").strip()
+    ), "")
+    found_contact = body.status == "found" and bool(emails or phones)
+    filled = []
+    if found_contact:
+        if not (profile.email or "").strip() and emails:
+            profile.email = emails[0]
+            filled.append("email")
+        if not (profile.phone or "").strip() and (mobile or phones):
+            profile.phone = mobile or phones[0]
+            filled.append("phone")
+        if filled:
+            profile.contact_updated_by_email = "Quick Sourcer overnight backfill"
+            profile.contact_updated_at = now
+            profile.rebuild_search_text()
+            from .profiles import _compute_completion
+            profile.completion_score = _compute_completion(profile)
+        state.status = "enriched"
+        state.enriched_at = now
+        state.next_eligible_at = None
+        state.last_error = None
+    else:
+        state.status = "not_found" if body.status in {"found", "not_found"} else "failed"
+        days = max(1, int(settings.contact_backfill_not_found_cooldown_days))
+        state.next_eligible_at = now + (
+            timedelta(days=days) if state.status == "not_found" else timedelta(minutes=15)
+        )
+        state.last_error = None if state.status == "not_found" else "Quick Sourcer lookup failed"
+    state.medhunt_candidate_id = body.candidate_id
+    state.attempts = max(state.attempts or 0, body.attempts)
+    state.last_attempt_at = now
+    state.result = {
+        "emails": emails, "phones": phones,
+        "phone_contacts": body.phone_contacts[:100], "filled": filled,
+    }
+    db.add(AuditLog(
+        action="profile_contact_backfill_completed",
+        entity_type="profile", entity_id=profile.profile_id,
+        meta={"status": state.status, "filled": filled,
+              "candidate_id": body.candidate_id},
+    ))
+    db.commit()
+    return {"recorded": True, "profile_id": profile.profile_id,
+            "status": state.status, "filled": filled}
 
 
 @router.post("/medhunt/devices/{device_id}/approve")

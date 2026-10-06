@@ -16,12 +16,13 @@ platform out of its own admin.
 """
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 
 from ..database import utcnow
 from ..deps import AdminUser, DbSession
@@ -38,6 +39,7 @@ from ..models import (
     OrganizationTeam,
     Offer,
     Profile,
+    ProfileContactBackfill,
     SavedJob,
     Session as UserSession,
     TeamInvite,
@@ -47,6 +49,52 @@ from ..models.enums import JobStatus, UserRole, UserStatus
 from ..services import credits as credits_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+_contact_backfill_stats_cache: dict = {"at": 0.0, "data": None}
+
+
+@router.get("/contact-backfill")
+def contact_backfill_status(admin: AdminUser, db: DbSession) -> dict:
+    """Durable progress totals for the overnight Halo Neon enrichment."""
+    cached = _contact_backfill_stats_cache
+    if cached["data"] is not None and time.monotonic() - cached["at"] < 60:
+        return cached["data"]
+    now = utcnow()
+    missing = and_(
+        or_(Profile.email.is_(None), func.length(func.trim(Profile.email)) == 0),
+        or_(Profile.phone.is_(None), func.length(func.trim(Profile.phone)) == 0),
+    )
+    eligible = db.scalar(select(func.count()).select_from(Profile).where(
+        Profile.is_listable.is_(True), missing,
+        func.length(func.trim(Profile.first_name)) > 0,
+        func.length(func.trim(Profile.last_name)) > 0,
+        func.length(func.trim(Profile.city)) > 0,
+        func.length(func.trim(Profile.state_code)) > 0,
+    )) or 0
+    rows = dict(db.execute(
+        select(ProfileContactBackfill.status, func.count())
+        .group_by(ProfileContactBackfill.status)
+    ).all())
+    enriched_24h = db.scalar(select(func.count()).select_from(ProfileContactBackfill).where(
+        ProfileContactBackfill.status == "enriched",
+        ProfileContactBackfill.enriched_at >= now - timedelta(days=1),
+    )) or 0
+    enriched_7d = db.scalar(select(func.count()).select_from(ProfileContactBackfill).where(
+        ProfileContactBackfill.status == "enriched",
+        ProfileContactBackfill.enriched_at >= now - timedelta(days=7),
+    )) or 0
+    result = {
+        "eligible_contactless": int(eligible),
+        "queued": int(rows.get("queued", 0)),
+        "processing": int(rows.get("processing", 0)),
+        "enriched": int(rows.get("enriched", 0)),
+        "not_found": int(rows.get("not_found", 0)),
+        "failed": int(rows.get("failed", 0)),
+        "enriched_24h": int(enriched_24h),
+        "enriched_7d": int(enriched_7d),
+        "schedule": "Mon-Fri 6 PM-6 AM Pacific; all day Saturday-Sunday",
+    }
+    cached.update(at=time.monotonic(), data=result)
+    return result
 
 
 # --- Dashboard data -------------------------------------------------------

@@ -71,3 +71,24 @@ services:
       # turn it on. Left unset, no error data leaves the service.
       - key: SENTRY_DSN
         sync: false
+
+  - type: cron
+    name: healthboard-contact-backfill
+    runtime: docker
+    schedule: "*/10 * * * *"
+    dockerCommand: python -m app.contact_backfill
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: MEDHUNT_API_BASE_URL
+        sync: false
+      - key: MEDHUNT_SERVICE_TOKEN
+        sync: false
+      - key: CONTACT_BACKFILL_BATCH_SIZE
+        value: "100"
+      - key: CONTACT_BACKFILL_NOT_FOUND_COOLDOWN_DAYS
+        value: "30"

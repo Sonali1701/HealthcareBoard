@@ -190,6 +190,8 @@ class Settings(BaseSettings):
     # identical to MEDHUNT_HEALTHBOARD_SERVICE_TOKEN on the Medhunt service.
     medhunt_service_token: str = ""
     medhunt_api_base_url: str = ""
+    contact_backfill_batch_size: int = 100
+    contact_backfill_not_found_cooldown_days: int = 30
 
     @model_validator(mode="after")
     def _prefer_gemini_key(self):

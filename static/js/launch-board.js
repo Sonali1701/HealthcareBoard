@@ -597,7 +597,10 @@
     const box = $("#admin-api-monitor");
     if (!box || ADMIN.tab !== "overview") return;
     try {
-      const data = await get("/api/extension/medhunt/api-monitor");
+      const [data, backfill] = await Promise.all([
+        get("/api/extension/medhunt/api-monitor"),
+        get("/api/admin/contact-backfill"),
+      ]);
       const q = data.lookup_provider || {};
       const nf = n => Number(n || 0).toLocaleString();
       box.innerHTML = statGroup("Extension API load · live", [
@@ -606,6 +609,12 @@
         statCard("Started in 5 minutes", nf(q.started_5m), q.search_pool ? `${q.search_pool} search pool` : ""),
         statCard("Completed in 5 minutes", nf(q.completed_5m)),
         statCard("Failed in 5 minutes", nf(q.failed_5m), q.configured ? "provider configured" : "provider not configured"),
+      ]) + statGroup("Neon contact enrichment", [
+        statCard("Contactless eligible", nf(backfill.eligible_contactless), backfill.schedule || ""),
+        statCard("Waiting", nf(backfill.queued), `${nf(backfill.processing)} processing`),
+        statCard("Enriched", nf(backfill.enriched), `${nf(backfill.enriched_24h)} today · ${nf(backfill.enriched_7d)}/7d`),
+        statCard("Not found", nf(backfill.not_found), "eligible for retry after cooldown"),
+        statCard("Failed", nf(backfill.failed), "temporary failures retry automatically"),
       ]);
     } catch(e) {
       box.innerHTML = errorState("Could not load extension API activity.", e.message || "");
