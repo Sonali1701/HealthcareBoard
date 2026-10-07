@@ -115,7 +115,8 @@ def my_employer_dashboard(user: CurrentUser, db: DbSession,
                      "org_type": emp.org_type, "city": emp.city,
                      "state_code": emp.state_code, "website_url": emp.website_url,
                      "description": emp.description, "is_verified": emp.is_verified,
-                     "rating_avg": float(emp.rating_avg or 0)},
+                     "rating_avg": float(emp.rating_avg or 0),
+                     "quick_sourcer_per_user_limit": int(emp.quick_sourcer_per_user_limit or 10)},
         "kpis": {"jobs": len(jobs),
                  "applications": (db.scalar(select(func.count()).select_from(Application)
                                   .where(Application.job_id.in_(job_ids))) or 0) if job_ids else 0,
@@ -535,6 +536,7 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
             "role_label": org_roles.ROLE_LABELS.get(role, role),
             "is_owner": is_owner,
             "ats_destination": "ceipal" if u and u.medhunt_ceipal_enabled else "nexus",
+            "quick_sourcer_limit_override": m.quick_sourcer_limit_override,
             "teams": sorted(teams_by_user.get(m.user_id, []), key=lambda item: item["team_name"].lower()),
             "messaging_status": team_access.messaging_status(db, employer, m.user_id),
             "can_manage_member": team_access.can_manage_member(db, employer, user, m.user_id),
@@ -542,6 +544,7 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
     items.sort(key=lambda x: (-org_roles.rank(x["member_role"]),
                               (x["name"] or x["email"] or "").lower()))
     return {"items": items,
+            "organization_quick_sourcer_limit": int(employer.quick_sourcer_per_user_limit or 10),
             # kept for backward-compat with the existing UI; equals manage_members
             "can_manage": bool(perms.get("manage_members")),
             "my_role": my_role,
@@ -702,6 +705,10 @@ class MemberRoleUpdate(BaseModel):
     member_role: str
 
 
+class MemberQuickSourcerLimitUpdate(BaseModel):
+    limit_override: Optional[int] = Field(default=None, ge=1, le=80)
+
+
 @router.patch("/{employer_id}/members/{member_user_id}")
 def set_member_role(employer_id: str, member_user_id: str, body: MemberRoleUpdate,
                     user: CurrentUser, db: DbSession):
@@ -723,6 +730,49 @@ def set_member_role(employer_id: str, member_user_id: str, body: MemberRoleUpdat
     db.commit()
     return {"user_id": member_user_id, "member_role": role,
             "role_label": org_roles.ROLE_LABELS.get(role, role)}
+
+
+@router.patch("/{employer_id}/members/{member_user_id}/quick-sourcer-limit")
+def set_member_quick_sourcer_limit(
+    employer_id: str,
+    member_user_id: str,
+    body: MemberQuickSourcerLimitUpdate,
+    user: CurrentUser,
+    db: DbSession,
+):
+    """Set or clear a member's extension lookup limit override; owner/admin only."""
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(status_code=404, detail="Employer not found")
+    _require_cap(db, employer, user, "settings")
+    membership = db.scalar(select(EmployerMember).where(
+        EmployerMember.employer_id == employer_id,
+        EmployerMember.user_id == member_user_id,
+    ))
+    if not membership:
+        raise HTTPException(status_code=404, detail="Not a member of this organisation")
+    membership.quick_sourcer_limit_override = body.limit_override
+    db.add(AuditLog(
+        actor_user_id=user.user_id,
+        action="organization_member_quick_sourcer_limit_updated",
+        entity_type="user",
+        entity_id=member_user_id,
+        meta={
+            "employer_id": employer_id,
+            "limit_override": body.limit_override,
+            "organization_default": int(employer.quick_sourcer_per_user_limit or 10),
+        },
+    ))
+    db.commit()
+    return {
+        "user_id": member_user_id,
+        "limit_override": membership.quick_sourcer_limit_override,
+        "effective_limit": int(
+            membership.quick_sourcer_limit_override
+            if membership.quick_sourcer_limit_override is not None
+            else employer.quick_sourcer_per_user_limit or 10
+        ),
+    }
 
 
 @router.get("/{employer_id}/usage")
