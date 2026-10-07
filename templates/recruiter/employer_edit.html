@@ -34,33 +34,5 @@
     {% endif %}
     <button class="btn btn-primary" type="submit">Save organization</button>
   </form>
-  {% if employer and can_manage_settings %}
-  <section class="panel mt2">
-    <h3>Member limits</h3>
-    <p class="small muted">Set a custom limit for a specific member. Leave the field blank to use the organization limit ({{ employer.quick_sourcer_per_user_limit or 10 }}).</p>
-    {% if member_rows %}
-    <div class="grid" style="gap:10px">
-      {% for member, member_user in member_rows %}
-      <form method="post" action="/recruiter/employer/member-quick-sourcer-limit" class="row items-center wrap panel" style="gap:12px;padding:12px">
-        <input type="hidden" name="target_user_id" value="{{ member_user.user_id }}">
-        <div style="flex:1;min-width:180px">
-          <strong>{{ member_user.email }}</strong>
-          <div class="small muted">{{ member.member_role|title }}</div>
-        </div>
-        <div class="field" style="width:180px;margin:0">
-          <label class="label" for="member-limit-{{ member_user.user_id }}">Requests per user</label>
-          <input class="input" id="member-limit-{{ member_user.user_id }}" name="limit_override"
-                 type="number" min="1" max="80" value="{{ member.quick_sourcer_limit_override if member.quick_sourcer_limit_override is not none else '' }}"
-                 placeholder="Org default" aria-label="Custom Quick Sourcer request limit for {{ member_user.email }}">
-        </div>
-        <button class="btn btn-outline" type="submit">Save</button>
-      </form>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="small muted">No organization members found.</div>
-    {% endif %}
-  </section>
-  {% endif %}
 </div>
 {% endblock %}

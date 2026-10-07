@@ -69,7 +69,6 @@ class EmployerMember(Base):
     employer_id: Mapped[str] = uuid_fk("employers.employer_id")
     user_id: Mapped[str] = uuid_fk("users.user_id")
     member_role: Mapped[str] = mapped_column(String(50), default="recruiter")  # owner|admin|recruiter
-    quick_sourcer_limit_override: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[datetime] = created_col()
 
     employer: Mapped[Employer] = relationship(back_populates="members")
