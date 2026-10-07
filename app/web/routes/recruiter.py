@@ -18,6 +18,7 @@ from ...models import (
     JobType,
     Notification,
     Profile,
+    User,
 )
 from ...models.enums import ApplicationStatus, NotificationType
 from ...services import org_roles
@@ -73,9 +74,18 @@ def employer_form(request: Request, db: DbDep, user=Depends(require_user)):
     _require_recruiter(user)
     employer = _employer_for(db, user)
     role = org_roles.role_of(db, employer, user) if employer else None
+    member_rows = []
+    if employer and org_roles.can(role, "settings"):
+        member_rows = db.execute(
+            select(EmployerMember, User)
+            .join(User, User.user_id == EmployerMember.user_id)
+            .where(EmployerMember.employer_id == employer.employer_id)
+            .order_by(User.email.asc())
+        ).all()
     return render(request, "recruiter/employer_edit.html",
                   {"employer": employer, "user": user,
-                   "can_manage_settings": org_roles.can(role, "settings")})
+                   "can_manage_settings": org_roles.can(role, "settings"),
+                   "member_rows": member_rows})
 
 
 @router.post("/employer")
@@ -106,6 +116,50 @@ def employer_save(request: Request, db: DbDep, user=Depends(require_user),
         emp.quick_sourcer_per_user_limit = quick_sourcer_per_user_limit
     db.commit()
     return redirect("/recruiter", flash="Organization saved.")
+
+
+@router.post("/employer/member-quick-sourcer-limit")
+def employer_member_quick_sourcer_limit(
+    request: Request,
+    db: DbDep,
+    user=Depends(require_user),
+    target_user_id: Annotated[str, Form()] = "",
+    limit_override: Annotated[str, Form()] = "",
+):
+    _require_recruiter(user)
+    employer = _employer_for(db, user)
+    role = org_roles.role_of(db, employer, user) if employer else None
+    if not employer or not org_roles.can(role, "settings"):
+        raise HTTPException(status_code=403, detail="Only organization admins can change member limits.")
+    target_user_id = target_user_id.strip()
+    membership = db.scalar(select(EmployerMember).where(
+        EmployerMember.employer_id == employer.employer_id,
+        EmployerMember.user_id == target_user_id,
+    ))
+    target_user = db.get(User, target_user_id) if target_user_id else None
+    if not target_user or target_user.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Organization member not found.")
+    if not membership and target_user_id != employer.owner_user_id:
+        raise HTTPException(status_code=404, detail="Organization member not found.")
+    if limit_override.strip():
+        try:
+            parsed_limit = int(limit_override)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Enter a whole number from 1 to 80, or leave blank to inherit.") from exc
+        if not 1 <= parsed_limit <= 80:
+            raise HTTPException(status_code=422, detail="The member limit must be between 1 and 80.")
+    else:
+        parsed_limit = None
+    if not membership:
+        membership = EmployerMember(
+            employer_id=employer.employer_id,
+            user_id=target_user_id,
+            member_role="owner",
+        )
+        db.add(membership)
+    membership.quick_sourcer_limit_override = parsed_limit
+    db.commit()
+    return redirect("/recruiter/employer", flash="Member Quick Sourcer limit saved.")
 
 
 @router.get("/jobs/new")
