@@ -8,6 +8,7 @@ services:
     plan: starter            # NOT "free": free disk is ephemeral and the service sleeps
     healthCheckPath: /api/health
     autoDeploy: true
+    preDeployCommand: python -m alembic upgrade head
     envVars:
       - key: ENVIRONMENT
         value: production
