@@ -1150,10 +1150,26 @@ def medhunt_contact_lookup_limit(body: MedhuntLookupLimitRequest, request: Reque
     employers = db.scalars(select(Employer).where(
         Employer.employer_id.in_(employer_ids),
     )).all() if employer_ids else []
-    # The extension currently identifies a recruiter, not an active org. If
-    # they belong to multiple orgs, use the most restrictive org limit.
+    memberships = db.scalars(select(EmployerMember).where(
+        EmployerMember.user_id == user.user_id,
+        EmployerMember.employer_id.in_(employer_ids),
+    )).all() if employer_ids else []
+    member_limits = {
+        membership.employer_id: membership.quick_sourcer_limit_override
+        for membership in memberships
+    }
+    # The extension identifies a recruiter, not an active org. Resolve each
+    # organization's member override (or org default), then use the most
+    # restrictive effective limit if the recruiter belongs to several orgs.
     limit = min(
-        (int(employer.quick_sourcer_per_user_limit or 10) for employer in employers),
+        (
+            int(
+                member_limits.get(employer.employer_id)
+                if member_limits.get(employer.employer_id) is not None
+                else employer.quick_sourcer_per_user_limit or 10
+            )
+            for employer in employers
+        ),
         default=10,
     )
     return {"user_id": user.user_id, "per_user_limit": max(1, min(80, limit))}
