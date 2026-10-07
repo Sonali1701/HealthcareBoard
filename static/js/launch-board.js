@@ -1949,6 +1949,26 @@
       afterTeamChange();
     } catch(e) { toast(e.message || "Could not change the role.", {title:"Role", kind:"err"}); afterTeamChange(); }
   }
+  async function setMemberQuickSourcerLimit(userId){
+    const input = $$("#orgadmin-panel [data-member-qs-limit-input]")
+      .find(node => node.dataset.memberQsLimitInput === userId);
+    if (!input) return;
+    const raw = input.value.trim();
+    const limitOverride = raw === "" ? null : Number(raw);
+    if (limitOverride !== null && (!Number.isInteger(limitOverride) || limitOverride < 1 || limitOverride > 80)){
+      toast("Enter a member limit from 1 to 80, or leave it blank to inherit the organization default.", {title:"Quick Sourcer limit", kind:"err"});
+      return;
+    }
+    try {
+      await patch(`/api/employers/${encodeURIComponent(S.employer.employer_id)}/members/${encodeURIComponent(userId)}/quick-sourcer-limit`, {
+        limit_override: limitOverride,
+      });
+      toast(limitOverride === null ? "Member now uses the organization default." : "Member Quick Sourcer limit saved.", {title:"Quick Sourcer limit"});
+      await loadOrgAdmin();
+    } catch(e) {
+      toast(e.message || "Could not save the member limit.", {title:"Quick Sourcer limit", kind:"err"});
+    }
+  }
   // Team management lives on the Organization page; refresh it after any change.
   function afterTeamChange(){
     if (S.employer) loadOrgAdmin();
@@ -2037,12 +2057,23 @@
         const sms = medhuntSmsSenderByUser.get(m.user_id) || {};
         const messagingStatus = m.messaging_status || sms.messaging_status || "disabled";
         const teamNames = (m.teams || []).map(t => `${t.team_name}${t.status === "paused" ? " (paused)" : ""}`).join(", ") || "Unassigned";
+        const qsLimitCell = perms.settings
+          ? `<td><div class="row items-center wrap" style="gap:6px">
+              <input class="input" type="number" min="1" max="80" inputmode="numeric" style="width:92px;padding:7px"
+                value="${m.quick_sourcer_limit_override == null ? "" : Number(m.quick_sourcer_limit_override)}"
+                placeholder="${Number(mem.organization_quick_sourcer_limit || 10)}"
+                aria-label="Custom Quick Sourcer limit for ${esc(m.email || m.name || "member")}"
+                data-member-qs-limit-input="${esc(m.user_id)}">
+              <button class="btn ghost small" data-member-qs-limit-save="${esc(m.user_id)}">Save</button>
+            </div><div class="cell-sub">Blank uses org default: ${Number(mem.organization_quick_sourcer_limit || 10)}</div></td>`
+          : "";
         return `<tr>
         ${canSelectMembers ? `<td><input type="checkbox" aria-label="Select ${esc(m.email || m.name || "team member")} for bulk actions" data-org-member-select="${esc(m.user_id)}"${S.selectedMedhuntCreditUsers.has(m.user_id) ? " checked" : ""}></td>` : ""}
         <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
         <td>${roleCell(m)}</td>
         <td><span class="badge">${esc(teamNames)}</span>
           ${m.can_manage_member ? `<button class="btn ghost small" data-member-teams="${esc(m.user_id)}" data-member-email="${esc(m.email || m.name || "member")}"><i class="fas fa-people-group"></i>Manage</button>` : ""}</td>
+        ${qsLimitCell}
         ${perms.settings ? `<td><select class="tm-role" data-member-ats="${esc(m.user_id)}">
           ${["nexus","ceipal"].map(provider => {
             const connected = !!atsIntegrationByProvider.get(provider)?.connected;
@@ -2131,6 +2162,7 @@
             : perms.medhunt_credits
               ? "Managers can grant extension enrichment credits to team members when their balance runs low."
               : "The people in your organization. Talent pools, submissions and jobs are shared across the team."}</p>
+          ${perms.settings ? `<p class="team-note">Quick Sourcer limits cap queued or processing lookups per member. Set each member below, or edit the organization to change the default. Limits are lifted after 4 p.m. Pacific and all day on weekends.</p>` : ""}
           ${perms.manage_roles && activeTeamOptions ? `<div class="medhunt-credit-bulkbar">
             <label><input type="checkbox" id="org-member-select-all"> Select all members</label>
             <label for="org-team-bulk-target">Move selected to</label>
@@ -2150,7 +2182,7 @@
             <button class="btn ghost small" id="medhunt-credit-bulk-set"><i class="fas fa-equals"></i>Set balance</button>
           </div>` : ""}
           <div class="table-wrap"><table class="table">
-            <thead><tr>${canSelectMembers ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th><th>Team</th>${perms.settings ? "<th>Candidate ATS</th>" : ""}${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_members ? "<th>Zoom messaging</th>" : ""}<th class="th-actions"></th></tr></thead>
+            <thead><tr>${canSelectMembers ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th><th>Team</th>${perms.settings ? "<th>Quick Sourcer limit</th><th>Candidate ATS</th>" : ""}${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_members ? "<th>Zoom messaging</th>" : ""}<th class="th-actions"></th></tr></thead>
             <tbody>${memberRows}</tbody></table></div>
           ${invites.length ? `<div class="team-head" style="margin-top:20px"><h2>Pending invitations</h2></div>
             <div class="table-wrap"><table class="table"><thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
@@ -2183,6 +2215,8 @@
       $$("#orgadmin-panel [data-member-remove]").forEach(b => b.onclick = () => removeTeammate(b.dataset.memberRemove));
       $$("#orgadmin-panel [data-invite-revoke]").forEach(b => b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
       $$("#orgadmin-panel [data-member-role]").forEach(s => s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
+      $$("#orgadmin-panel [data-member-qs-limit-save]").forEach(b => b.onclick = () =>
+        setMemberQuickSourcerLimit(b.dataset.memberQsLimitSave));
       $$("#orgadmin-panel [data-member-ats]").forEach(s => s.onchange = () => setMemberAtsRoute(
         s.dataset.memberAts, s.value, emp.employer_id));
       $$("#orgadmin-panel [data-member-teams]").forEach(b => b.onclick = () => manageMemberTeams(
@@ -2683,6 +2717,8 @@
         {name:"city", label:"City", value:emp.city || ""},
         {name:"state_code", label:"State", value:emp.state_code || "", max:2},
         {name:"website_url", label:"Website", wide:true, value:emp.website_url || "", placeholder:"https://…"},
+        {name:"quick_sourcer_per_user_limit", label:"Organization default Quick Sourcer limit", type:"number", min:1, max:80,
+         value:emp.quick_sourcer_per_user_limit || 10, hint:"Used for members without an individual limit override."},
         {name:"description", label:"About", type:"textarea", wide:true, value:emp.description || "",
          placeholder:"What your organization does, and the roles you staff."},
       ],
@@ -2695,6 +2731,7 @@
         city: v.city || null,
         state_code: v.state_code ? v.state_code.toUpperCase() : null,
         website_url: v.website_url || null,
+        quick_sourcer_per_user_limit: Number(v.quick_sourcer_per_user_limit || 10),
         description: v.description || null,
       });
       toast("Your organization is updated.", {title:"Saved"});
