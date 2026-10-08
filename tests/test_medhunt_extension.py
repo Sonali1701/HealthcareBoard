@@ -121,7 +121,7 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
     @patch("app.services.medhunt_ceipal.acquire_duplicate_locks")
     @patch("app.services.ats_connections.for_user", return_value=None)
     @patch.object(extension.settings, "medhunt_service_token", "test-service-token")
-    def test_ceipal_delivery_is_visible_to_platform_admin(self, _settings, _connection, _locks, upload):
+    def test_ceipal_delivery_is_visible_to_platform_admin(self, _connection, _locks, upload):
         self.user.medhunt_ceipal_enabled = True
         self.db.commit()
         result = extension.medhunt_ceipal_candidate(
