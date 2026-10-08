@@ -96,6 +96,7 @@ class MedhuntServiceEnrichmentEvent(MedhuntEnrichmentEvent):
 
 class MedhuntCeipalCandidate(BaseModel):
     user_id: str = Field(min_length=1, max_length=80)
+    candidate_id: str = Field(default="", max_length=80)
     name: str = Field(min_length=1, max_length=320)
     location: str = Field(default="", max_length=500)
     emails: list[str] = Field(default_factory=list, max_length=100)
@@ -1118,6 +1119,24 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
     from ..services.medhunt_ceipal import (
         MedhuntCeipalError, acquire_duplicate_locks, upload_candidate,
     )
+    def record_result(state: str, *, result: dict | None = None, error: str = "") -> None:
+        db.add(AuditLog(
+            actor_user_id=user.user_id,
+            action="medhunt_ceipal_delivery",
+            entity_type="medhunt_ceipal_delivery",
+            entity_id=str(body.candidate_id or "")[:36] or None,
+            meta={
+                "candidate_id": body.candidate_id,
+                "candidate_name": body.name,
+                "location": body.location,
+                "state": state,
+                "applicant_id": str((result or {}).get("applicant_id") or ""),
+                "matched_by": list((result or {}).get("matched_by") or []),
+                "error": error[:240],
+            },
+        ))
+        db.commit()
+
     try:
         resolved = ats_connections.for_user(
             db, user.user_id, "ceipal", connected_only=False,
@@ -1128,10 +1147,40 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
         acquire_duplicate_locks(db, body.model_dump(), configuration)
         result = upload_candidate(body.model_dump(), configuration)
     except MedhuntCeipalError as exc:
+        record_result("failed", error=str(exc))
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
+        record_result("failed", error="Ceipal candidate processing is temporarily unavailable")
         raise HTTPException(503, "Ceipal candidate processing is temporarily unavailable") from exc
+    record_result(str(result.get("state") or "uploaded_to_ceipal"), result=result)
     return result
+
+
+@router.get("/medhunt/ceipal-deliveries")
+def list_medhunt_ceipal_deliveries(user: CurrentUser, db: DbSession,
+                                   employer_id: str = "", limit: int = 100):
+    """Show recent CEIPAL candidate delivery outcomes within the caller's scope."""
+    scope, _employer = _medhunt_scope(db, user, employer_id=employer_id)
+    query = select(AuditLog, User.email).outerjoin(
+        User, User.user_id == AuditLog.actor_user_id,
+    ).where(AuditLog.action == "medhunt_ceipal_delivery")
+    if not scope.get("all_users"):
+        ids = scope.get("user_ids") or []
+        if not ids:
+            return {"items": []}
+        query = query.where(AuditLog.actor_user_id.in_(ids))
+    rows = db.execute(query.order_by(AuditLog.created_at.desc()).limit(max(1, min(500, limit)))).all()
+    return {"items": [{
+        "user_email": email or "Former member",
+        "candidate_id": str((log.meta or {}).get("candidate_id") or log.entity_id or ""),
+        "candidate_name": str((log.meta or {}).get("candidate_name") or "Candidate"),
+        "location": str((log.meta or {}).get("location") or ""),
+        "state": str((log.meta or {}).get("state") or "unknown"),
+        "applicant_id": str((log.meta or {}).get("applicant_id") or ""),
+        "matched_by": list((log.meta or {}).get("matched_by") or []),
+        "error": str((log.meta or {}).get("error") or ""),
+        "created_at": log.created_at.isoformat() if log.created_at else None,
+    } for log, email in rows]}
 
 
 @router.post("/medhunt/contact-lookup-limit")

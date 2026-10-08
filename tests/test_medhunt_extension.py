@@ -27,6 +27,14 @@ def request() -> Request:
     })
 
 
+def medhunt_service_request() -> Request:
+    return Request({
+        "type": "http", "method": "POST", "path": "/api/extension/medhunt/ceipal-candidate",
+        "headers": [(b"x-medhunt-service-token", b"test-service-token")],
+        "client": ("127.0.0.1", 1234), "server": ("testserver", 80), "scheme": "http",
+    })
+
+
 class MedhuntExtensionAuthTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:", future=True)
@@ -105,6 +113,35 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
         self.assertEqual(detail["summary"]["candidates_enriched"], 1)
         self.assertEqual(detail["sources"], [{"source": "npiprofile", "checks": 1, "enriched": 1}])
         self.assertEqual(detail["activity"][0]["candidate_id"], "42")
+
+    @patch("app.services.medhunt_ceipal.upload_candidate", return_value={
+        "state": "already_in_ceipal", "checked": True, "applicant_id": "app-42",
+        "matched_by": ["email"],
+    })
+    @patch("app.services.medhunt_ceipal.acquire_duplicate_locks")
+    @patch("app.services.ats_connections.for_user", return_value=None)
+    @patch.object(extension.settings, "medhunt_service_token", "test-service-token")
+    def test_ceipal_delivery_is_visible_to_platform_admin(self, _settings, _connection, _locks, upload):
+        self.user.medhunt_ceipal_enabled = True
+        self.db.commit()
+        result = extension.medhunt_ceipal_candidate(
+            extension.MedhuntCeipalCandidate(
+                user_id=self.user.user_id, candidate_id="42", name="A Candidate",
+                location="Boston, MA", emails=["candidate@example.com"],
+            ), medhunt_service_request(), self.db,
+        )
+        self.assertEqual(result["state"], "already_in_ceipal")
+        upload.assert_called_once()
+
+        admin = User(email="admin@example.com", password_hash="x",
+                     role=UserRole.admin, status=UserStatus.active)
+        self.db.add(admin)
+        self.db.commit()
+        activity = extension.list_medhunt_ceipal_deliveries(admin, self.db)
+        self.assertEqual(len(activity["items"]), 1)
+        self.assertEqual(activity["items"][0]["candidate_name"], "A Candidate")
+        self.assertEqual(activity["items"][0]["state"], "already_in_ceipal")
+        self.assertEqual(activity["items"][0]["applicant_id"], "app-42")
 
     def test_org_admin_manages_per_user_sms_sender_and_extension_reads_own_assignment(self):
         employer = Employer(owner_user_id=self.user.user_id, org_name="Example Staffing")

@@ -392,6 +392,7 @@
     if (name === "logins") loadAdminLogins();
     if (name === "devices") loadMedhuntDevices("#admin-medhunt-devices");
     if (name === "replies") loadMedhuntReplies("#admin-medhunt-replies");
+    if (name === "ceipal") loadMedhuntCeipalDeliveries("#admin-medhunt-ceipal");
     if (name === "audit") loadAdminAudit();
   }
 
@@ -446,6 +447,42 @@
       const bulk = box.querySelector("[data-medhunt-bulk]");
       if (bulk) bulk.onclick = () => openMedhuntBulkAssign(box, employerId);
     } catch(e) { box.innerHTML = errorState("Could not load candidate replies.", e.message); }
+  }
+
+  async function loadMedhuntCeipalDeliveries(selector, employerId=""){
+    const box = $(selector);
+    if (!box) return;
+    box.innerHTML = loading("Loading CEIPAL delivery activity...");
+    try {
+      const data = await get("/api/extension/medhunt/ceipal-deliveries" + medhuntPath(employerId));
+      const items = data.items || [];
+      const states = {
+        uploaded_to_ceipal: ["Uploaded to CEIPAL", "ok"],
+        already_in_ceipal: ["Already in CEIPAL", "warn"],
+        failed: ["Failed", "no"],
+      };
+      const counts = items.reduce((out, item) => {
+        out[item.state] = (out[item.state] || 0) + 1;
+        return out;
+      }, {});
+      box.innerHTML = `<div class="row wrap" style="gap:8px;margin-bottom:10px">
+        <span class="badge">${Number(counts.uploaded_to_ceipal || 0)} uploaded</span>
+        <span class="badge">${Number(counts.already_in_ceipal || 0)} already present</span>
+        <span class="badge">${Number(counts.failed || 0)} failed</span>
+        <span class="cell-sub">Latest ${items.length} attempts</span>
+      </div><div class="table-wrap"><table class="table"><thead><tr>
+        <th>Candidate</th><th>Location</th><th>Recruiter</th><th>Result</th><th>CEIPAL applicant ID</th><th>When</th><th>Details</th>
+      </tr></thead><tbody>${items.length ? items.map(item => {
+        const [label, tone] = states[item.state] || [item.state || "Unknown", "no"];
+        const detail = item.state === "already_in_ceipal"
+          ? `Matched by ${(item.matched_by || []).join(" and ") || "contact"}`
+          : item.error || "";
+        return `<tr><td><b>${esc(item.candidate_name || "Candidate")}</b><div class="cell-sub">${esc(item.candidate_id || "")}</div></td>
+          <td>${esc(item.location || "—")}</td><td>${esc(item.user_email || "Unknown user")}</td>
+          <td><span class="status-pill ${tone}">${esc(label)}</span></td><td>${esc(item.applicant_id || "—")}</td>
+          <td>${item.created_at ? esc(new Date(item.created_at).toLocaleString()) : "—"}</td><td>${esc(detail || "—")}</td></tr>`;
+      }).join("") : `<tr><td colspan="7">No CEIPAL delivery attempts recorded yet.</td></tr>`}</tbody></table></div>`;
+    } catch(e) { box.innerHTML = errorState("Could not load CEIPAL activity.", e.message); }
   }
 
   async function loadMyMedhuntReplies(){
@@ -2200,6 +2237,7 @@
               <td>${Number(m.medhunt_enriched || 0).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
           <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your MedHunt administrator.</p></div>` : ""}
         ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>SMS conversations</h2><p class="team-note">Review who contacted each candidate, see replies and recruiter follow-up, and reassign unanswered replies.</p><div id="org-medhunt-replies"></div></div>` : ""}
+        ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>CEIPAL delivery activity</h2><p class="team-note">See which enriched candidates were added to CEIPAL, already existed there, or failed to upload.</p><div id="org-medhunt-ceipal"></div></div>` : ""}
         ${perms.manage_roles ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
       `;
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
@@ -2250,6 +2288,7 @@
       $$("#orgadmin-panel [data-medhunt-messaging-status]").forEach(b => b.onclick = () => setMedhuntMessagingStatus(
         b.dataset.medhuntMessagingUser, b.dataset.medhuntMessagingStatus, emp.employer_id));
       if (perms.analytics) loadMedhuntReplies("#org-medhunt-replies", emp.employer_id);
+      if (perms.analytics) loadMedhuntCeipalDeliveries("#org-medhunt-ceipal", emp.employer_id);
       if (perms.manage_roles) loadMedhuntDevices("#org-medhunt-devices", emp.employer_id);
     } catch(e) { box.innerHTML = errorState("Could not load your organization.", e.message || ""); }
   }
