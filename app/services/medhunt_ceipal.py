@@ -9,6 +9,7 @@ import time
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from sqlalchemy import text
 
 from ..config import settings
 
@@ -17,11 +18,12 @@ _APPLICANT_CACHE: tuple[float, list[dict]] | None = None
 _COUNTRY_CACHE: tuple[float, list[dict]] | None = None
 _STATE_CACHE: tuple[float, list[dict]] | None = None
 _TOKEN_CACHE: dict[str, tuple[float, str]] = {}
-# CEIPAL v1's documented applicant-list endpoint paginates the whole tenant and
-# has no email/phone filter. Keep a short tenant snapshot to stay within its
-# rate limit while limiting the stale window for applicants added elsewhere.
+# Keep the tenant snapshot helper for diagnostics/backward compatibility. The
+# upload path uses CEIPAL's documented contact filters to avoid downloading the
+# full applicant list for every resume.
 _CACHE_SECONDS = 30
 _MAX_PAGES = 200
+_MAX_FILTER_PAGES = 20
 
 
 class MedhuntCeipalError(RuntimeError):
@@ -208,7 +210,10 @@ def _phone_key(value: str) -> str:
 def _candidate_matches(candidate: dict, applicants: list[dict]) -> dict | None:
     emails = {_email_key(value) for value in _values(candidate.get("emails"))}
     emails.discard("")
-    phones = {_phone_key(value) for value in _values(candidate.get("phones"))}
+    phones = {
+        _phone_key(value)
+        for value in _values(candidate.get("phones")) + _values(candidate.get("wireless_phones"))
+    }
     phones.discard("")
     email_fields = ("email", "email_address_1", "email_address_2", "alternate_email")
     phone_fields = (
@@ -238,6 +243,117 @@ def _candidate_matches(candidate: dict, applicants: list[dict]) -> dict | None:
         "matched_by": sorted(matched_by),
         "match_count": len(matches),
     }
+
+
+def acquire_duplicate_locks(db, candidate: dict, configuration: dict | None = None) -> None:
+    """Serialize same-contact upload attempts across Halo web workers on Postgres."""
+    bind = db.get_bind()
+    if getattr(getattr(bind, "dialect", None), "name", "") != "postgresql":
+        return
+    values = _configuration(configuration)
+    tenant = hashlib.sha256(json.dumps([
+        values.get("base_url"), values.get("email"), values.get("api_key"),
+    ], sort_keys=True).encode()).hexdigest()
+    contacts = {
+        *(('email', key) for key in (_email_key(item) for item in _values(candidate.get("emails"))) if key),
+        *(('phone', key) for key in (
+            _phone_key(item) for item in (
+                _values(candidate.get("phones")) + _values(candidate.get("wireless_phones"))
+            )
+        ) if key),
+    }
+    lock_ids = sorted({
+        int.from_bytes(hashlib.sha256(f"{tenant}:{kind}:{value}".encode()).digest()[:8], "big", signed=True)
+        for kind, value in contacts
+    })
+    for lock_id in lock_ids:
+        db.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id})
+
+
+def _find_existing_applicant(client: httpx.Client, token: str, candidate: dict,
+                             configuration: dict | None = None) -> dict | None:
+    """Look up all supplied emails and phones using CEIPAL's list filters.
+
+    A contact can be stored in any of CEIPAL's standard applicant contact
+    columns, so query each documented column and then compare normalized values
+    locally. Any API/pagination error raises and prevents a duplicate-prone
+    create request.
+    """
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    raw_emails = _values(candidate.get("emails"))
+    email_values = list(dict.fromkeys(
+        item for value in raw_emails for item in (value.strip(), _email_key(value)) if item
+    ))
+    raw_phones = _values(candidate.get("phones")) + _values(candidate.get("wireless_phones"))
+    phone_values = list(dict.fromkeys(
+        item for value in raw_phones for item in (value.strip(), _phone_key(value)) if item
+    ))
+    filters = [
+        (field, value)
+        for field in ("email", "email_address_1")
+        for value in email_values
+    ] + [
+        (field, value)
+        for field in ("mobile_number", "other_phone", "home_phone_number", "work_phone_number")
+        for value in phone_values
+    ]
+    url = _api_url("getApplicantsList", configuration)
+    seen_applicants: dict[str, dict] = {}
+    for field, value in filters:
+        page = 1
+        page_url = url
+        seen_pages: set[str] = set()
+        while page <= _MAX_FILTER_PAGES:
+            params = {field: value, "page": page} if page_url == url else None
+            response = client.get(page_url, headers=headers, params=params)
+            if response.is_error:
+                raise MedhuntCeipalError("Ceipal applicant duplicate check failed.")
+            try:
+                rows, metadata = _records(response.json())
+            except ValueError as exc:
+                raise MedhuntCeipalError("Ceipal applicant search returned invalid JSON.") from exc
+            signature = "|".join(
+                str(row.get("id") or row.get("applicant_id") or json.dumps(row, sort_keys=True))
+                for row in rows
+            )
+            if signature and signature in seen_pages:
+                raise MedhuntCeipalError("Ceipal applicant search pagination did not advance.")
+            if signature:
+                seen_pages.add(signature)
+            for row in rows:
+                applicant_key = str(row.get("id") or row.get("applicant_id") or json.dumps(row, sort_keys=True))
+                seen_applicants[applicant_key] = row
+            match = _candidate_matches(candidate, list(seen_applicants.values()))
+            if match:
+                return match
+            next_value = metadata.get("next") or metadata.get("next_page")
+            try:
+                num_pages = int(metadata.get("num_pages") or metadata.get("total_pages") or 0)
+            except (TypeError, ValueError):
+                num_pages = 0
+            if next_value:
+                next_text = str(next_value).strip()
+                if next_text.isdigit():
+                    page_url = url
+                    page = int(next_text)
+                    continue
+                next_url = urljoin(url, next_text)
+                if urlparse(next_url).netloc.casefold() != urlparse(url).netloc.casefold():
+                    raise MedhuntCeipalError("Ceipal returned an unsafe pagination link.")
+                page_url = next_url
+                page += 1
+                continue
+            if num_pages and page < num_pages:
+                page += 1
+                page_url = url
+                continue
+            if not rows or len(rows) < 20:
+                break
+            page += 1
+            page_url = url
+        else:
+            raise MedhuntCeipalError("Ceipal filtered applicant search exceeded the page limit.")
+    return None
 
 
 def _location_ids(client: httpx.Client, token: str, state: str,
@@ -335,20 +451,27 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict,
 
 
 def upload_candidate(candidate: dict, configuration: dict | None = None) -> dict:
-    """Upload the assigned candidate directly, without querying Ceipal."""
+    """Check CEIPAL contacts first, then create only when no match exists."""
     if not _configured(configuration):
         raise MedhuntCeipalError("Ceipal applicant integration is not configured.")
     with httpx.Client(timeout=45.0) as client, _LOCK:
         token = _token(client, configuration)
+        existing = _find_existing_applicant(client, token, candidate, configuration)
+        if existing:
+            return existing
         applicant_id = _create_applicant(client, token, candidate, configuration)
+        # Refresh this process's cached snapshot so subsequent uploads cannot
+        # miss the applicant just created during the short cache window.
+        global _APPLICANT_CACHE
+        _APPLICANT_CACHE = None
         return {
             "state": "uploaded_to_ceipal",
             "blocked": False,
-            "checked": False,
+            "checked": True,
             "applicant_id": applicant_id,
         }
 
 
 def check_and_create(candidate: dict, configuration: dict | None = None) -> dict:
-    """Backward-compatible route name; semantics are direct upload only."""
+    """Backward-compatible name for duplicate-checked upload."""
     return upload_candidate(candidate, configuration)

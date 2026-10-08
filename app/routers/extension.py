@@ -1115,7 +1115,9 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
     if not user.medhunt_ceipal_enabled:
         raise HTTPException(403, "This recruiter is not assigned to Ceipal")
     from ..services import ats_connections
-    from ..services.medhunt_ceipal import MedhuntCeipalError, upload_candidate
+    from ..services.medhunt_ceipal import (
+        MedhuntCeipalError, acquire_duplicate_locks, upload_candidate,
+    )
     try:
         resolved = ats_connections.for_user(
             db, user.user_id, "ceipal", connected_only=False,
@@ -1123,6 +1125,7 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
         if resolved and resolved[1].status != "connected":
             raise MedhuntCeipalError("This organization's CEIPAL connection is disconnected.")
         configuration = ats_connections.settings(resolved[1]) if resolved else None
+        acquire_duplicate_locks(db, body.model_dump(), configuration)
         result = upload_candidate(body.model_dump(), configuration)
     except MedhuntCeipalError as exc:
         raise HTTPException(503, str(exc)) from exc
