@@ -489,7 +489,8 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
         "specialty": profile.specialty,
         "profession_type": profile.profession_type,
         "provider_category": _directory_category(profile.provider_category,
-                                                 profile.job_category),
+                                                 profile.job_category,
+                                                 profile.specialty),
         "american_board": profile.american_board,
         "years_experience": profile.years_experience or 0,
         "city": profile.city,
@@ -738,7 +739,8 @@ def _provider_conditions(
     return conds
 
 
-_PROVIDER_CATS = ["Physicians", "Nursing", "Allied", "APP", "Others"]
+_PROVIDER_CATS = ["Physicians", "Nursing", "Allied", "APP",
+                  "Facilities", "Trainees", "Support", "Non-clinical", "Others"]
 _JOB_CATEGORY_TABS = {
     "physician": "Physicians",
     "nursing": "Nursing",
@@ -750,9 +752,42 @@ _JOB_CATEGORY_TABS = {
     "dental": "Allied",
     "care management / community health": "Allied",
     "personal care / support": "Allied",
-    "facility / agency / organization": "Others",
-    "student / trainee": "Others",
-    "administrative / non-clinical": "Others",
+    "facility / agency / organization": "Facilities",
+    "student / trainee": "Trainees",
+    "administrative / non-clinical": "Non-clinical",
+}
+_SPECIALTY_TABS = {
+    "federally qualified health center (fqhc)": "Facilities",
+    "oxygen equipment & supplies (dme)": "Facilities",
+    "customized equipment (dme)": "Facilities",
+    "hearing aid equipment": "Facilities",
+    "exclusive provider organization": "Facilities",
+    "nurse's aide": "Nursing",
+    "advanced practice midwife": "APP",
+    "midwife": "APP",
+    "optician": "Allied",
+    "other technician": "Allied",
+    "technician/technologist": "Allied",
+    "technician": "Allied",
+    "surgical assistant": "Allied",
+    "lactation consultant (non-rn)": "Allied",
+    "independent duty corpsman": "Allied",
+    "orthotic fitter": "Allied",
+    "mechanotherapist": "Allied",
+    "homemaker": "Support",
+    "adult companion": "Support",
+    "attendant care provider": "Support",
+    "chore provider": "Support",
+    "respite care": "Support",
+    "day training/habilitation specialist": "Support",
+    "health & wellness coach": "Support",
+    "interpreter": "Support",
+    "personal emergency response attendant": "Support",
+    "driver": "Non-clinical",
+    "contractor": "Non-clinical",
+    "private vehicle": "Non-clinical",
+    "taxi": "Non-clinical",
+    "home modifications contractor": "Non-clinical",
 }
 
 
@@ -765,18 +800,23 @@ def _canonical_provider_category(value: str | None) -> str | None:
 
 
 def _directory_category(provider_category: str | None,
-                        job_category: str | None) -> str:
+                        job_category: str | None,
+                        specialty: str | None = None) -> str:
     job = (job_category or "").strip().lower()
-    return _JOB_CATEGORY_TABS.get(job) or _canonical_provider_category(provider_category)
+    role = (specialty or "").strip().lower()
+    return (_JOB_CATEGORY_TABS.get(job) or _SPECIALTY_TABS.get(role)
+            or _canonical_provider_category(provider_category))
 
 
 def _directory_category_expression():
     """Use the same taxonomy for SQL filters and counts as provider cards."""
     job = func.lower(func.trim(Profile.job_category))
+    specialty = func.lower(func.trim(Profile.specialty))
     provider = func.lower(func.trim(Profile.provider_category))
     return case(
         *((job == value, tab) for value, tab in _JOB_CATEGORY_TABS.items()),
-        *((provider == tab.lower(), tab) for tab in _PROVIDER_CATS[:-1]),
+        *((specialty == value, tab) for value, tab in _SPECIALTY_TABS.items()),
+        *((provider == tab.lower(), tab) for tab in _PROVIDER_CATS if tab != "Others"),
         else_="Others",
     )
 
@@ -788,8 +828,8 @@ def _provider_category_condition(category: str):
 
 def _fold_provider_category_counts(rows) -> dict[str, int]:
     counts = {category: 0 for category in _PROVIDER_CATS}
-    for provider_category, job_category, count in rows:
-        counts[_directory_category(provider_category, job_category)] += count
+    for category, count in rows:
+        counts[_canonical_provider_category(category)] += count
     return counts
 
 
@@ -798,7 +838,7 @@ def search_profiles(
     db: DbSession,
     user: CurrentUser,
     q: Optional[str] = Query(None, description="Full-text search"),
-    category: Optional[str] = Query(None, description="Physicians|Nursing|Allied|APP|Others"),
+    category: Optional[str] = Query(None, description="Physicians|Nursing|Allied|APP|Facilities|Trainees|Support|Non-clinical|Others"),
     providers_only: bool = Query(False, description="Directory profiles, excluding opt-outs and merged duplicates"),
     specialty: Optional[str] = None,
     license_title: Optional[str] = Query(None, description="License/title such as RN, MD, NP, PA"),
@@ -870,7 +910,9 @@ def search_profiles(
 
 _COPILOT_CATS = {"physicians": "Physicians", "nursing": "Nursing",
                  "allied": "Allied", "app": "APP", "other": "Others",
-                 "others": "Others"}
+                 "others": "Others", "facilities": "Facilities",
+                 "trainees": "Trainees", "support": "Support",
+                 "non-clinical": "Non-clinical"}
 _COPILOT_LICENSES = {"RN", "MD", "NP", "PA", "LPN", "CNA", "PT", "DO", "CRNA",
                      "RT", "OT", "PHARMD", "CNM", "DNP", "FNP", "LVN", "LCSW"}
 # US state + territory codes, so "California" -> "CA" is validated, not trusted.
@@ -891,7 +933,8 @@ _COPILOT_INSTR = (
     '{"q":null,"category":null,"license_title":null,"state_code":null,'
     '"city":null,"zip":null,"radius_mi":null,"compact":null,"min_experience":null,'
     '"max_experience":null,"contact_available":null}\n\n'
-    "- category: one of \"Physicians\",\"Nursing\",\"Allied\",\"APP\",\"Others\". "
+    "- category: one of \"Physicians\",\"Nursing\",\"Allied\",\"APP\","
+    "\"Facilities\",\"Trainees\",\"Support\",\"Non-clinical\",\"Others\". "
     "Nurse/RN/LPN/CNA -> Nursing. Doctor/physician/MD/DO -> Physicians. "
     "NP/PA/CRNA/nurse practitioner -> APP. Therapist/PT/OT/RT/tech/allied -> "
     "Allied. null if unclear.\n"
@@ -968,6 +1011,9 @@ _STATE_NAMES = {
 }
 # Category cues, most specific first (so "nurse practitioner" -> APP, not Nursing).
 _CATEGORY_CUES = [
+    (("facility", "organization"), "Facilities"),
+    (("student", "trainee"), "Trainees"),
+    (("homemaker", "companion", "caregiver"), "Support"),
     (("nurse practitioner", "physician assistant", "crna", "aprn"), "APP"),
     (("physician", "doctor", "surgeon"), "Physicians"),
     (("nurse", "nursing"), "Nursing"),
@@ -1419,10 +1465,11 @@ def category_counts(
         contact_available=contact_available, compact=compact,
         licensed_state=licensed_state, worked_at=worked_at,
         travel_experience=travel_experience)
+    directory_category = _directory_category_expression()
     rows = db.execute(
-        select(Profile.provider_category, Profile.job_category, func.count())
+        select(directory_category, func.count())
         .where(*conds)
-        .group_by(Profile.provider_category, Profile.job_category)
+        .group_by(directory_category)
     ).all()
     return _fold_provider_category_counts(rows)
 
@@ -1497,10 +1544,11 @@ def profile_facets(user: CurrentUser, db: DbSession):
         *distinct(License.license_type),
     })
 
+    directory_category = _directory_category_expression()
     cat_rows = db.execute(
-        select(Profile.provider_category, Profile.job_category, func.count())
+        select(directory_category, func.count())
         .where(*_provider_conditions(db, providers_only=True))
-        .group_by(Profile.provider_category, Profile.job_category)
+        .group_by(directory_category)
     ).all()
     # All directory rows have a tab, including blank and legacy categories.
     categories = _fold_provider_category_counts(cat_rows)

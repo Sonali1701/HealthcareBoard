@@ -1266,7 +1266,7 @@
   function facetTotalFor(category){
     const c = S.activeCounts || S.facetCategories;   // counts reflect the active filters
     if (!c || !Object.keys(c).length) return null;
-    return category ? (c[category] || 0) : ["Physicians","Nursing","Allied","APP","Others"].reduce((s,k)=>s+(c[k]||0),0);
+    return category ? (c[category] || 0) : Object.values(c).reduce((s,n)=>s+(Number(n)||0),0);
   }
   // Faceted counts: the headline + tab numbers reflect the CURRENT filters.
   function countParams(){
@@ -1277,7 +1277,7 @@
   }
   function paintCounts(){
     const c = S.activeCounts || S.facetCategories || {};
-    const total = ["Physicians","Nursing","Allied","APP","Others"].reduce((s,k)=>s+(c[k]||0),0);
+    const total = Object.values(c).reduce((s,n)=>s+(Number(n)||0),0);
     $("#providers-count").textContent = `${total.toLocaleString()} provider${total===1?"":"s"}`;
     $$("#provider-tabs .tab").forEach(t => {
       if (t.dataset.base == null) t.dataset.base = t.textContent.replace(/\s+[\d,]+$/, "").trim();
@@ -1414,7 +1414,7 @@
   function providerRow(p,i){
     S.providerCards.set(p.profile_id, p);
     const loc = providerLocation(p);
-    const profession = short(p.profession_type || "Pro", 28);
+    const profession = short(p.profession_type || (noisyProfileText(p.specialty) ? "" : p.specialty) || "Provider", 28);
     const specialty = providerSubtitle(p);
     return `<tr data-row="${p.profile_id}"${S.selected.has(p.profile_id) ? ' class="is-selected"' : ""}>
       <td class="td-check"><input type="checkbox" class="row-check" data-pick="${p.profile_id}"${S.selected.has(p.profile_id) ? " checked" : ""}></td>

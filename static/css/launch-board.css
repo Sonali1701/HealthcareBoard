@@ -170,7 +170,8 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 .provider-filters{display:grid;grid-template-columns:minmax(260px,1.4fr) minmax(170px,1fr) minmax(120px,.65fr) minmax(170px,.9fr) minmax(190px,1fr) minmax(120px,.65fr);gap:10px;align-items:stretch;margin-bottom:16px}
 .provider-filters .input{width:100%;min-width:0;max-width:none;flex:auto}
 .provider-filters .radius-control{grid-column:1/-1;width:100%;min-width:0;max-width:none}
-.tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:18px}
+.tabs{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:18px}
+.tabs .tab{flex:0 0 auto;white-space:nowrap}
 .tab{border:0;background:transparent;padding:10px 14px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;font-size:14px;cursor:pointer;transition:color .15s var(--ease),border-color .15s var(--ease)}
 .tab:hover{color:var(--ink)}
 .tab.active{color:var(--accent-strong);border-bottom-color:var(--accent);font-weight:600}
