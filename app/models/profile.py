@@ -40,6 +40,8 @@ class Profile(Base):
     profession_type: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     # Physicians | Nursing | Allied | APP | Others (derived from résumé evidence).
     provider_category: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    # Imported Neon taxonomy; specialty holds its more specific role/subcategory.
+    job_category: Mapped[Optional[str]] = mapped_column(String(255))
     # Primary certifying board, e.g. "American Board of Allergy and Immunology".
     american_board: Mapped[Optional[str]] = mapped_column(String(150), index=True)
     # False = parser produced junk (placeholder name); hidden from the directory.

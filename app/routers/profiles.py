@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import and_, func, literal, or_, select, text as sa_text
+from sqlalchemy import and_, case, func, literal, or_, select, text as sa_text
 from sqlalchemy.orm import selectinload
 
 from ..config import settings
@@ -488,7 +488,8 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
         "headline": profile.headline,
         "specialty": profile.specialty,
         "profession_type": profile.profession_type,
-        "provider_category": profile.provider_category,
+        "provider_category": _directory_category(profile.provider_category,
+                                                 profile.job_category),
         "american_board": profile.american_board,
         "years_experience": profile.years_experience or 0,
         "city": profile.city,
@@ -738,6 +739,21 @@ def _provider_conditions(
 
 
 _PROVIDER_CATS = ["Physicians", "Nursing", "Allied", "APP", "Others"]
+_JOB_CATEGORY_TABS = {
+    "physician": "Physicians",
+    "nursing": "Nursing",
+    "app's": "APP",
+    "allied health": "Allied",
+    "therapy": "Allied",
+    "behavioral health": "Allied",
+    "pharmacy": "Allied",
+    "dental": "Allied",
+    "care management / community health": "Allied",
+    "personal care / support": "Allied",
+    "facility / agency / organization": "Others",
+    "student / trainee": "Others",
+    "administrative / non-clinical": "Others",
+}
 
 
 def _canonical_provider_category(value: str | None) -> str | None:
@@ -748,21 +764,32 @@ def _canonical_provider_category(value: str | None) -> str | None:
     return "Others"
 
 
+def _directory_category(provider_category: str | None,
+                        job_category: str | None) -> str:
+    job = (job_category or "").strip().lower()
+    return _JOB_CATEGORY_TABS.get(job) or _canonical_provider_category(provider_category)
+
+
+def _directory_category_expression():
+    """Use the same taxonomy for SQL filters and counts as provider cards."""
+    job = func.lower(func.trim(Profile.job_category))
+    provider = func.lower(func.trim(Profile.provider_category))
+    return case(
+        *((job == value, tab) for value, tab in _JOB_CATEGORY_TABS.items()),
+        *((provider == tab.lower(), tab) for tab in _PROVIDER_CATS[:-1]),
+        else_="Others",
+    )
+
+
 def _provider_category_condition(category: str):
-    normalized = category.strip().lower()
-    if normalized in {"other", "others"}:
-        return or_(Profile.provider_category.is_(None),
-                   func.lower(func.trim(Profile.provider_category)).notin_(
-                       tuple(cat.lower() for cat in _PROVIDER_CATS[:-1])))
-    return func.lower(func.trim(Profile.provider_category)) == normalized
+    normalized = _canonical_provider_category(category)
+    return _directory_category_expression() == normalized
 
 
 def _fold_provider_category_counts(rows) -> dict[str, int]:
     counts = {category: 0 for category in _PROVIDER_CATS}
-    for category, count in rows:
-        canonical = _canonical_provider_category(category)
-        if canonical in counts:
-            counts[canonical] += count
+    for provider_category, job_category, count in rows:
+        counts[_directory_category(provider_category, job_category)] += count
     return counts
 
 
@@ -1393,9 +1420,9 @@ def category_counts(
         licensed_state=licensed_state, worked_at=worked_at,
         travel_experience=travel_experience)
     rows = db.execute(
-        select(Profile.provider_category, func.count())
+        select(Profile.provider_category, Profile.job_category, func.count())
         .where(*conds)
-        .group_by(Profile.provider_category)
+        .group_by(Profile.provider_category, Profile.job_category)
     ).all()
     return _fold_provider_category_counts(rows)
 
@@ -1471,9 +1498,9 @@ def profile_facets(user: CurrentUser, db: DbSession):
     })
 
     cat_rows = db.execute(
-        select(Profile.provider_category, func.count())
+        select(Profile.provider_category, Profile.job_category, func.count())
         .where(*_provider_conditions(db, providers_only=True))
-        .group_by(Profile.provider_category)
+        .group_by(Profile.provider_category, Profile.job_category)
     ).all()
     # All directory rows have a tab, including blank and legacy categories.
     categories = _fold_provider_category_counts(cat_rows)
