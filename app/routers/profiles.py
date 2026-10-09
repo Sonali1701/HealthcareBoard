@@ -641,7 +641,12 @@ def _provider_conditions(
     so the tab counts always reflect the same filters as the results."""
     conds = []
     if providers_only:
-        conds.append(Profile.is_listable.is_(True))
+        # Screening can hide imported rows without removing them from the
+        # database. The directory should include those rows, but never undo a
+        # person's opt-out or show a row merged into another profile.
+        conds.extend((Profile.merged_into.is_(None),
+                      or_(Profile.screen_reason.is_(None),
+                          Profile.screen_reason != "opted_out")))
     if q:
         # Match whole words (at a word start), not raw substrings — otherwise a
         # short query like "ICU" matches inside larger words, e.g. "connectICUt"
@@ -733,24 +738,23 @@ def _provider_conditions(
 
 
 _PROVIDER_CATS = ["Physicians", "Nursing", "Allied", "APP", "Others"]
-# ``Other`` was emitted by an older importer. Keep accepting it at the
-# directory boundary while the data migration catches up, otherwise a valid,
-# listable profile silently disappears from both the All view and Others tab.
-_OTHER_CATEGORY_ALIASES = ("Others", "Other", "others", "other", "OTHER")
-_DIRECTORY_CATEGORY_VALUES = tuple(_PROVIDER_CATS) + _OTHER_CATEGORY_ALIASES[1:]
 
 
 def _canonical_provider_category(value: str | None) -> str | None:
-    if value and value.strip().lower() in {"other", "others"}:
-        return "Others"
-    return value
+    normalized = (value or "").strip().lower()
+    for category in _PROVIDER_CATS:
+        if normalized == category.lower():
+            return category
+    return "Others"
 
 
 def _provider_category_condition(category: str):
     normalized = category.strip().lower()
     if normalized in {"other", "others"}:
-        return func.lower(Profile.provider_category).in_(("other", "others"))
-    return func.lower(Profile.provider_category) == normalized
+        return or_(Profile.provider_category.is_(None),
+                   func.lower(func.trim(Profile.provider_category)).notin_(
+                       tuple(cat.lower() for cat in _PROVIDER_CATS[:-1])))
+    return func.lower(func.trim(Profile.provider_category)) == normalized
 
 
 def _fold_provider_category_counts(rows) -> dict[str, int]:
@@ -768,7 +772,7 @@ def search_profiles(
     user: CurrentUser,
     q: Optional[str] = Query(None, description="Full-text search"),
     category: Optional[str] = Query(None, description="Physicians|Nursing|Allied|APP|Others"),
-    providers_only: bool = Query(False, description="Only listable provider profiles"),
+    providers_only: bool = Query(False, description="Directory profiles, excluding opt-outs and merged duplicates"),
     specialty: Optional[str] = None,
     license_title: Optional[str] = Query(None, description="License/title such as RN, MD, NP, PA"),
     profession_type: Optional[str] = None,
@@ -804,8 +808,6 @@ def search_profiles(
     stmt = select(Profile).where(*conds)
     if category:
         stmt = stmt.where(_provider_category_condition(category))
-    elif providers_only:
-        stmt = stmt.where(Profile.provider_category.in_(_DIRECTORY_CATEGORY_VALUES))
 
     total = None
     if count:
@@ -1392,7 +1394,7 @@ def category_counts(
         travel_experience=travel_experience)
     rows = db.execute(
         select(Profile.provider_category, func.count())
-        .where(*conds, Profile.provider_category.in_(_DIRECTORY_CATEGORY_VALUES))
+        .where(*conds)
         .group_by(Profile.provider_category)
     ).all()
     return _fold_provider_category_counts(rows)
@@ -1470,14 +1472,10 @@ def profile_facets(user: CurrentUser, db: DbSession):
 
     cat_rows = db.execute(
         select(Profile.provider_category, func.count())
-        .where(
-            Profile.is_listable.is_(True),
-            Profile.provider_category.in_(_DIRECTORY_CATEGORY_VALUES),
-        )
+        .where(*_provider_conditions(db, providers_only=True))
         .group_by(Profile.provider_category)
     ).all()
-    # Fold the legacy singular label into the public ``Others`` tab. Blank
-    # categories stay excluded until classified, matching the result query.
+    # All directory rows have a tab, including blank and legacy categories.
     categories = _fold_provider_category_counts(cat_rows)
     data = {
         "categories": categories,

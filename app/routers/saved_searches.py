@@ -23,6 +23,7 @@ from ..models import Notification, Profile, SavedSearch
 from ..models.enums import NotificationType
 from .profiles import (
     _is_recruiter_or_admin,
+    _provider_category_condition,
     _provider_conditions,
     _require_provider_directory_access,
 )
@@ -130,7 +131,7 @@ def _count_matches(db: DbSession, params: dict, kind: str = "providers") -> int:
     conds = _provider_conditions(db, providers_only=True, **p)
     stmt = select(func.count()).select_from(Profile).where(*conds)
     if category:
-        stmt = stmt.where(func.lower(Profile.provider_category) == category.lower())
+        stmt = stmt.where(_provider_category_condition(category))
     return db.scalar(stmt) or 0
 
 
