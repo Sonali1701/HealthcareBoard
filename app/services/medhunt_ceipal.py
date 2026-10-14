@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import json
 import hashlib
+import base64
+import binascii
 import re
 import threading
 import time
+from pathlib import Path
 from xml.etree import ElementTree
 from urllib.parse import urljoin, urlparse
 
@@ -36,6 +39,7 @@ def _configuration(configuration: dict | None = None) -> dict:
         "email": settings.ceipal_email,
         "password": settings.ceipal_password,
         "api_key": settings.ceipal_api_key,
+        "resume_document_field": settings.ceipal_resume_document_field,
         "enabled": settings.ceipal_enabled,
     }
 
@@ -402,10 +406,32 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict,
     # commas (as in the documentation's generated curl example) are rejected
     # as an invalid email by the live API.
     form = {key: value for key, value in fields.items() if value}
+    encoded = str(candidate.get("resume_content_base64") or "")
+    file_part = None
+    if encoded:
+        filename = Path(str(candidate.get("resume_filename") or "resume.pdf")).name
+        if not filename.lower().endswith(".pdf"):
+            raise MedhuntCeipalError("The Medhunt resume filename must be a PDF.")
+        try:
+            resume = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise MedhuntCeipalError("The Medhunt resume is not valid base64.") from exc
+        if not resume.startswith(b"%PDF") or not resume or len(resume) > 15 * 1024 * 1024:
+            raise MedhuntCeipalError("The Medhunt resume is not a valid PDF or is too large.")
+        checksum = str(candidate.get("resume_sha256") or "").lower()
+        if checksum and hashlib.sha256(resume).hexdigest() != checksum:
+            raise MedhuntCeipalError("The Medhunt resume checksum does not match.")
+        document_field = str(
+            _configuration(configuration).get("resume_document_field") or "document_fields.1"
+        )
+        if not re.fullmatch(r"document_fields\.[1-9][0-9]*", document_field):
+            raise MedhuntCeipalError("Ceipal resume document field is invalid.")
+        file_part = {document_field: (filename, resume, "application/pdf")}
     response = client.post(
         _api_url("createApplicant", configuration),
         headers={"Authorization": f"Bearer {token}"},
         data=form,
+        **({"files": file_part} if file_part else {}),
     )
     if response.is_error:
         raise MedhuntCeipalError("Ceipal applicant creation failed.")
@@ -450,6 +476,7 @@ def upload_candidate(candidate: dict, configuration: dict | None = None) -> dict
             "blocked": False,
             "checked": True,
             "applicant_id": applicant_id,
+            "resume_submitted": bool(candidate.get("resume_content_base64")),
         }
 
 

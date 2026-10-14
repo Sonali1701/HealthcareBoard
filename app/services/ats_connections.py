@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import ipaddress
+import re
 from urllib.parse import urlparse
 
 import httpx
@@ -22,7 +23,7 @@ SECRET_FIELDS = {
     "nexus": {"password", "client_secret", "static_token", "token_basic"},
 }
 ALLOWED_FIELDS = {
-    "ceipal": {"base_url", "email", "password", "api_key"},
+    "ceipal": {"base_url", "email", "password", "api_key", "resume_document_field"},
     "nexus": {
         "base_url", "auth_method", "token_url", "token_payload_style",
         "client_id", "client_secret", "username", "password", "static_token",
@@ -73,6 +74,10 @@ def _validate(provider: str, supplied: dict, existing: dict | None = None) -> di
         elif str(value or "").strip() or key not in SECRET_FIELDS[provider]:
             merged[key] = str(value or "").strip()
     if provider == "ceipal":
+        field = str(merged.get("resume_document_field") or "document_fields.1")
+        if not re.fullmatch(r"document_fields\.[1-9][0-9]*", field):
+            raise HTTPException(422, "Enter a valid CEIPAL resume document field.")
+        merged["resume_document_field"] = field
         merged["base_url"] = _safe_url(
             merged.get("base_url") or "https://api.ceipal.com", field="CEIPAL API"
         )

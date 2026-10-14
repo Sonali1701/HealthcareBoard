@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import unittest
 from unittest.mock import patch
 
@@ -141,6 +143,40 @@ class MedhuntCeipalDuplicateTests(unittest.TestCase):
         )
         self.assertEqual(applicant_id, "created-123")
         self.assertEqual(client.form["standard_fields.email"], "jamie@example.com")
+
+    def test_create_attaches_medhunt_pdf_to_ceipal_document_field(self):
+        class FakeCreateClient:
+            files = None
+            form = None
+
+            def post(self, *_args, **kwargs):
+                self.form = kwargs.get("data")
+                self.files = kwargs.get("files")
+                return httpx.Response(201, json={"applicant_id": "created-123"})
+
+        pdf = b"%PDF-1.4 test resume"
+        client = FakeCreateClient()
+        applicant_id = medhunt_ceipal._create_applicant(client, "token", {
+            "name": "Jamie Candidate", "emails": ["jamie@example.com"],
+            "resume_filename": "jamie.pdf",
+            "resume_content_base64": base64.b64encode(pdf).decode(),
+            "resume_sha256": hashlib.sha256(pdf).hexdigest(),
+        })
+        self.assertEqual(applicant_id, "created-123")
+        self.assertEqual(client.form["standard_fields.email"], "jamie@example.com")
+        self.assertEqual(client.files["document_fields.1"], ("jamie.pdf", pdf, "application/pdf"))
+
+    def test_create_rejects_corrupt_resume_before_ceipal_write(self):
+        class FakeCreateClient:
+            def post(self, *_args, **_kwargs):
+                raise AssertionError("invalid PDF must not be sent to Ceipal")
+
+        with self.assertRaisesRegex(medhunt_ceipal.MedhuntCeipalError, "not a valid PDF"):
+            medhunt_ceipal._create_applicant(FakeCreateClient(), "token", {
+                "name": "Jamie Candidate", "emails": ["jamie@example.com"],
+                "resume_filename": "jamie.pdf",
+                "resume_content_base64": base64.b64encode(b"not a PDF").decode(),
+            })
 
     def test_phone_only_candidate_fails_closed(self):
         with self.assertRaisesRegex(medhunt_ceipal.MedhuntCeipalError, "without an email"):

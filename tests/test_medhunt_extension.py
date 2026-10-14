@@ -128,10 +128,13 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
             extension.MedhuntCeipalCandidate(
                 user_id=self.user.user_id, candidate_id="42", name="A Candidate",
                 location="Boston, MA", emails=["candidate@example.com"],
+                resume_filename="candidate.pdf", resume_content_base64="JVBERi0xLjQ=",
             ), medhunt_service_request(), self.db,
         )
         self.assertEqual(result["state"], "already_in_ceipal")
         upload.assert_called_once()
+        self.assertEqual(upload.call_args.args[0]["resume_filename"], "candidate.pdf")
+        self.assertEqual(upload.call_args.args[0]["resume_content_base64"], "JVBERi0xLjQ=")
 
         admin = User(email="admin@example.com", password_hash="x",
                      role=UserRole.admin, status=UserStatus.active)

@@ -102,6 +102,9 @@ class MedhuntCeipalCandidate(BaseModel):
     emails: list[str] = Field(default_factory=list, max_length=100)
     phones: list[str] = Field(default_factory=list, max_length=100)
     wireless_phones: list[str] = Field(default_factory=list, max_length=100)
+    resume_filename: str = Field(default="", max_length=180)
+    resume_content_base64: str = Field(default="", max_length=21 * 1024 * 1024)
+    resume_sha256: str = Field(default="", max_length=64)
 
 
 class MedhuntLookupLimitRequest(BaseModel):
@@ -1131,6 +1134,7 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
                 "location": body.location,
                 "state": state,
                 "applicant_id": str((result or {}).get("applicant_id") or ""),
+                "resume_submitted": (result or {}).get("resume_submitted") is True,
                 "matched_by": list((result or {}).get("matched_by") or []),
                 "error": error[:240],
             },

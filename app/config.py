@@ -172,6 +172,7 @@ class Settings(BaseSettings):
     ceipal_api_key: str = ""
     ceipal_email: str = ""
     ceipal_password: str = ""
+    ceipal_resume_document_field: str = "document_fields.1"
     # The "get-report-data" URL from the Ceipal Custom Report (the jobs report).
     ceipal_report_url: str = ""
 
