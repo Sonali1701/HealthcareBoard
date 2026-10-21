@@ -184,6 +184,7 @@ class ProfileCardOut(BaseModel):
     # Enough to drive the UI without revealing the values themselves.
     has_email: bool = False
     has_phone: bool = False
+    has_resume_file: bool = False
     # Non-identifying professional attributes.
     headline: Optional[str] = None
     specialty: Optional[str] = None

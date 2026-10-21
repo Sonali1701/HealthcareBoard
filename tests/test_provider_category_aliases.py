@@ -143,6 +143,59 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             db.close()
             engine.dispose()
 
+    def test_registered_nurse_search_excludes_physician_mentions_and_needs_no_resume(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        try:
+            profiles = [
+                Profile(first_name="Registered", last_name="Nurse",
+                        profession_type="RN", provider_category="Nursing",
+                        specialty="ICU", resume_url=None),
+                Profile(first_name="Former", last_name="Nurse",
+                        profession_type="MD", provider_category="Physicians",
+                        bio="Previously worked as a registered nurse in ICU."),
+                Profile(first_name="Nurse", last_name="Anesthetist",
+                        profession_type="CRNA", provider_category="APP",
+                        headline="Certified registered nurse anesthetist in ICU"),
+            ]
+            for profile in profiles:
+                profile.rebuild_search_text()
+            db.add_all(profiles)
+            db.commit()
+            conds = _provider_conditions(db, providers_only=True, q="registered nurse ICU")
+            found = db.scalars(select(Profile).where(*conds)).all()
+            self.assertEqual([p.first_name for p in found], ["Registered"])
+            self.assertIsNone(found[0].resume_url)
+            self.assertFalse(_profile_card(found[0], released=False)["has_resume_file"])
+            self.assertEqual(db.scalar(select(func.count()).select_from(Profile).where(
+                *conds, _provider_category_condition("Physicians"))), 0)
+            anesthetists = db.scalars(select(Profile).where(*_provider_conditions(
+                db, providers_only=True, q="registered nurse anesthetist"))).all()
+            self.assertEqual([p.first_name for p in anesthetists], ["Nurse"])
+        finally:
+            db.close()
+            engine.dispose()
+
+    def test_state_facets_exclude_malformed_values(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        try:
+            db.add_all([
+                Profile(first_name="A", last_name="A", state_code="TX"),
+                Profile(first_name="B", last_name="B", state_code="00"),
+                Profile(first_name="C", last_name="C", state_code="(M"),
+            ])
+            db.commit()
+            user = SimpleNamespace(role=SimpleNamespace(value="recruiter"))
+            _FACETS_CACHE["data"] = None
+            self.assertEqual(profile_facets(user, db)["states"], ["TX"])
+        finally:
+            _FACETS_CACHE["data"] = None
+            db.close()
+            engine.dispose()
+
 
 if __name__ == "__main__":
     unittest.main()

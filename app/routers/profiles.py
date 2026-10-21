@@ -485,6 +485,7 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
         "is_released": released,
         "has_email": bool(profile.email),
         "has_phone": bool(profile.phone),
+        "has_resume_file": bool(profile.resume_url),
         "headline": profile.headline,
         "specialty": profile.specialty,
         "profession_type": profile.profession_type,
@@ -650,12 +651,25 @@ def _provider_conditions(
                       or_(Profile.screen_reason.is_(None),
                           Profile.screen_reason != "opted_out")))
     if q:
+        query = q.strip()
+        # A role search must match the provider's role, not a passing mention
+        # in a physician's bio or the word "nurse" in an APP title.
+        if (re.search(r"\bregistered nurses?\b", query, re.IGNORECASE)
+                and not re.search(r"\bregistered nurse anesthetists?\b", query,
+                                  re.IGNORECASE)):
+            conds.append(_provider_category_condition("Nursing"))
+            conds.append(or_(
+                func.lower(func.trim(Profile.profession_type)).in_(("rn", "registered nurse")),
+                func.lower(func.trim(Profile.specialty)).in_(("rn", "registered nurse")),
+            ))
+            query = re.sub(r"\bregistered nurses?\b", " ", query,
+                           flags=re.IGNORECASE)
         # Match whole words (at a word start), not raw substrings — otherwise a
         # short query like "ICU" matches inside larger words, e.g. "connectICUt"
         # (University of Connecticut appears in tens of thousands of profiles).
         # search_text is a space-joined lowercase string, so a token counts as a
         # word start when search_text begins with it or a space precedes it.
-        for tok in q.lower().split():
+        for tok in query.lower().split():
             if len(tok) < 2:
                 continue
             conds.append(or_(
@@ -1556,7 +1570,13 @@ def profile_facets(user: CurrentUser, db: DbSession):
         "categories": categories,
         "license_titles": license_titles,
         "professions": distinct(Profile.profession_type),
-        "states": distinct(Profile.state_code),
+        # Imported rows can contain malformed state values (including numbers).
+        # Only offer actual state/territory codes as directory filters.
+        "states": db.scalars(
+            select(Profile.state_code)
+            .where(Profile.state_code.in_(sorted(_US_STATES)))
+            .distinct().order_by(Profile.state_code)
+        ).all(),
         "cities": distinct(Profile.city, limit=250, max_len=80),
         "specialties": distinct(Profile.specialty),
         # American boards, excluding American Board of Physician Specialties.
