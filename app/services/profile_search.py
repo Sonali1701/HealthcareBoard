@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import re
+import gzip
+import json
+from collections import Counter
+from functools import lru_cache
+from pathlib import Path
 
 from sqlalchemy import and_, func, literal, literal_column, or_
 
@@ -23,17 +28,55 @@ _NAME_VALUE = func.lower(
     + func.coalesce(Profile.last_name, _EMPTY)
 )
 _ROLE_VALUES = (
-    _NAME_VALUE,
     func.lower(func.coalesce(Profile.specialty, _EMPTY)),
     func.lower(func.coalesce(Profile.job_category, _EMPTY)),
 )
+_ROLE_WORDS = {
+    "nurse", "nurses", "nursing", "practitioner", "physician", "physicians",
+    "doctor", "surgeon", "assistant", "therapist", "pharmacist", "dentist",
+    "hygienist", "psychologist", "psychiatrist", "counselor", "counsellor",
+    "technician", "technologist", "paramedic", "chiropractor", "podiatrist",
+    "optometrist", "audiologist", "midwife", "anesthetist", "radiologist",
+    "pathologist", "aide",
+}
+
+
+@lru_cache(maxsize=1)
+def _title_categories() -> dict:
+    # Versioned lookup derived from the same CSV used to populate job_category.
+    path = Path(__file__).resolve().parents[1] / "data" / "provider_title_categories.json.gz"
+    with gzip.open(path, "rt", encoding="utf-8") as source:
+        return json.load(source)
+
+
+@lru_cache(maxsize=512)
+def _role_category(query: str) -> str | None:
+    words = re.findall(r"\w+", query.casefold())
+    if not words or not _ROLE_WORDS.intersection(words):
+        return None
+    titles = _title_categories()
+    normalized = " ".join(words)
+    if normalized in titles:
+        return titles[normalized][0]
+    # For phrases absent as exact titles, infer only when the matching titles
+    # overwhelmingly share one category. Ambiguous roles remain unrestricted.
+    weights = Counter()
+    for title, (category, count) in titles.items():
+        padded = f" {title} "
+        if all(f" {word} " in padded for word in words):
+            weights[category] += count
+    if weights:
+        category, weight = weights.most_common(1)[0]
+        if sum(weights.values()) >= 50 and weight / sum(weights.values()) >= .985:
+            return category
+    return None
 
 
 def profile_search_conditions(query: str) -> list:
-    """Match all words in one name, specialty, or category value.
+    """Match a plausible name or all words in one specialty/category value.
 
-    A phrase such as "nurse practitioner" must not match "nurse" in a
-    physician's name and "practitioner" in another field.
+    Imported names sometimes contain an entire role phrase. Match names as
+    names, and use the source taxonomy for unambiguous profession searches.
     """
     # Two-character infix patterns have no useful trigrams and can scan the
     # whole multi-million-row directory; the licence filter handles RN, MD, etc.
@@ -42,10 +85,26 @@ def profile_search_conditions(query: str) -> list:
         return [literal(False)]
     escaped = [token.lower().replace("_", "\\_") for token in tokens]
     patterns = [f"%{token}%" for token in escaped]
+    normalized = " ".join(token.lower() for token in tokens)
+    if len(tokens) == 1:
+        name_match = or_(
+            func.lower(func.trim(Profile.first_name)) == normalized,
+            func.lower(func.trim(Profile.last_name)) == normalized,
+        )
+    else:
+        name_match = _NAME_VALUE == normalized
+    role_match = or_(*(and_(*(field.like(pattern, escape="\\")
+                              for pattern in patterns)) for field in _ROLE_VALUES))
+    category = _role_category(normalized)
+    if category:
+        role_match = and_(role_match, or_(
+            func.lower(func.trim(Profile.job_category)) == category.casefold(),
+            Profile.job_category.is_(None),
+            func.trim(Profile.job_category) == "",
+        ))
     # Keep the combined trigram-index predicate as a fast prefilter. The final
     # condition prevents words spread across unrelated fields from matching.
     return [
         *(_SEARCH_VALUE.like(pattern, escape="\\") for pattern in patterns),
-        or_(*(and_(*(field.like(pattern, escape="\\") for pattern in patterns))
-               for field in _ROLE_VALUES)),
+        or_(name_match, role_match) if not category else role_match,
     ]

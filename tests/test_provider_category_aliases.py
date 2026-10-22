@@ -209,6 +209,17 @@ class ProviderCategoryAliasTests(unittest.TestCase):
                 Profile(first_name="David", last_name="Cole",
                         specialty="Adult Medicine Physician", job_category="Physician",
                         search_text="nurse practitioner"),
+                Profile(first_name="Lola Nurse Practitioner", last_name="Lola Nurse Practitioner",
+                        specialty="Adult Medicine Physician", job_category="Physician"),
+                Profile(first_name="Jude", last_name="Stone",
+                        specialty="Cardiovascular Care, Family Nurse Practitioner",
+                        job_category="Physician"),
+                Profile(first_name="Penny", last_name="Ash",
+                        specialty="Physician Assistant", job_category="Physician Assistant"),
+                Profile(first_name="Nia", last_name="Brown",
+                        specialty="Cardiology", job_category="Nursing"),
+                Profile(first_name="Phil", last_name="Taylor",
+                        specialty="Cardiology", job_category="Physician"),
                 Profile(first_name="Ana", last_name="Bell",
                         specialty="Counselor",
                         job_category="Mental & Behavioural Health"),
@@ -224,7 +235,10 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             self.assertEqual(matching("family nurse practitioner"), {"Maya"})
             self.assertEqual(matching("maya patel"), {"Maya"})
             self.assertEqual(matching("mental behavioural health"), {"Ana"})
-            self.assertEqual(matching("adult medicine physician"), {"Iris", "David"})
+            self.assertEqual(matching("adult medicine physician"),
+                             {"Iris", "David", "Lola Nurse Practitioner"})
+            self.assertEqual(matching("physician"), {"Nurse", "Iris", "David", "Lola Nurse Practitioner", "Jude", "Phil"})
+            self.assertEqual(matching("cardiology"), {"Nia", "Phil"})
             user = SimpleNamespace(role=SimpleNamespace(value="recruiter"))
             defaults = {name: None for name in inspect.signature(category_counts).parameters
                         if name not in {"db", "user"}}
