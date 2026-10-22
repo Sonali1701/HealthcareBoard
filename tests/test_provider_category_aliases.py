@@ -194,6 +194,47 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             db.close()
             engine.dispose()
 
+    def test_multiword_role_search_does_not_combine_unrelated_fields(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        try:
+            db.add_all([
+                Profile(first_name="Nurse", last_name="Smith",
+                        specialty="Family Practitioner", job_category="Physician"),
+                Profile(first_name="Maya", last_name="Patel",
+                        specialty="Family Nurse Practitioner", job_category="Nursing"),
+                Profile(first_name="Iris", last_name="Gardner",
+                        specialty="Adult Medicine Physician", job_category="Physician"),
+                Profile(first_name="David", last_name="Cole",
+                        specialty="Adult Medicine Physician", job_category="Physician",
+                        search_text="nurse practitioner"),
+                Profile(first_name="Ana", last_name="Bell",
+                        specialty="Counselor",
+                        job_category="Mental & Behavioural Health"),
+            ])
+            db.commit()
+
+            def matching(q):
+                return {p.first_name for p in db.scalars(select(Profile).where(
+                    *_provider_conditions(db, providers_only=True, q=q)))}
+
+            # Cross-field role word matches and stale search text do not qualify.
+            self.assertEqual(matching("nurse practitioner"), {"Maya"})
+            self.assertEqual(matching("family nurse practitioner"), {"Maya"})
+            self.assertEqual(matching("maya patel"), {"Maya"})
+            self.assertEqual(matching("mental behavioural health"), {"Ana"})
+            self.assertEqual(matching("adult medicine physician"), {"Iris", "David"})
+            user = SimpleNamespace(role=SimpleNamespace(value="recruiter"))
+            defaults = {name: None for name in inspect.signature(category_counts).parameters
+                        if name not in {"db", "user"}}
+            counts = category_counts(db, user, **{**defaults, "q": "nurse practitioner"})
+            self.assertEqual(counts["Nursing"], 1)
+            self.assertEqual(counts["Physician"], 0)
+        finally:
+            db.close()
+            engine.dispose()
+
     def test_resume_filter_keeps_results_counts_and_saved_searches_aligned(self):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
