@@ -146,7 +146,7 @@ class ProviderCategoryAliasTests(unittest.TestCase):
                         bio="Previously worked as a registered nurse in ICU."),
                 Profile(first_name="Nurse", last_name="Anesthetist",
                         profession_type="CRNA", provider_category="APP",
-                        headline="Certified registered nurse anesthetist in ICU"),
+                        specialty="Certified Registered Nurse Anesthetist"),
             ]
             for profile in profiles:
                 profile.rebuild_search_text()
@@ -162,6 +162,33 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             anesthetists = db.scalars(select(Profile).where(*_provider_conditions(
                 db, providers_only=True, q="registered nurse anesthetist"))).all()
             self.assertEqual([p.first_name for p in anesthetists], ["Nurse"])
+        finally:
+            db.close()
+            engine.dispose()
+
+    def test_provider_search_uses_name_specialty_and_job_category_not_search_text(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        try:
+            db.add_all([
+                Profile(first_name="Alice", last_name="Hart", specialty="ICU",
+                        job_category="Nursing", city="Chicago", search_text="outdated"),
+                Profile(first_name="Ben", last_name="Vale", specialty="Cardiac",
+                        job_category="Therapy", search_text="icu nursing alice"),
+            ])
+            db.commit()
+
+            def names(q):
+                return {p.first_name for p in db.scalars(select(Profile).where(
+                    *_provider_conditions(db, providers_only=True, q=q)))}
+
+            self.assertEqual(names("Alice Hart"), {"Alice"})
+            self.assertEqual(names("icu"), {"Alice"})
+            self.assertEqual(names("Nursing"), {"Alice"})
+            self.assertEqual(names("Therapy"), {"Ben"})
+            self.assertEqual(names("Chicago"), set())
+            self.assertEqual(names("outdated"), set())
         finally:
             db.close()
             engine.dispose()

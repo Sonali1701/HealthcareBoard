@@ -24,6 +24,7 @@ from ..importers.parsing import (
     is_real_name,
 )
 from ..services import quick_sourcer, storage
+from ..services.profile_search import profile_search_conditions
 from ..models import (
     AuditLog,
     Certification,
@@ -664,18 +665,8 @@ def _provider_conditions(
             ))
             query = re.sub(r"\bregistered nurses?\b", " ", query,
                            flags=re.IGNORECASE)
-        # Match whole words (at a word start), not raw substrings — otherwise a
-        # short query like "ICU" matches inside larger words, e.g. "connectICUt"
-        # (University of Connecticut appears in tens of thousands of profiles).
-        # search_text is a space-joined lowercase string, so a token counts as a
-        # word start when search_text begins with it or a space precedes it.
-        for tok in query.lower().split():
-            if len(tok) < 2:
-                continue
-            conds.append(or_(
-                Profile.search_text.like(f"{tok}%"),
-                Profile.search_text.like(f"% {tok}%"),
-            ))
+        if query.strip():
+            conds.extend(profile_search_conditions(query))
     if specialty:
         conds.append(Profile.specialty == specialty)
     if profession_type:
@@ -1368,8 +1359,7 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
     filters = _merge_copilot_filters(prior, delta)
 
     category = filters.get("category")
-    # Keyword search: AND one substring match per token (the single-LIKE `q`
-    # column can't match a multi-word phrase), so "icu telemetry" needs both.
+    # Search the same four fields as the provider search box.
     # Split off qualifiers we don't hold as structured data — requiring them
     # would wrongly zero out an otherwise-good search — and note them instead.
     raw_tokens = [t for t in (filters.get("q") or "").split() if len(t) >= 2]
@@ -1385,12 +1375,8 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
     search_filters = {k: v for k, v in filters.items()
                       if k not in ("category", "q")}
     conds = _provider_conditions(db, providers_only=True, **search_filters)
-    for tok in hard:
-        # Whole-word (word-start) match — see _provider_conditions for why.
-        conds.append(or_(
-            Profile.search_text.like(f"{tok}%"),
-            Profile.search_text.like(f"% {tok}%"),
-        ))
+    if hard:
+        conds.extend(profile_search_conditions(" ".join(hard)))
     stmt = select(Profile).where(*conds)
     if category:
         stmt = stmt.where(_provider_category_condition(category))

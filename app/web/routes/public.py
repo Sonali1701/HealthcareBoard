@@ -16,6 +16,7 @@ from ...models import (
     Profile,
     SavedJob,
 )
+from ...services.profile_search import profile_search_conditions
 from ..core import RedirectException, current_user, render
 
 router = APIRouter(tags=["web-public"])
@@ -123,7 +124,7 @@ def talent_page(request: Request, db: DbDep, user=Depends(current_user),
     _require_recruiter_or_redirect(user)
     stmt = select(Profile).where(Profile.is_listable.is_(True))
     if q:
-        stmt = stmt.where(Profile.search_text.like(f"%{q.lower()}%"))
+        stmt = stmt.where(*profile_search_conditions(q))
     if specialty:
         stmt = stmt.where(Profile.specialty == specialty)
     if profession:
