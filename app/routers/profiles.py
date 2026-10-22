@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import and_, case, func, literal, or_, select, text as sa_text
+from sqlalchemy import and_, func, literal, or_, select, text as sa_text
 from sqlalchemy.orm import selectinload
 
 from ..config import settings
@@ -658,7 +658,6 @@ def _provider_conditions(
         if (re.search(r"\bregistered nurses?\b", query, re.IGNORECASE)
                 and not re.search(r"\bregistered nurse anesthetists?\b", query,
                                   re.IGNORECASE)):
-            conds.append(_provider_category_condition("Nursing"))
             conds.append(or_(
                 func.lower(func.trim(Profile.profession_type)).in_(("rn", "registered nurse")),
                 func.lower(func.trim(Profile.specialty)).in_(("rn", "registered nurse")),
@@ -754,110 +753,61 @@ def _provider_conditions(
     return conds
 
 
-_PROVIDER_CATS = ["Physicians", "Nursing", "Allied", "APP",
-                  "Facilities", "Trainees", "Support", "Non-clinical", "Others"]
-_JOB_CATEGORY_TABS = {
-    "physician": "Physicians",
-    "nursing": "Nursing",
-    "app's": "APP",
-    "physician assistant": "APP",
-    "allied health": "Allied",
-    "allied health & technicians": "Allied",
-    "therapy": "Allied",
-    "behavioral health": "Allied",
-    "mental & behavioural health": "Allied",
-    "social work & community services": "Allied",
-    "pharmacy": "Allied",
-    "dental": "Allied",
-    "chiropractic, podiatry & alternative medicine": "Allied",
-    "vision & hearing": "Allied",
-    "care management / community health": "Allied",
-    "personal care / support": "Allied",
-    "home health & personal care": "Support",
-    "facility / agency / organization": "Facilities",
-    "facilities & organizations": "Facilities",
-    "medical equipment & supplies": "Facilities",
-    "student / trainee": "Trainees",
-    "administrative / non-clinical": "Non-clinical",
-    "administrative & management": "Non-clinical",
-    "business, sales & other non-clinical": "Non-clinical",
-    "it & engineering": "Non-clinical",
-    "medical transportation": "Non-clinical",
+_UNCATEGORIZED = "Uncategorized"
+# The category values in job_titles_with_category 1.csv. Keep their spelling so
+# the tab, count, filter, and profile card all describe the same database value.
+_PROVIDER_CATS = [
+    "Physician", "Nursing", "Therapy", "Mental & Behavioural Health",
+    "Social Work & Community Services", "Pharmacy", "Dental",
+    "Home Health & Personal Care", "Facilities & Organizations",
+    "Allied Health & Technicians",
+    "Chiropractic, Podiatry & Alternative Medicine", "Physician Assistant",
+    "Student / Trainee", "Vision & Hearing", "Medical Equipment & Supplies",
+    "Medical Transportation", "IT & Engineering",
+    "Business, Sales & Other Non-clinical", "Administrative & Management",
+    "Other / Unclassified", _UNCATEGORIZED,
+]
+_LEGACY_CATEGORY_GROUPS = {
+    "Physicians": ("Physician",),
+    "Allied": ("Therapy", "Mental & Behavioural Health",
+               "Social Work & Community Services", "Pharmacy", "Dental",
+               "Allied Health & Technicians",
+               "Chiropractic, Podiatry & Alternative Medicine", "Vision & Hearing"),
+    "APP": ("Physician Assistant",),
+    "Facilities": ("Facilities & Organizations", "Medical Equipment & Supplies"),
+    "Trainees": ("Student / Trainee",),
+    "Support": ("Home Health & Personal Care",),
+    "Non-clinical": ("Medical Transportation", "IT & Engineering",
+                     "Business, Sales & Other Non-clinical", "Administrative & Management"),
+    "Others": ("Other / Unclassified", _UNCATEGORIZED),
 }
-_SPECIALTY_TABS = {
-    "federally qualified health center (fqhc)": "Facilities",
-    "oxygen equipment & supplies (dme)": "Facilities",
-    "customized equipment (dme)": "Facilities",
-    "hearing aid equipment": "Facilities",
-    "exclusive provider organization": "Facilities",
-    "nurse's aide": "Nursing",
-    "advanced practice midwife": "APP",
-    "midwife": "APP",
-    "optician": "Allied",
-    "other technician": "Allied",
-    "technician/technologist": "Allied",
-    "technician": "Allied",
-    "surgical assistant": "Allied",
-    "lactation consultant (non-rn)": "Allied",
-    "independent duty corpsman": "Allied",
-    "orthotic fitter": "Allied",
-    "mechanotherapist": "Allied",
-    "homemaker": "Support",
-    "adult companion": "Support",
-    "attendant care provider": "Support",
-    "chore provider": "Support",
-    "respite care": "Support",
-    "day training/habilitation specialist": "Support",
-    "health & wellness coach": "Support",
-    "interpreter": "Support",
-    "personal emergency response attendant": "Support",
-    "driver": "Non-clinical",
-    "contractor": "Non-clinical",
-    "private vehicle": "Non-clinical",
-    "taxi": "Non-clinical",
-    "home modifications contractor": "Non-clinical",
-}
-
-
-def _canonical_provider_category(value: str | None) -> str | None:
-    normalized = (value or "").strip().lower()
-    for category in _PROVIDER_CATS:
-        if normalized == category.lower():
-            return category
-    return "Others"
 
 
 def _directory_category(provider_category: str | None,
                         job_category: str | None,
                         specialty: str | None = None) -> str:
-    job = (job_category or "").strip().lower()
-    role = (specialty or "").strip().lower()
-    return (_JOB_CATEGORY_TABS.get(job) or _SPECIALTY_TABS.get(role)
-            or _canonical_provider_category(provider_category))
+    return (job_category or "").strip() or _UNCATEGORIZED
 
 
 def _directory_category_expression():
-    """Use the same taxonomy for SQL filters and counts as provider cards."""
-    job = func.lower(func.trim(Profile.job_category))
-    specialty = func.lower(func.trim(Profile.specialty))
-    provider = func.lower(func.trim(Profile.provider_category))
-    return case(
-        *((job == value, tab) for value, tab in _JOB_CATEGORY_TABS.items()),
-        *((specialty == value, tab) for value, tab in _SPECIALTY_TABS.items()),
-        *((provider == tab.lower(), tab) for tab in _PROVIDER_CATS if tab != "Others"),
-        else_="Others",
-    )
+    """The same job-category value shown on provider cards and tabs."""
+    return func.coalesce(func.nullif(func.trim(Profile.job_category), ""),
+                         _UNCATEGORIZED)
 
 
 def _provider_category_condition(category: str):
-    normalized = _canonical_provider_category(category)
-    return _directory_category_expression() == normalized
+    # Saved searches and the AI copilot may still send the old broad groups.
+    # Exact CSV categories always select just their own tab.
+    if category in _LEGACY_CATEGORY_GROUPS:
+        return _directory_category_expression().in_(_LEGACY_CATEGORY_GROUPS[category])
+    return _directory_category_expression() == category
 
 
 def _fold_provider_category_counts(rows) -> dict[str, int]:
     counts = {category: 0 for category in _PROVIDER_CATS}
     for category, count in rows:
-        counts[_canonical_provider_category(category)] += count
+        label = (category or "").strip() or _UNCATEGORIZED
+        counts[label] = counts.get(label, 0) + count
     return counts
 
 
@@ -866,7 +816,7 @@ def search_profiles(
     db: DbSession,
     user: CurrentUser,
     q: Optional[str] = Query(None, description="Full-text search"),
-    category: Optional[str] = Query(None, description="Physicians|Nursing|Allied|APP|Facilities|Trainees|Support|Non-clinical|Others"),
+    category: Optional[str] = Query(None, description="Job category shown on the provider tab"),
     providers_only: bool = Query(False, description="Directory profiles, excluding opt-outs and merged duplicates"),
     specialty: Optional[str] = None,
     license_title: Optional[str] = Query(None, description="License/title such as RN, MD, NP, PA"),

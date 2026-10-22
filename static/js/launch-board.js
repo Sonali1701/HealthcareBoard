@@ -1268,6 +1268,13 @@
     if (!c || !Object.keys(c).length) return null;
     return category ? (c[category] || 0) : Object.values(c).reduce((s,n)=>s+(Number(n)||0),0);
   }
+  function renderProviderTabs(){
+    const tabs = $("#provider-tabs");
+    const categories = Object.keys(S.facetCategories || {});
+    tabs.innerHTML = `<button class="tab" data-category="">All</button>`
+      + categories.map(category => `<button class="tab" data-category="${esc(category)}">${esc(category)}</button>`).join("");
+    syncProviderControls();
+  }
   // Faceted counts: the headline + tab numbers reflect the CURRENT filters.
   function countParams(){
     const s = S.provider, p = new URLSearchParams();
@@ -1473,6 +1480,7 @@
       const f = await get("/api/profiles/facets");
       S.facetsLoaded = true;
       S.facetCategories = f.categories || {};
+      renderProviderTabs();
       const avail = new Set((f.license_titles || f.professions || []).map(v => String(v).toUpperCase().replace(/[.\s-]/g, "")));
       const licOpts = LICENSE_ORDER.filter(code => avail.has(code)).map(code => `<option value="${code}">${esc(LICENSE_LABELS[code])}</option>`);
       $("#provider-license-title").innerHTML = `<option value="">Any license/title</option>` + licOpts.join("");
@@ -3967,7 +3975,15 @@
     $("#provider-experience").onchange = () => { setExperienceFilter($("#provider-experience").value); providerFilterChanged(); };
     $("#provider-contact").onchange = () => { S.provider.contact_available = $("#provider-contact").value; providerFilterChanged(); };
     $("#provider-state").onchange = () => { S.provider.state_code = $("#provider-state").value; providerFilterChanged(); };
-    $$("#provider-tabs .tab").forEach(t => t.onclick = () => { $$("#provider-tabs .tab").forEach(x => x.classList.remove("active")); t.classList.add("active"); S.provider.category = t.dataset.category; S.providerOffset = 0; loadProviders(); });
+    $("#provider-tabs").onclick = event => {
+      const t = event.target.closest("button[data-category]");
+      if (!t) return;
+      $$("#provider-tabs .tab").forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      S.provider.category = t.dataset.category;
+      S.providerOffset = 0;
+      loadProviders();
+    };
     $$(".provider-toggles .ptoggle").forEach(t => t.onclick = () => {
       const on = t.classList.toggle("active");
       S.provider[t.dataset.toggle] = on ? "true" : "";

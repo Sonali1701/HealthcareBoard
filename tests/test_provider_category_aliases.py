@@ -11,7 +11,6 @@ from app.database import Base
 from app.models import Profile
 from app.schemas.profile import ProfileCardOut
 from app.routers.profiles import (
-    _canonical_provider_category,
     _directory_category,
     _directory_category_expression,
     _fold_provider_category_counts,
@@ -26,62 +25,38 @@ from app.routers.profiles import (
 
 
 class ProviderCategoryAliasTests(unittest.TestCase):
-    def test_every_directory_category_has_a_tab(self):
+    def test_provider_tabs_are_built_from_facets(self):
         html = (Path(__file__).resolve().parents[1] / "templates" / "launch" /
                 "board.html").read_text(encoding="utf-8")
-        tabs = set(re.findall(r'data-category="([^"]+)"',
+        tabs = set(re.findall(r'data-category="([^"]*)"',
                               html.split('id="provider-tabs"', 1)[1].split('</div>', 1)[0]))
-        self.assertEqual(tabs, set(_PROVIDER_CATS))
+        self.assertEqual(tabs, {""})
+        js = (Path(__file__).resolve().parents[1] / "static" / "js" /
+              "launch-board.js").read_text(encoding="utf-8")
+        self.assertIn('Object.keys(S.facetCategories || {})', js)
 
-    def test_legacy_other_aliases_are_canonicalized(self):
-        for value in ("Other", "Others", "other", "others", "OTHER"):
-            self.assertEqual(_canonical_provider_category(value), "Others")
-
-    def test_legacy_and_canonical_counts_share_the_others_tab(self):
+    def test_counts_preserve_job_categories_and_group_missing_values(self):
         counts = _fold_provider_category_counts([
-            ("Physicians", 3),
+            ("Physician", 3),
             ("Nursing", 5),
-            ("Other", 7),
-            ("Others", 11),
+            ("Other / Unclassified", 7),
+            ("Therapy", 11),
             (None, 13),
         ])
-
-        self.assertEqual(counts["Physicians"], 3)
+        self.assertEqual(counts["Physician"], 3)
         self.assertEqual(counts["Nursing"], 5)
-        self.assertEqual(counts["Others"], 31)
-        self.assertNotIn("Other", counts)
+        self.assertEqual(counts["Therapy"], 11)
+        self.assertEqual(counts["Other / Unclassified"], 7)
+        self.assertEqual(counts["Uncategorized"], 13)
+        self.assertEqual(sum(counts.values()), 39)
 
-    def test_neon_job_category_maps_into_provider_tabs(self):
-        examples = {
-            "Physician": "Physicians",
-            "Nursing": "Nursing",
-            "APP's": "APP",
-            "Allied Health": "Allied",
-            "Therapy": "Allied",
-            "Behavioral Health": "Allied",
-            "Pharmacy": "Allied",
-            "Dental": "Allied",
-            "Facility / Agency / Organization": "Facilities",
-            "Student / Trainee": "Trainees",
-            "Administrative / Non-Clinical": "Non-clinical",
-            "Physician Assistant": "APP",
-            "Mental & Behavioural Health": "Allied",
-            "Social Work & Community Services": "Allied",
-            "Facilities & Organizations": "Facilities",
-            "Home Health & Personal Care": "Support",
-            "IT & Engineering": "Non-clinical",
-        }
-        for job_category, expected in examples.items():
+    def test_job_categories_are_used_without_broad_grouping(self):
+        self.assertEqual(len(_PROVIDER_CATS), 21)
+        for job_category in _PROVIDER_CATS[:-1]:
             with self.subTest(job_category=job_category):
-                self.assertEqual(_directory_category(None, job_category), expected)
-        self.assertEqual(_directory_category("APP", "Other / Unclassified"), "APP")
-        self.assertEqual(_directory_category("Physicians", "Nursing"), "Nursing")
-        self.assertEqual(_directory_category(None, "Other / Unclassified", "Nurse's Aide"),
-                         "Nursing")
-        self.assertEqual(_directory_category(None, "Other / Unclassified", "Homemaker"),
-                         "Support")
-        self.assertEqual(_directory_category(None, "Other / Unclassified", "Specialist"),
-                         "Others")
+                self.assertEqual(_directory_category(None, job_category), job_category)
+        self.assertEqual(_directory_category("Physicians", None), "Uncategorized")
+        self.assertEqual(_directory_category(None, "  Therapy  "), "Therapy")
 
     def test_directory_includes_screened_and_uncategorized_but_respects_opt_out(self):
         engine = create_engine("sqlite:///:memory:")
@@ -117,33 +92,35 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             self.assertEqual({p.first_name for p in all_rows},
                              {"A", "B", "C", "F", "G", "H", "I", "J"})
             others = db.scalars(select(Profile).where(
-                *conds, _provider_category_condition("Others"))).all()
-            self.assertEqual({p.first_name for p in others}, {"H"})
+                *conds, _provider_category_condition("Other / Unclassified"))).all()
+            self.assertEqual({p.first_name for p in others}, {"G", "H", "J"})
+            uncategorized = db.scalars(select(Profile).where(
+                *conds, _provider_category_condition("Uncategorized"))).all()
+            self.assertEqual({p.first_name for p in uncategorized}, {"A"})
             facilities = db.scalars(select(Profile).where(
-                *conds, _provider_category_condition("Facilities"))).all()
+                *conds, _provider_category_condition("Facility / Agency / Organization"))).all()
             self.assertEqual({p.first_name for p in facilities}, {"F"})
-            nursing = db.scalars(select(Profile).where(
-                *conds, _provider_category_condition("Nursing"))).all()
-            self.assertEqual({p.first_name for p in nursing}, {"A", "G"})
             physicians = db.scalars(select(Profile).where(
-                *conds, _provider_category_condition("Physicians"))).all()
+                *conds, _provider_category_condition("Physician"))).all()
             self.assertEqual({p.first_name for p in physicians}, {"B"})
             allied = db.scalars(select(Profile).where(
-                *conds, _provider_category_condition("Allied"))).all()
+                *conds, _provider_category_condition("Behavioral Health"))).all()
             self.assertEqual({p.first_name for p in allied}, {"C"})
             self.assertEqual(_profile_card(physicians[0], released=False)["provider_category"],
-                             "Physicians")
+                             "Physician")
             self.assertEqual(_profile_card(physicians[0], released=False)["job_category"],
                              "Physician")
             self.assertEqual(ProfileCardOut.model_validate(
                 _profile_card(physicians[0], released=False)).job_category, "Physician")
             self.assertIsNone(_profile_card(rows[0], released=False)["job_category"])
+            self.assertEqual(_profile_card(rows[0], released=False)["provider_category"],
+                             "Uncategorized")
             counts = _fold_provider_category_counts(db.execute(
                 select(_directory_category_expression(), func.count())
                 .where(*conds).group_by(_directory_category_expression())).all())
             self.assertEqual(sum(counts.values()), len(all_rows))
-            self.assertEqual(counts["Physicians"], 1)
-            self.assertEqual(counts["Allied"], 1)
+            self.assertEqual(counts["Physician"], 1)
+            self.assertEqual(counts["Behavioral Health"], 1)
             params = {name: None for name in inspect.signature(category_counts).parameters
                       if name not in {"db", "user"}}
             user = SimpleNamespace(role=SimpleNamespace(value="recruiter"))
