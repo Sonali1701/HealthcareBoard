@@ -1428,7 +1428,7 @@
         </div>
       </td>
       <td><span class="badge accent"><i class="fas fa-circle-check"></i>${esc(profession)}</span></td>
-      <td><span class="badge">${esc(p.provider_category || "Others")}</span></td>
+      <td><span class="badge">${esc(p.job_category || p.provider_category || "Others")}</span></td>
       <td>${p.years_experience ? `${esc(p.years_experience)} yrs` : `<span class="cell-none">—</span>`}</td>
       <td>${loc ? esc(loc) : `<span class="cell-none">—</span>`}</td>
       <td class="td-contact">${providerContactCell(p)}</td>

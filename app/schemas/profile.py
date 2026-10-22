@@ -190,6 +190,7 @@ class ProfileCardOut(BaseModel):
     specialty: Optional[str] = None
     profession_type: Optional[str] = None
     provider_category: Optional[str] = None
+    job_category: Optional[str] = None
     american_board: Optional[str] = None
     years_experience: int = 0
     city: Optional[str] = None

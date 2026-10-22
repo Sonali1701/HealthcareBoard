@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.models import Profile
+from app.schemas.profile import ProfileCardOut
 from app.routers.profiles import (
     _canonical_provider_category,
     _directory_category,
@@ -63,6 +64,12 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             "Facility / Agency / Organization": "Facilities",
             "Student / Trainee": "Trainees",
             "Administrative / Non-Clinical": "Non-clinical",
+            "Physician Assistant": "APP",
+            "Mental & Behavioural Health": "Allied",
+            "Social Work & Community Services": "Allied",
+            "Facilities & Organizations": "Facilities",
+            "Home Health & Personal Care": "Support",
+            "IT & Engineering": "Non-clinical",
         }
         for job_category, expected in examples.items():
             with self.subTest(job_category=job_category):
@@ -126,6 +133,11 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             self.assertEqual({p.first_name for p in allied}, {"C"})
             self.assertEqual(_profile_card(physicians[0], released=False)["provider_category"],
                              "Physicians")
+            self.assertEqual(_profile_card(physicians[0], released=False)["job_category"],
+                             "Physician")
+            self.assertEqual(ProfileCardOut.model_validate(
+                _profile_card(physicians[0], released=False)).job_category, "Physician")
+            self.assertIsNone(_profile_card(rows[0], released=False)["job_category"])
             counts = _fold_provider_category_counts(db.execute(
                 select(_directory_category_expression(), func.count())
                 .where(*conds).group_by(_directory_category_expression())).all())
