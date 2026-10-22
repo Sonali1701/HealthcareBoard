@@ -167,7 +167,7 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 .input:focus{border-color:var(--accent);box-shadow:var(--ring)}
 .input.short{width:110px;flex:0 0 110px}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.provider-filters{display:grid;grid-template-columns:minmax(260px,1.4fr) minmax(170px,1fr) minmax(120px,.65fr) minmax(170px,.9fr) minmax(190px,1fr) minmax(120px,.65fr);gap:10px;align-items:stretch;margin-bottom:16px}
+.provider-filters{display:grid;grid-template-columns:minmax(260px,1.4fr) minmax(170px,1fr) minmax(120px,.65fr) minmax(170px,.9fr) minmax(190px,1fr) minmax(155px,.85fr) minmax(120px,.65fr);gap:10px;align-items:stretch;margin-bottom:16px}
 .provider-filters .input{width:100%;min-width:0;max-width:none;flex:auto}
 .provider-filters .radius-control{grid-column:1/-1;width:100%;min-width:0;max-width:none}
 .tabs{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:18px}

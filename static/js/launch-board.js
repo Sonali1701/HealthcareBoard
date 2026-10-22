@@ -3,7 +3,7 @@
     user:null, profile:null, authMode:"login",
     provider:{
       q:"", category:"", license_title:"", zip:"", radius_mi:"25", state_code:"",
-      city:"", min_experience:"", max_experience:"", contact_available:"", compact:"",
+      city:"", min_experience:"", max_experience:"", contact_available:"", resume_status:"", compact:"",
       licensed_state:"", worked_at:"", travel_experience:""
     },
     providerCache:new Map(), providerInflight:new Map(), providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
@@ -1261,7 +1261,7 @@
   }
   function hasNonCategoryFilters(){
     const s = S.provider;
-    return ["q","license_title","state_code","licensed_state","worked_at","travel_experience","city","min_experience","max_experience","contact_available","compact"].some(k => s[k]) || !!(s.radius_mi && (s.zip || s.city));
+    return ["q","license_title","state_code","licensed_state","worked_at","travel_experience","city","min_experience","max_experience","contact_available","resume_status","compact"].some(k => s[k]) || !!(s.radius_mi && (s.zip || s.city));
   }
   function facetTotalFor(category){
     const c = S.activeCounts || S.facetCategories;   // counts reflect the active filters
@@ -1278,7 +1278,7 @@
   // Faceted counts: the headline + tab numbers reflect the CURRENT filters.
   function countParams(){
     const s = S.provider, p = new URLSearchParams();
-    ["q","license_title","state_code","licensed_state","worked_at","travel_experience","city","min_experience","max_experience","contact_available","compact"].forEach(k => { if (s[k]) p.set(k, s[k]); });
+    ["q","license_title","state_code","licensed_state","worked_at","travel_experience","city","min_experience","max_experience","contact_available","resume_status","compact"].forEach(k => { if (s[k]) p.set(k, s[k]); });
     if (s.radius_mi && (s.zip || s.city)){ if (s.zip) p.set("zip", s.zip); p.set("radius_mi", s.radius_mi); }
     return p.toString();
   }
@@ -3473,7 +3473,8 @@
       state_code: f.state_code || "", city: f.city || "",
       min_experience: f.min_experience != null ? String(f.min_experience) : "",
       max_experience: f.max_experience != null ? String(f.max_experience) : "",
-      contact_available: f.contact_available || "", compact: f.compact ? "true" : "",
+      contact_available: f.contact_available || "", resume_status: f.resume_status || "",
+      compact: f.compact ? "true" : "",
       licensed_state: f.licensed_state || "", worked_at: f.worked_at || "",
       travel_experience: f.travel_experience ? "true" : "",
     };
@@ -3486,6 +3487,7 @@
     set("#provider-state", s.state_code);
     set("#provider-license-title", s.license_title);
     set("#provider-contact", s.contact_available);
+    set("#provider-resume", s.resume_status);
     set("#provider-zip", s.zip);
     const exp = $("#provider-experience");
     if (exp){
@@ -3974,6 +3976,7 @@
     }, 350));
     $("#provider-experience").onchange = () => { setExperienceFilter($("#provider-experience").value); providerFilterChanged(); };
     $("#provider-contact").onchange = () => { S.provider.contact_available = $("#provider-contact").value; providerFilterChanged(); };
+    $("#provider-resume").onchange = () => { S.provider.resume_status = $("#provider-resume").value; providerFilterChanged(); };
     $("#provider-state").onchange = () => { S.provider.state_code = $("#provider-state").value; providerFilterChanged(); };
     $("#provider-tabs").onclick = event => {
       const t = event.target.closest("button[data-category]");
@@ -3993,18 +3996,18 @@
     if (resetBtn) resetBtn.onclick = () => {
       const p = S.provider;
       ["q", "license_title", "state_code", "licensed_state", "worked_at",
-       "travel_experience", "city", "zip", "radius_mi", "contact_available",
+       "travel_experience", "city", "zip", "radius_mi", "contact_available", "resume_status",
        "compact", "min_experience", "max_experience", "category"]
         .forEach(k => { p[k] = ""; });
       S.providerOffset = 0;
       $("#provider-q").value = "";
       $("#provider-zip").value = "";
-      ["#provider-license-title", "#provider-state", "#provider-experience", "#provider-contact"]
+      ["#provider-license-title", "#provider-state", "#provider-experience", "#provider-contact", "#provider-resume"]
         .forEach(s => { const el = $(s); if (el) el.value = ""; });
       radiusEl.value = 25; radiusEl.disabled = true; paintRadius();
       $$(".provider-toggles .ptoggle").forEach(t => t.classList.remove("active"));
       $$("#provider-tabs .tab").forEach(t => t.classList.toggle("active", t.dataset.category === ""));
-      loadProviders();
+      providerFilterChanged();
       toast("Filters cleared.", {title: "Reset"});
     };
     document.body.addEventListener("click", e => {
@@ -5659,6 +5662,8 @@
   }
   function describeSearch(p){
     const bits = [p.q, p.license_title, p.specialty, p.state_code, p.city,
+                  p.resume_status === "with_resume" ? "with résumé" :
+                  p.resume_status === "without_resume" ? "without résumé" : "",
                   p.compact ? "compact" : "", p.travel_experience ? "travel" : ""];
     return bits.filter(Boolean).join(" · ") || "all providers";
   }

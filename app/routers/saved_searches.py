@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api/saved-searches", tags=["saved-searches"])
 _ALLOWED = {
     "q", "category", "specialty", "license_title", "profession_type", "state_code",
     "city", "zip", "radius_mi", "min_experience", "max_experience",
-    "contact_available", "compact", "licensed_state", "worked_at",
+    "contact_available", "resume_status", "compact", "licensed_state", "worked_at",
     "travel_experience", "american_board", "open_to_work",
 }
 _NUMERIC = {"radius_mi", "min_experience", "max_experience"}
@@ -69,6 +69,10 @@ def _clean(params: dict, kind: str = "providers") -> dict:
     out: dict = {}
     for k, v in (params or {}).items():
         if k not in allowed or v in (None, "", []):
+            continue
+        if k == "resume_status" and (
+            not isinstance(v, str) or v not in {"with_resume", "without_resume"}
+        ):
             continue
         if k in booleans:
             out[k] = str(v).lower() in {"1", "true", "yes"}

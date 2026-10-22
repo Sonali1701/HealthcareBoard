@@ -486,7 +486,7 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
         "is_released": released,
         "has_email": bool(profile.email),
         "has_phone": bool(profile.phone),
-        "has_resume_file": bool(profile.resume_url),
+        "has_resume_file": bool((profile.resume_url or "").strip()),
         "headline": profile.headline,
         "specialty": profile.specialty,
         "profession_type": profile.profession_type,
@@ -638,7 +638,8 @@ def _provider_conditions(
     db, *, q=None, providers_only=False, specialty=None, license_title=None,
     profession_type=None, state_code=None, city=None, zip=None, radius_mi=None,
     american_board=None, open_to_work=None, min_experience=None,
-    max_experience=None, contact_available=None, compact=None, licensed_state=None,
+    max_experience=None, contact_available=None, resume_status=None,
+    compact=None, licensed_state=None,
     worked_at=None, travel_experience=None,
 ) -> list:
     """Every Providers-directory filter EXCEPT the category selection, as a list
@@ -741,6 +742,10 @@ def _provider_conditions(
             conds.append(has_phone)
         elif cf == "missing":
             conds.append(~or_(has_email, has_phone))
+    if resume_status in {"with_resume", "without_resume"}:
+        has_resume = (Profile.resume_url.isnot(None)
+                      & (func.length(func.trim(Profile.resume_url)) > 0))
+        conds.append(has_resume if resume_status == "with_resume" else ~has_resume)
     return conds
 
 
@@ -823,6 +828,10 @@ def search_profiles(
     contact_available: Optional[str] = Query(
         None, description="any|both|email|phone|missing"
     ),
+    resume_status: Optional[str] = Query(
+        None, pattern="^(with_resume|without_resume)$",
+        description="Filter by whether a résumé file is on the profile",
+    ),
     compact: Optional[bool] = Query(None, description="Only providers with a compact/multistate license"),
     licensed_state: Optional[str] = Query(None, description="Can legally work in this state (licensed there, or compact)"),
     worked_at: Optional[str] = Query(None, description="Has a past role at this employer/health system"),
@@ -838,7 +847,8 @@ def search_profiles(
         state_code=state_code, city=city, zip=zip, radius_mi=radius_mi,
         american_board=american_board, open_to_work=open_to_work,
         min_experience=min_experience, max_experience=max_experience,
-        contact_available=contact_available, compact=compact,
+        contact_available=contact_available, resume_status=resume_status,
+        compact=compact,
         licensed_state=licensed_state, worked_at=worked_at,
         travel_experience=travel_experience)
     stmt = select(Profile).where(*conds)
@@ -1412,6 +1422,7 @@ def category_counts(
     min_experience: Optional[int] = Query(None, ge=0),
     max_experience: Optional[int] = Query(None, ge=0),
     contact_available: Optional[str] = None,
+    resume_status: Optional[str] = Query(None, pattern="^(with_resume|without_resume)$"),
     compact: Optional[bool] = None,
     licensed_state: Optional[str] = None,
     worked_at: Optional[str] = None,
@@ -1426,7 +1437,8 @@ def category_counts(
         state_code=state_code, city=city, zip=zip, radius_mi=radius_mi,
         american_board=american_board, open_to_work=open_to_work,
         min_experience=min_experience, max_experience=max_experience,
-        contact_available=contact_available, compact=compact,
+        contact_available=contact_available, resume_status=resume_status,
+        compact=compact,
         licensed_state=licensed_state, worked_at=worked_at,
         travel_experience=travel_experience)
     directory_category = _directory_category_expression()

@@ -22,6 +22,7 @@ from app.routers.profiles import (
     category_counts,
     profile_facets,
 )
+from app.routers.saved_searches import _clean, _count_matches
 
 
 class ProviderCategoryAliasTests(unittest.TestCase):
@@ -189,6 +190,45 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             self.assertEqual(names("Therapy"), {"Ben"})
             self.assertEqual(names("Chicago"), set())
             self.assertEqual(names("outdated"), set())
+        finally:
+            db.close()
+            engine.dispose()
+
+    def test_resume_filter_keeps_results_counts_and_saved_searches_aligned(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        try:
+            db.add_all([
+                Profile(first_name="Alice", last_name="A", job_category="Nursing",
+                        resume_url="https://example.com/alice.pdf"),
+                Profile(first_name="Ben", last_name="B", job_category="Nursing",
+                        resume_url=None),
+                Profile(first_name="Cara", last_name="C", job_category="Therapy",
+                        resume_url="  "),
+            ])
+            db.commit()
+            self.assertFalse(_profile_card(db.scalars(select(Profile).where(
+                Profile.first_name == "Cara")).one(), released=False)["has_resume_file"])
+            user = SimpleNamespace(role=SimpleNamespace(value="recruiter"))
+            defaults = {name: None for name in inspect.signature(category_counts).parameters
+                        if name not in {"db", "user"}}
+            for status, expected_names, expected_counts in (
+                ("with_resume", {"Alice"}, {"Nursing": 1}),
+                ("without_resume", {"Ben", "Cara"}, {"Nursing": 1, "Therapy": 1}),
+            ):
+                with self.subTest(status=status):
+                    conds = _provider_conditions(db, providers_only=True,
+                                                 resume_status=status)
+                    names = {p.first_name for p in db.scalars(select(Profile).where(*conds))}
+                    self.assertEqual(names, expected_names)
+                    counts = category_counts(db, user, **{**defaults, "resume_status": status})
+                    self.assertEqual({k: v for k, v in counts.items() if v}, expected_counts)
+                    self.assertEqual(_count_matches(db, {"resume_status": status}),
+                                     len(expected_names))
+            self.assertEqual(_clean({"resume_status": "with_resume"}),
+                             {"resume_status": "with_resume"})
+            self.assertEqual(_clean({"resume_status": "invalid"}), {})
         finally:
             db.close()
             engine.dispose()
