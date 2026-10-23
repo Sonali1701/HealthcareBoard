@@ -18,6 +18,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 
 from .config import settings
 from .repair_missing_provider_taxonomy import PATTERNS, ROLES
@@ -150,8 +151,9 @@ def main() -> None:
         with engine.begin() as conn:
             conn.execute(CREATE_AUDIT)
     seen = 0
+    batch_size = args.batch_size
     while True:
-        take = min(args.batch_size, args.limit-seen) if args.limit else args.batch_size
+        take = min(batch_size, args.limit-seen) if args.limit else batch_size
         with engine.connect() as conn:
             rows = [dict(r) for r in conn.execute(SELECT, {
                 "cursor": cursor, "batch_size": take}).mappings()]
@@ -160,6 +162,7 @@ def main() -> None:
                 _save(cursor, stats, complete=True)
             break
         changes = []
+        batch_stats: Counter = Counter()
         for row in rows:
             decision = decide(row)
             if decision:
@@ -170,15 +173,24 @@ def main() -> None:
                                 "new_profession": profession,
                                 "new_category": category,
                                 "evidence": evidence})
-                stats[evidence] += 1
+                batch_stats[evidence] += 1
             else:
-                stats["unresolved"] += 1
+                batch_stats["unresolved"] += 1
         if args.apply and changes:
-            with engine.begin() as conn:
-                conn.execute(text("SET LOCAL statement_timeout = '300s'"))
-                applied = {r[0] for r in conn.execute(APPLY, {"rows": json.dumps(changes)})}
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("SET LOCAL statement_timeout = '300s'"))
+                    applied = {r[0] for r in conn.execute(APPLY, {"rows": json.dumps(changes)})}
+            except OperationalError as exc:
+                if "statement timeout" not in str(exc).lower() or batch_size <= 50:
+                    raise
+                batch_size = max(50, batch_size // 2)
+                print(json.dumps({"retry_after_timeout": True,
+                                  "batch_size": batch_size, "cursor": cursor}), flush=True)
+                continue
             stats["applied"] += len(applied)
             stats["skipped_concurrent_or_already_applied"] += len(changes)-len(applied)
+        stats.update(batch_stats)
         stats["scanned"] += len(rows)
         seen += len(rows)
         cursor = rows[-1]["profile_id"]
