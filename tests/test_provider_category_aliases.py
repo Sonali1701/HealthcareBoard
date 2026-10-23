@@ -85,13 +85,15 @@ class ProviderCategoryAliasTests(unittest.TestCase):
                         job_category="Student / Trainee"),
                 Profile(first_name="J", last_name="J", provider_category=None,
                         job_category="Other / Unclassified", specialty="Homemaker"),
+                Profile(first_name="K", last_name="K", provider_category=None,
+                        job_category="Physician", is_listable=True),
             ]
             db.add_all(rows)
             db.commit()
             conds = _provider_conditions(db, providers_only=True)
             all_rows = db.scalars(select(Profile).where(*conds)).all()
             self.assertEqual({p.first_name for p in all_rows},
-                             {"B", "C", "F", "G", "H", "I", "J"})
+                             {"G", "H", "I", "J", "K"})
             others = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Other / Unclassified"))).all()
             self.assertEqual({p.first_name for p in others}, {"G", "H", "J"})
@@ -100,13 +102,13 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             self.assertEqual({p.first_name for p in uncategorized}, set())
             facilities = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Facility / Agency / Organization"))).all()
-            self.assertEqual({p.first_name for p in facilities}, {"F"})
+            self.assertEqual({p.first_name for p in facilities}, set())
             physicians = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Physician"))).all()
-            self.assertEqual({p.first_name for p in physicians}, {"B"})
+            self.assertEqual({p.first_name for p in physicians}, {"K"})
             allied = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Behavioral Health"))).all()
-            self.assertEqual({p.first_name for p in allied}, {"C"})
+            self.assertEqual({p.first_name for p in allied}, set())
             self.assertEqual(_profile_card(physicians[0], released=False)["provider_category"],
                              "Physician")
             self.assertEqual(_profile_card(physicians[0], released=False)["job_category"],
@@ -121,7 +123,7 @@ class ProviderCategoryAliasTests(unittest.TestCase):
                 .where(*conds).group_by(_directory_category_expression())).all())
             self.assertEqual(sum(counts.values()), len(all_rows))
             self.assertEqual(counts["Physician"], 1)
-            self.assertEqual(counts["Behavioral Health"], 1)
+            self.assertEqual(counts.get("Behavioral Health", 0), 0)
             params = {name: None for name in inspect.signature(category_counts).parameters
                       if name not in {"db", "user"}}
             user = SimpleNamespace(role=SimpleNamespace(value="recruiter"))

@@ -650,6 +650,7 @@ def _provider_conditions(
     if providers_only:
         # Unresolved roles cannot appear in directory results or category counts.
         conds.extend((Profile.merged_into.is_(None),
+                      Profile.is_listable.is_(True),
                       Profile.job_category.isnot(None),
                       func.length(func.trim(Profile.job_category)) > 0,
                       or_(Profile.screen_reason.is_(None),
