@@ -647,10 +647,10 @@ def _provider_conditions(
     so the tab counts always reflect the same filters as the results."""
     conds = []
     if providers_only:
-        # Screening can hide imported rows without removing them from the
-        # database. The directory should include those rows, but never undo a
-        # person's opt-out or show a row merged into another profile.
+        # Unresolved roles cannot appear in directory results or category counts.
         conds.extend((Profile.merged_into.is_(None),
+                      Profile.job_category.isnot(None),
+                      func.length(func.trim(Profile.job_category)) > 0,
                       or_(Profile.screen_reason.is_(None),
                           Profile.screen_reason != "opted_out")))
     if q:
