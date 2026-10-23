@@ -654,6 +654,16 @@ def _provider_conditions(
                       func.length(func.trim(Profile.job_category)) > 0,
                       or_(Profile.screen_reason.is_(None),
                           Profile.screen_reason != "opted_out")))
+        # Keep unresolved role/category contradictions out of recruiter results
+        # until a resume-backed repair has corrected the wrong field.
+        conds.append(~or_(
+            and_(Profile.job_category == "Nursing",
+                 func.coalesce(Profile.profession_type, "").in_(("MD", "DO", "PA"))),
+            and_(Profile.job_category == "Physician",
+                 func.coalesce(Profile.profession_type, "").in_(("RN", "PA"))),
+            and_(Profile.job_category == "Physician Assistant",
+                 func.coalesce(Profile.profession_type, "").in_(("MD", "DO", "RN"))),
+        ))
     if q:
         query = q.strip()
         # A role search must match the provider's role, not a passing mention
