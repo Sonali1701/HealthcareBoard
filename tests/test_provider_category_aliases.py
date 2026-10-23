@@ -59,7 +59,7 @@ class ProviderCategoryAliasTests(unittest.TestCase):
         self.assertEqual(_directory_category("Physicians", None), "Uncategorized")
         self.assertEqual(_directory_category(None, "  Therapy  "), "Therapy")
 
-    def test_directory_includes_screened_and_uncategorized_but_respects_opt_out(self):
+    def test_directory_hides_uncategorized_and_respects_opt_out(self):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         db = sessionmaker(bind=engine)()
@@ -91,13 +91,13 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             conds = _provider_conditions(db, providers_only=True)
             all_rows = db.scalars(select(Profile).where(*conds)).all()
             self.assertEqual({p.first_name for p in all_rows},
-                             {"A", "B", "C", "F", "G", "H", "I", "J"})
+                             {"B", "C", "F", "G", "H", "I", "J"})
             others = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Other / Unclassified"))).all()
             self.assertEqual({p.first_name for p in others}, {"G", "H", "J"})
             uncategorized = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Uncategorized"))).all()
-            self.assertEqual({p.first_name for p in uncategorized}, {"A"})
+            self.assertEqual({p.first_name for p in uncategorized}, set())
             facilities = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Facility / Agency / Organization"))).all()
             self.assertEqual({p.first_name for p in facilities}, {"F"})
@@ -141,12 +141,15 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             profiles = [
                 Profile(first_name="Registered", last_name="Nurse",
                         profession_type="RN", provider_category="Nursing",
+                        job_category="Nursing",
                         specialty="ICU", resume_url=None),
                 Profile(first_name="Former", last_name="Nurse",
                         profession_type="MD", provider_category="Physicians",
+                        job_category="Physician",
                         bio="Previously worked as a registered nurse in ICU."),
                 Profile(first_name="Nurse", last_name="Anesthetist",
                         profession_type="CRNA", provider_category="APP",
+                        job_category="Nursing",
                         specialty="Certified Registered Nurse Anesthetist"),
             ]
             for profile in profiles:
