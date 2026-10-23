@@ -18,6 +18,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 
 from .config import settings
 
@@ -154,10 +155,20 @@ def main() -> None:
             print(dict(conn.execute(sample, params).all()), flush=True)
         return
     batches = 0
+    batch_size = args.batch_size
     while True:
-        with engine.begin() as conn:
-            conn.execute(text("SET LOCAL statement_timeout = '120s'"))
-            row = conn.execute(batch, params).one()
+        params["batch_size"] = batch_size
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("SET LOCAL statement_timeout = '300s'"))
+                row = conn.execute(batch, params).one()
+        except OperationalError as exc:
+            if "statement timeout" not in str(exc).lower() or batch_size <= 100:
+                raise
+            batch_size = max(100, batch_size // 2)
+            print(json.dumps({"retry_after_timeout": True,
+                              "batch_size": batch_size, "cursor": cursor}), flush=True)
+            continue
         if not row.last_profile_id:
             _save(cursor, stats, complete=True)
             break
