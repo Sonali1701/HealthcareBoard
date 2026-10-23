@@ -24,6 +24,7 @@ from ..importers.parsing import (
     is_real_name,
 )
 from ..services import quick_sourcer, storage
+from ..services.provider_geo import radius_branches
 from ..services.profile_search import profile_search_conditions
 from ..models import (
     AuditLog,
@@ -177,8 +178,8 @@ def _geocode_city(db, city: str, state_code: str | None = None):
 
 def _geocode_zip(db, zip_code: str):
     """Look up a ZIP's centroid (lat, lng) from the zip_centroids table."""
-    z = str(zip_code).strip()[:10]
-    if not z:
+    z = re.sub(r"[^0-9]", "", str(zip_code or ""))[:5]
+    if len(z) != 5:
         return None
     row = db.execute(
         sa_text("SELECT lat, lng FROM zip_centroids WHERE zip = :z"), {"z": z}
@@ -640,7 +641,7 @@ def _provider_conditions(
     american_board=None, open_to_work=None, min_experience=None,
     max_experience=None, contact_available=None, resume_status=None,
     compact=None, licensed_state=None,
-    worked_at=None, travel_experience=None,
+    worked_at=None, travel_experience=None, split_radius=False,
 ) -> list:
     """Every Providers-directory filter EXCEPT the category selection, as a list
     of WHERE conditions — shared by the search and the faceted category counts,
@@ -701,7 +702,9 @@ def _provider_conditions(
         conds.append(Profile.state_code == state_code.upper())
     # Location: a radius search centres on a ZIP or a city; without a radius,
     # `city` is a plain prefix match.
-    if radius_mi and (zip or city):
+    if split_radius and radius_mi and (zip or city):
+        pass  # The caller adds one indexed location branch to each query.
+    elif radius_mi and (zip or city):
         center = _geocode_zip(db, zip) if zip else _geocode_city(db, city, state_code)
         if center is None:
             # Unknown ZIP is a hard miss; an unknown city degrades to a name match
@@ -747,6 +750,15 @@ def _provider_conditions(
                       & (func.length(func.trim(Profile.resume_url)) > 0))
         conds.append(has_resume if resume_status == "with_resume" else ~has_resume)
     return conds
+
+
+def _provider_radius_branches(db, zip, city, state_code, radius_mi):
+    if not radius_mi or not (zip or city):
+        return None
+    center = _geocode_zip(db, zip) if zip else _geocode_city(db, city, state_code)
+    if center is None:
+        return None
+    return radius_branches(*center, radius_mi * 1609.344)
 
 
 _UNCATEGORIZED = "Uncategorized"
@@ -841,6 +853,7 @@ def search_profiles(
     offset: int = Query(0, ge=0),
 ):
     _require_provider_directory_access(user)
+    geo_branches = _provider_radius_branches(db, zip, city, state_code, radius_mi)
     conds = _provider_conditions(
         db, q=q, providers_only=providers_only, specialty=specialty,
         license_title=license_title, profession_type=profession_type,
@@ -850,20 +863,46 @@ def search_profiles(
         contact_available=contact_available, resume_status=resume_status,
         compact=compact,
         licensed_state=licensed_state, worked_at=worked_at,
-        travel_experience=travel_experience)
+        travel_experience=travel_experience,
+        split_radius=geo_branches is not None)
     stmt = select(Profile).where(*conds)
     if category:
         stmt = stmt.where(_provider_category_condition(category))
 
     total = None
-    if count:
-        total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    # Fetch one extra row to know if there's a next page without a full COUNT.
-    # Sort has a unique tiebreaker (profile_id) so pages never skip/duplicate.
-    rows = db.scalars(
-        stmt.order_by(Profile.completion_score.desc(), Profile.profile_id)
-        .limit(limit + 1).offset(offset)
-    ).all()
+    if geo_branches:
+        # Each indexed location arm is disjoint; count and page within the arms
+        # to avoid a table scan or a large primary-key join.
+        if count:
+            total = sum(db.scalar(select(func.count()).select_from(Profile)
+                                  .where(*conds, branch,
+                                         *([_provider_category_condition(category)]
+                                           if category else []))) or 0
+                        for branch in geo_branches)
+        take = offset + limit + 1
+        ranked = []
+        for branch in geo_branches:
+            ranked.extend(db.execute(
+                select(Profile.profile_id, Profile.completion_score)
+                .where(*conds, branch,
+                       *([_provider_category_condition(category)]
+                         if category else []))
+                .order_by(Profile.completion_score.desc(), Profile.profile_id)
+                .limit(take)).all())
+        ranked.sort(key=lambda r: (r.completion_score is not None,
+                                   -(r.completion_score or 0), r.profile_id))
+        page_ids = [r.profile_id for r in ranked[offset:offset + limit + 1]]
+        by_id = {r.profile_id: r for r in db.scalars(
+            select(Profile).where(Profile.profile_id.in_(page_ids))).all()}
+        rows = [by_id[pid] for pid in page_ids if pid in by_id]
+    else:
+        if count:
+            total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        # Fetch one extra row to know if there's a next page without a full COUNT.
+        rows = db.scalars(
+            stmt.order_by(Profile.completion_score.desc(), Profile.profile_id)
+            .limit(limit + 1).offset(offset)
+        ).all()
     has_next = len(rows) > limit
     page_rows = rows[:limit]
     # Identity is withheld unless this recruiter already released the profile
@@ -1431,6 +1470,7 @@ def category_counts(
     """Provider counts per category for the CURRENT filters, so the tab numbers
     (Physicians / Nursing / Allied / APP) reflect the applied filters."""
     _require_provider_directory_access(user)
+    geo_branches = _provider_radius_branches(db, zip, city, state_code, radius_mi)
     conds = _provider_conditions(
         db, providers_only=True, q=q, specialty=specialty,
         license_title=license_title, profession_type=profession_type,
@@ -1440,13 +1480,16 @@ def category_counts(
         contact_available=contact_available, resume_status=resume_status,
         compact=compact,
         licensed_state=licensed_state, worked_at=worked_at,
-        travel_experience=travel_experience)
+        travel_experience=travel_experience,
+        split_radius=geo_branches is not None)
     directory_category = _directory_category_expression()
-    rows = db.execute(
-        select(directory_category, func.count())
-        .where(*conds)
-        .group_by(directory_category)
-    ).all()
+    rows = []
+    for branch in geo_branches or (None,):
+        rows.extend(db.execute(
+            select(directory_category, func.count())
+            .where(*conds, *([branch] if branch is not None else []))
+            .group_by(directory_category)
+        ).all())
     return _fold_provider_category_counts(rows)
 
 

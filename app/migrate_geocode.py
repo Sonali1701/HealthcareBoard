@@ -134,6 +134,15 @@ def _index() -> None:
                 "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_earth "
                 "ON profiles USING gist (ll_to_earth(lat, lng)) WHERE lat IS NOT NULL"))
             print("GiST radius index ix_profiles_earth ensured.")
+            conn.execute(text(
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_zip5_radius "
+                "ON profiles ((substr(regexp_replace(zip_code, '[^0-9]', '', 'g'), 1, 5))) "
+                "WHERE zip_code IS NOT NULL"))
+            conn.execute(text(
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_city_state_radius "
+                "ON profiles ((lower(btrim(city))), (upper(btrim(state_code)))) "
+                "WHERE city IS NOT NULL AND state_code IS NOT NULL"))
+            print("ZIP and city/state radius indexes ensured.")
         except Exception as e:  # noqa: BLE001
             print(f"Index step: {str(e)[:160]}")
 
