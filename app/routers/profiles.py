@@ -891,13 +891,17 @@ def search_profiles(
                         for branch in geo_branches)
         take = offset + limit + 1
         ranked = []
-        for branch in geo_branches:
+        for index, branch in enumerate(geo_branches):
+            candidates = (select(Profile.profile_id.label("profile_id"),
+                                 Profile.completion_score.label("completion_score"))
+                          .where(*conds, branch,
+                                 *([_provider_category_condition(category)]
+                                   if category else []))
+                          .cte(f"radius_candidates_{index}")
+                          .prefix_with("MATERIALIZED"))
             ranked.extend(db.execute(
-                select(Profile.profile_id, Profile.completion_score)
-                .where(*conds, branch,
-                       *([_provider_category_condition(category)]
-                         if category else []))
-                .order_by(Profile.completion_score.desc(), Profile.profile_id)
+                select(candidates.c.profile_id, candidates.c.completion_score)
+                .order_by(candidates.c.completion_score.desc(), candidates.c.profile_id)
                 .limit(take)).all())
         ranked.sort(key=lambda r: (r.completion_score is not None,
                                    -(r.completion_score or 0), r.profile_id))
