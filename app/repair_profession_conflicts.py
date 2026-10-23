@@ -175,7 +175,7 @@ def main() -> None:
                 stats["unresolved"] += 1
         if args.apply and changes:
             with engine.begin() as conn:
-                conn.execute(text("SET LOCAL statement_timeout = '120s'"))
+                conn.execute(text("SET LOCAL statement_timeout = '300s'"))
                 applied = {r[0] for r in conn.execute(APPLY, {"rows": json.dumps(changes)})}
             stats["applied"] += len(applied)
             stats["skipped_concurrent_or_already_applied"] += len(changes)-len(applied)
