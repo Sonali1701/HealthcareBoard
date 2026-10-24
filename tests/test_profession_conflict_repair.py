@@ -44,16 +44,30 @@ class ProfessionConflictRepairTests(unittest.TestCase):
         with Session(engine) as db:
             db.add_all([
                 Profile(first_name="Wrong", last_name="One",
-                        job_category="Nursing", profession_type="MD"),
+                        job_category="Nursing", profession_type="MD", specialty="ICU"),
                 Profile(first_name="Correct", last_name="Two",
-                        job_category="Nursing", profession_type="CRNA"),
+                        job_category="Nursing", profession_type="CRNA", specialty="ICU"),
                 Profile(first_name="Unknown", last_name="Three",
-                        job_category="Nursing", profession_type=None),
+                        job_category="Nursing", profession_type=None, specialty="ICU"),
+                Profile(first_name="Blank", last_name="Four",
+                        job_category="Nursing", profession_type="RN"),
+                Profile(first_name="Screened", last_name="Five",
+                        job_category="Nursing", profession_type="RN", specialty="ICU",
+                        is_listable=False, screen_reason="missing_specialty_review"),
+                Profile(first_name="PharmacyWrong", last_name="Six",
+                        job_category="Pharmacy", profession_type="MD",
+                        specialty="Clinical Pharmacist"),
+                Profile(first_name="PhysicianWrong", last_name="Seven",
+                        job_category="Physician", profession_type="NP",
+                        specialty="Oncology"),
+                Profile(first_name="PharmacyCorrect", last_name="Eight",
+                        job_category="Pharmacy", profession_type="Pharmacist",
+                        specialty="Clinical Pharmacist"),
             ])
             db.commit()
             names = {p.first_name for p in db.scalars(
                 select(Profile).where(*_provider_conditions(db, providers_only=True)))}
-        self.assertEqual(names, {"Correct", "Unknown"})
+        self.assertEqual(names, {"Correct", "Unknown", "PharmacyCorrect"})
 
 
 if __name__ == "__main__":

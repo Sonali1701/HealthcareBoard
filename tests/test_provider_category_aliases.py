@@ -82,11 +82,12 @@ class ProviderCategoryAliasTests(unittest.TestCase):
                 Profile(first_name="H", last_name="H", provider_category=None,
                         job_category="Other / Unclassified", specialty="Specialist"),
                 Profile(first_name="I", last_name="I", provider_category=None,
-                        job_category="Student / Trainee"),
+                        job_category="Student / Trainee", specialty="Resident"),
                 Profile(first_name="J", last_name="J", provider_category=None,
                         job_category="Other / Unclassified", specialty="Homemaker"),
                 Profile(first_name="K", last_name="K", provider_category=None,
-                        job_category="Physician", is_listable=True),
+                        job_category="Physician", specialty="Internal Medicine",
+                        is_listable=True),
             ]
             db.add_all(rows)
             db.commit()
@@ -261,10 +262,13 @@ class ProviderCategoryAliasTests(unittest.TestCase):
         try:
             db.add_all([
                 Profile(first_name="Alice", last_name="A", job_category="Nursing",
+                        specialty="Registered Nurse",
                         resume_url="https://example.com/alice.pdf"),
                 Profile(first_name="Ben", last_name="B", job_category="Nursing",
+                        specialty="Registered Nurse",
                         resume_url=None),
                 Profile(first_name="Cara", last_name="C", job_category="Therapy",
+                        specialty="Physical Therapist",
                         resume_url="  "),
             ])
             db.commit()

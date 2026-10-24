@@ -161,6 +161,7 @@ def _geocode_city(db, city: str, state_code: str | None = None):
     Prefers an exact city+state match; falls back to the city in any state so a
     bare "50 miles from Folsom" still resolves (to one representative Folsom)."""
     c = (city or "").strip().lower()
+    c = re.sub(r"^st\.?\s+", "saint ", c)
     if not c:
         return None
     if state_code:
@@ -653,6 +654,8 @@ def _provider_conditions(
                       Profile.is_listable.is_(True),
                       Profile.job_category.isnot(None),
                       func.length(func.trim(Profile.job_category)) > 0,
+                      Profile.specialty.isnot(None),
+                      func.length(func.trim(Profile.specialty)) > 0,
                       or_(Profile.screen_reason.is_(None),
                           Profile.screen_reason != "opted_out")))
         # Keep unresolved role/category contradictions out of recruiter results
@@ -661,9 +664,17 @@ def _provider_conditions(
             and_(Profile.job_category == "Nursing",
                  func.coalesce(Profile.profession_type, "").in_(("MD", "DO", "PA"))),
             and_(Profile.job_category == "Physician",
-                 func.coalesce(Profile.profession_type, "").in_(("RN", "PA"))),
+                 func.coalesce(Profile.profession_type, "").in_(
+                     ("RN", "PA", "NP", "LPN", "CNA", "CNM", "CRNA"))),
             and_(Profile.job_category == "Physician Assistant",
                  func.coalesce(Profile.profession_type, "").in_(("MD", "DO", "RN"))),
+            and_(Profile.job_category == "Pharmacy",
+                 func.coalesce(Profile.profession_type, "").in_(
+                     ("MD", "DO", "RN", "PA", "NP", "LPN", "CNA"))),
+            and_(Profile.job_category == "Allied Health & Technicians",
+                 func.coalesce(Profile.profession_type, "").in_(("MD", "DO"))),
+            and_(Profile.job_category == "Facilities & Organizations",
+                 func.coalesce(Profile.profession_type, "").in_(("MD", "DO"))),
         ))
     if q:
         query = q.strip()
