@@ -17,6 +17,16 @@ from .config import settings
 
 
 EXPECTED_HOST = "ep-nameless-flower-ah7umr3s-pooler.c-3.us-east-1.aws.neon.tech"
+CREATE_AUDIT = text("""
+CREATE TABLE IF NOT EXISTS profile_specialty_category_repairs_20261024 (
+    profile_id varchar(36) PRIMARY KEY,
+    old_specialty text, old_category text, old_profession text,
+    old_headline text, old_is_listable boolean, old_screen_reason text,
+    new_category text, new_profession text, new_headline text,
+    new_is_listable boolean, new_screen_reason text,
+    evidence text NOT NULL, repaired_at timestamptz NOT NULL DEFAULT now()
+)
+""")
 PREDICATE = """
     p.specialty = 'Certified Nurse Midwife'
     AND p.job_category = 'Nursing'
@@ -66,6 +76,9 @@ def main() -> None:
 
     engine = create_engine(settings.database_url, pool_pre_ping=True,
                            connect_args={"connect_timeout": 8})
+    if args.apply:
+        with engine.begin() as conn:
+            conn.execute(CREATE_AUDIT)
     total = 0
     take = args.batch_size
     while True:
