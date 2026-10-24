@@ -6,6 +6,7 @@ are left unchanged. Use ``--apply`` for audited, resumable batches.
 from __future__ import annotations
 
 import argparse
+import time
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -42,6 +43,7 @@ WITH candidates AS MATERIALIZED (
     FROM profiles p {JOIN}
     WHERE {PREDICATE}
     LIMIT :take
+    FOR UPDATE OF p SKIP LOCKED
 ), logged AS (
     INSERT INTO profile_pr_zcta_geocode_repairs_20261024
     (profile_id, zip, old_lat, old_lng, new_lat, new_lng, evidence)
@@ -82,6 +84,7 @@ def main() -> None:
     with engine.begin() as conn:
         conn.execute(CREATE_AUDIT)
     total = 0
+    idle = 0
     while True:
         with engine.begin() as conn:
             conn.execute(text("SET LOCAL statement_timeout = '120s'"))
@@ -89,7 +92,16 @@ def main() -> None:
             if row.logged != row.changed or row.changed != row.candidates:
                 raise RuntimeError(f"Audit/geocode mismatch: {row}")
         if not row.candidates:
-            break
+            with engine.connect() as conn:
+                remaining = conn.execute(COUNT).scalar_one()
+            if not remaining:
+                break
+            idle += 1
+            if idle >= 3:
+                raise RuntimeError(f"{remaining} PR profiles remain locked or unprocessed")
+            time.sleep(2)
+            continue
+        idle = 0
         total += row.changed
         print(f"Geocoded {total} PR healthcare profiles", flush=True)
     print(f"Complete: {total} geocoded", flush=True)
