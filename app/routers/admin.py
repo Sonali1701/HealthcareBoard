@@ -22,7 +22,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, text, update
 
 from ..database import utcnow
 from ..deps import AdminUser, DbSession
@@ -99,6 +99,30 @@ def contact_backfill_status(admin: AdminUser, db: DbSession) -> dict:
 
 # --- Dashboard data -------------------------------------------------------
 
+def _overview_profile_counts(db: DbSession) -> tuple[int, int, bool]:
+    """Use planner estimates for the huge directory on PostgreSQL.
+
+    Exact counts scan millions of rows twice and can make the admin page time
+    out. The UI labels these two figures as estimates; all other counts remain
+    exact. SQLite's small development database retains exact counts.
+    """
+    if db.get_bind().dialect.name == "postgresql":
+        estimates = dict(db.execute(text(
+            "SELECT relname, reltuples FROM pg_class "
+            "WHERE relname IN ('profiles', 'ix_profiles_listable_cat') "
+            "AND relnamespace = 'public'::regnamespace"
+        )).all())
+        total = estimates.get("profiles", -1)
+        listable = estimates.get("ix_profiles_listable_cat", -1)
+        if total >= 0 and listable >= 0:
+            total_n = int(round(total))
+            return total_n, min(total_n, int(round(listable))), True
+    total = db.scalar(select(func.count()).select_from(Profile)) or 0
+    listable = db.scalar(select(func.count()).select_from(Profile).where(
+        Profile.is_listable.is_(True))) or 0
+    return total, listable, False
+
+
 @router.get("/overview")
 def overview(admin: AdminUser, db: DbSession) -> dict:
     """Headline figures for the super-admin dashboard (the diagram's
@@ -143,6 +167,8 @@ def overview(admin: AdminUser, db: DbSession) -> dict:
         "created_at": u.created_at,
     } for u in recent]
 
+    profiles_total, profiles_listable, profiles_estimated = _overview_profile_counts(db)
+
     return {
         "users": {
             "total": total_users,
@@ -157,9 +183,9 @@ def overview(admin: AdminUser, db: DbSession) -> dict:
             "new_30d": signups_30d,
         },
         "content": {
-            "profiles": count(select(func.count()).select_from(Profile)),
-            "profiles_listable": count(select(func.count()).select_from(Profile)
-                                       .where(Profile.is_listable.is_(True))),
+            "profiles": profiles_total,
+            "profiles_listable": profiles_listable,
+            "profiles_estimated": profiles_estimated,
             "jobs": count(select(func.count()).select_from(JobPosting)),
             "jobs_active": count(select(func.count()).select_from(JobPosting)
                                  .where(JobPosting.status == JobStatus.active)),

@@ -679,7 +679,7 @@
           statCard("New this week", nf(u.new_7d), `${nf(u.new_24h)} today · ${nf(u.new_30d)}/30d`),
         ])
         + statGroup("Content", [
-          statCard("Providers", nf(c.profiles), `${nf(c.profiles_listable)} listable`),
+          statCard("Providers", `${c.profiles_estimated ? "≈" : ""}${nf(c.profiles)}`, `${c.profiles_estimated ? "≈" : ""}${nf(c.profiles_listable)} listable`),
           statCard("Jobs", nf(c.jobs), `${nf(c.jobs_active)} active · ${nf(c.jobs_featured)} featured`),
           statCard("Organizations", nf(c.organizations), `${nf(c.organizations_verified)} verified`),
           statCard("Applications", nf(c.applications)),

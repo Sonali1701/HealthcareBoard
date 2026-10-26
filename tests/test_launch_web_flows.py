@@ -14,6 +14,7 @@ from app.config import settings
 from app.database import Base, get_db
 from app.main import app
 from app.models import Application, CreditAccount, Employer, JobPosting, MatchRun, Profile, User
+from app.routers.admin import _overview_profile_counts
 from app.routers.profiles import _copilot_rule_filters
 
 
@@ -41,6 +42,19 @@ class LaunchWebFlowTests(unittest.TestCase):
         app.dependency_overrides.clear()
         self.client.close()
         self.engine.dispose()
+
+    def test_admin_profile_count_uses_fast_estimates_on_postgres(self):
+        db = mock.Mock()
+        db.get_bind.return_value.dialect.name = "postgresql"
+        db.execute.return_value.all.return_value = [
+            ("profiles", 12000000.0), ("ix_profiles_listable_cat", 11600000.0),
+        ]
+        self.assertEqual(_overview_profile_counts(db), (12000000, 11600000, True))
+        db.scalar.assert_not_called()
+
+    def test_admin_profile_count_remains_exact_on_sqlite(self):
+        with self.sessions() as db:
+            self.assertEqual(_overview_profile_counts(db), (0, 0, False))
 
     def test_web_signup_login_and_local_redirect(self):
         page = self.client.get("/app/signup")
