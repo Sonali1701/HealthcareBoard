@@ -255,6 +255,32 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             db.close()
             engine.dispose()
 
+    def test_short_names_search_exactly_and_stale_role_text_is_ignored(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        try:
+            db.add_all([
+                Profile(first_name="Jo", last_name="Smith",
+                        specialty="Nurse Practitioner", job_category="Nursing"),
+                Profile(first_name="Alex", last_name="Smith",
+                        specialty="Internal Medicine", job_category="Physician",
+                        headline="Nurse Practitioner", bio="Worked with nurse practitioners",
+                        search_text="nurse practitioner jo smith"),
+            ])
+            db.commit()
+
+            def names(query):
+                return {p.first_name for p in db.scalars(select(Profile).where(
+                    *_provider_conditions(db, providers_only=True, q=query)))}
+
+            self.assertEqual(names("Jo"), {"Jo"})
+            self.assertEqual(names("Jo Smith"), {"Jo"})
+            self.assertEqual(names("nurse practitioner"), {"Jo"})
+        finally:
+            db.close()
+            engine.dispose()
+
     def test_resume_filter_keeps_results_counts_and_saved_searches_aligned(self):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)

@@ -113,7 +113,8 @@ class Profile(Base):
         from ..importers.parsing import LICENSE_FULL_NAMES
         parts = [
             self.first_name, self.last_name, self.headline, self.bio,
-            self.specialty, self.profession_type, self.city, self.state_code,
+            self.specialty, self.profession_type, self.job_category,
+            self.city, self.state_code,
             self.american_board, self.provider_category,
             # Full license name so "registered nurse" matches an RN profile.
             LICENSE_FULL_NAMES.get((self.profession_type or "").upper().strip(".")),
