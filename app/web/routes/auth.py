@@ -58,6 +58,13 @@ def signup(
                        "first_name": first_name, "last_name": last_name, "role": role},
                       status_code=400)
 
+    if settings.email_enabled and not settings.sendgrid_api_key.strip():
+        return render(request, "auth/signup.html", {
+            "active": "signup", "error": "Email verification is temporarily unavailable. Please try again later.",
+            "email": email, "first_name": first_name,
+            "last_name": last_name, "role": role,
+        }, status_code=503)
+
     user_role = UserRole.recruiter if role == "recruiter" else UserRole.job_seeker
     needs_verification = settings.email_enabled
     user = User(email=email, password_hash=hash_password(password), role=user_role,

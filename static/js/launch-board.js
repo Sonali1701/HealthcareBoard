@@ -1477,7 +1477,7 @@
   async function loadProviderFacets(){
     if (!isRecruiter() || S.facetsLoaded) return;
     try {
-      const f = await get("/api/profiles/facets");
+      const f = await get("/api/profiles/facets?basic=true");
       S.facetsLoaded = true;
       S.facetCategories = f.categories || {};
       renderProviderTabs();
@@ -5537,7 +5537,7 @@
       if (extensionAnalyticsFilters.date_to) extensionParams.set("date_to", extensionAnalyticsFilters.date_to);
       const [mk, d, convo, ext] = await Promise.all([
         get("/api/analytics/market"),
-        get("/api/analytics/sourcing?days=30"),
+        get("/api/analytics/sourcing?days=30&include_directory=false"),
         get("/api/analytics/conversations").catch(() => null),
         get(`/api/analytics/medhunt?${extensionParams}`).catch(e => ({error:e.message, scope:activeOrgId ? "organization" : "personal"})),
       ]);

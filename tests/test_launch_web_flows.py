@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import Base, get_db
 from app.main import app
-from app.models import Application, Employer, JobPosting, MatchRun, Profile, User
+from app.models import Application, CreditAccount, Employer, JobPosting, MatchRun, Profile, User
 from app.routers.profiles import _copilot_rule_filters
 
 
@@ -31,8 +31,11 @@ class LaunchWebFlowTests(unittest.TestCase):
         self.client = TestClient(app, follow_redirects=False)
         self.rate_patch = mock.patch.object(settings, "rate_limit_enabled", False)
         self.rate_patch.start()
+        self.email_key_patch = mock.patch.object(settings, "sendgrid_api_key", "test-only-key")
+        self.email_key_patch.start()
 
     def tearDown(self):
+        self.email_key_patch.stop()
         self.web_session_patch.stop()
         self.rate_patch.stop()
         app.dependency_overrides.clear()
@@ -64,6 +67,22 @@ class LaunchWebFlowTests(unittest.TestCase):
         })
         self.assertEqual(created.status_code, 400)
         self.assertIn("Enter a valid email address", created.text)
+        with self.sessions() as db:
+            self.assertEqual(db.query(User).count(), 0)
+
+    def test_missing_mail_key_does_not_create_unverifiable_accounts(self):
+        with (mock.patch.object(settings, "email_enabled", True),
+              mock.patch.object(settings, "sendgrid_api_key", "")):
+            api = self.client.post("/api/auth/register", json={
+                "email": "no-mail-api@example.com", "password": "LocalPass123!",
+                "role": "recruiter",
+            })
+            web = self.client.post("/app/signup", data={
+                "email": "no-mail-web@example.com", "password": "LocalPass123!",
+                "role": "job_seeker",
+            })
+        self.assertEqual(api.status_code, 503)
+        self.assertEqual(web.status_code, 503)
         with self.sessions() as db:
             self.assertEqual(db.query(User).count(), 0)
 
@@ -175,6 +194,11 @@ class LaunchWebFlowTests(unittest.TestCase):
         self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(result.json()["total"], 1)
         self.assertEqual(result.json()["filters"].get("q"), None)
+        facets = self.client.get("/api/profiles/facets?basic=true", headers=headers)
+        self.assertEqual(facets.status_code, 200, facets.text)
+        self.assertEqual(facets.json()["categories"]["Nursing"], 1)
+        self.assertEqual(facets.json()["states"], ["TX"])
+        self.assertNotIn("cities", facets.json())
 
     def test_analytics_aggregates_match_runs(self):
         with mock.patch.object(settings, "email_enabled", False):
@@ -196,6 +220,38 @@ class LaunchWebFlowTests(unittest.TestCase):
         self.assertEqual(result.json()["sourcing_runs"], {
             "runs": 2, "candidates_ranked": 10, "avg_match_score": 70.0,
         })
+        lean = self.client.get("/api/analytics/sourcing?include_directory=false",
+                               headers=headers)
+        self.assertEqual(lean.status_code, 200, lean.text)
+        self.assertIsNone(lean.json()["directory"])
+        self.assertEqual(lean.json()["sourcing_runs"], result.json()["sourcing_runs"])
+
+    def test_market_cache_keeps_credit_balances_per_user(self):
+        tokens = []
+        with mock.patch.object(settings, "email_enabled", False):
+            for number in (1, 2):
+                created = self.client.post("/api/auth/register", json={
+                    "email": f"market-{number}@example.com", "password": "LocalPass123!",
+                    "role": "recruiter",
+                })
+                self.assertEqual(created.status_code, 201, created.text)
+                tokens.append(created.json()["access_token"])
+        with self.sessions() as db:
+            users = [db.scalar(select(User).where(User.email == f"market-{n}@example.com"))
+                     for n in (1, 2)]
+            db.add_all([CreditAccount(user_id=users[0].user_id, balance=3),
+                        CreditAccount(user_id=users[1].user_id, balance=7)])
+            db.commit()
+        first = self.client.get("/api/analytics/market", headers={
+            "Authorization": "Bearer " + tokens[0]})
+        self.assertEqual(first.status_code, 200, first.text)
+        with mock.patch("app.routers.analytics._market_uncached",
+                        side_effect=AssertionError("shared market data was recomputed")):
+            second = self.client.get("/api/analytics/market", headers={
+                "Authorization": "Bearer " + tokens[1]})
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(first.json()["credits"]["balance"], 3)
+        self.assertEqual(second.json()["credits"]["balance"], 7)
 
 
 class CopilotFallbackTests(unittest.TestCase):

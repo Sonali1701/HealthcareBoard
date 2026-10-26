@@ -6,6 +6,9 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
+import threading
+import time
+import weakref
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, or_, select
@@ -29,6 +32,9 @@ from ..database import utcnow
 from ..services import org_roles, team_access
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+_MARKET_CACHE = {"bind_ref": None, "at": 0.0, "data": None}
+_MARKET_CACHE_LOCK = threading.Lock()
+_MARKET_CACHE_TTL = 300.0
 
 
 def _employer_ids_for(db: DbSession, user: CurrentUser) -> list[str]:
@@ -414,7 +420,8 @@ def conversation_table(user: CurrentUser, db: DbSession):
 # pools, run match jobs and message people — so measure that instead.
 
 @router.get("/sourcing")
-def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
+def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30,
+                      include_directory: bool = True):
     from datetime import timedelta
 
     from ..database import utcnow
@@ -492,13 +499,15 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
     threads = count(select(func.count()).select_from(MessageThread).where(
         (MessageThread.participant_a_id == uid) | (MessageThread.participant_b_id == uid)))
 
-    listable = count(select(func.count()).select_from(Profile)
-                     .where(Profile.is_listable.is_(True)))
-    reachable = count(select(func.count()).select_from(Profile).where(
-        Profile.is_listable.is_(True),
-        # trim() (not Postgres-only btrim) so this works on SQLite dev too.
-        ((Profile.email.isnot(None)) & (func.length(func.trim(Profile.email)) > 0))
-        | ((Profile.phone.isnot(None)) & (func.length(func.trim(Profile.phone)) > 0))))
+    listable = reachable = 0
+    if include_directory:
+        listable = count(select(func.count()).select_from(Profile)
+                         .where(Profile.is_listable.is_(True)))
+        reachable = count(select(func.count()).select_from(Profile).where(
+            Profile.is_listable.is_(True),
+            # trim() (not Postgres-only btrim) so this works on SQLite dev too.
+            ((Profile.email.isnot(None)) & (func.length(func.trim(Profile.email)) > 0))
+            | ((Profile.phone.isnot(None)) & (func.length(func.trim(Profile.phone)) > 0))))
 
     # How much of the shortlist actually got worked, and how far it got.
     moved = sum(n for s, n in by_stage.items() if s != "sourced")
@@ -508,7 +517,7 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
             "listable": listable,
             "reachable": reachable,
             "reachable_pct": round(100 * reachable / listable, 1) if listable else 0.0,
-        },
+        } if include_directory else None,
         "contacts": {"released_total": releases, "released_recent": releases_recent},
         "medhunt": {
             "enriched_total": medhunt_enriched,
@@ -546,8 +555,7 @@ _US_STATES = (
 )
 
 
-@router.get("/market")
-def market(user: CurrentUser, db: DbSession):
+def _market_uncached(db: DbSession):
     """Marketplace supply & demand — the real, populated data every recruiter can
     use: the size and shape of the talent directory (supply) and the open roles
     on the board (demand). Platform-wide figures plus this recruiter's credits.
@@ -587,7 +595,6 @@ def market(user: CurrentUser, db: DbSession):
         .group_by(JobPosting.state_code)
         .order_by(func.count().desc()).limit(8)).all())
 
-    acct = db.scalar(select(CreditAccount).where(CreditAccount.user_id == user.user_id))
     return {
         "providers": {
             "listable": listable,
@@ -599,8 +606,26 @@ def market(user: CurrentUser, db: DbSession):
         "supply": supply,
         "demand_specialty": demand_specialty,
         "demand_state": demand_state,
-        "credits": {
-            "balance": acct.balance if acct else 0,
-            "spent": acct.lifetime_spent if acct else 0,
-        },
     }
+
+
+@router.get("/market")
+def market(user: CurrentUser, db: DbSession):
+    """Cache platform-wide scans, then attach this recruiter's live balance."""
+    bind = db.get_bind()
+    now = time.monotonic()
+    with _MARKET_CACHE_LOCK:
+        if (_MARKET_CACHE["bind_ref"] is not None
+                and _MARKET_CACHE["bind_ref"]() is bind
+                and _MARKET_CACHE["data"] is not None
+                and now - _MARKET_CACHE["at"] < _MARKET_CACHE_TTL):
+            shared = _MARKET_CACHE["data"]
+        else:
+            shared = _market_uncached(db)
+            _MARKET_CACHE.update(bind_ref=weakref.ref(bind),
+                                 at=time.monotonic(), data=shared)
+    acct = db.scalar(select(CreditAccount).where(CreditAccount.user_id == user.user_id))
+    return {**shared, "credits": {
+        "balance": acct.balance if acct else 0,
+        "spent": acct.lifetime_spent if acct else 0,
+    }}

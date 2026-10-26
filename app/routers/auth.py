@@ -95,6 +95,8 @@ def _issue_tokens(db: DbSession, user: User, request: Request | None = None) -> 
 @router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
 def register(body: RegisterRequest, db: DbSession, request: Request,
              _rl: None = Depends(auth_rate_limit)):
+    if settings.email_enabled and not settings.sendgrid_api_key.strip():
+        raise HTTPException(status_code=503, detail="Email verification is temporarily unavailable")
     existing = db.scalar(select(User).where(User.email == body.email))
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -326,6 +328,8 @@ def password_reset_confirm(body: PasswordResetConfirm, db: DbSession):
 
 @router.post("/email/request-verification")
 def request_email_verification(user: CurrentUser, db: DbSession):
+    if settings.email_enabled and not settings.sendgrid_api_key.strip():
+        raise HTTPException(status_code=503, detail="Email verification is temporarily unavailable")
     raw = generate_opaque_token()
     db.add(EmailVerificationToken(
         user_id=user.user_id,

@@ -1572,20 +1572,22 @@ def screening_report(user: CurrentUser, db: DbSession, limit: int = Query(10, ge
 
 
 _FACETS_CACHE: dict = {"data": None, "at": 0.0}
+_BASIC_FACETS_CACHE: dict = {"data": None, "at": 0.0}
 _FACETS_TTL = 300.0  # seconds — distinct/group-by over millions of rows is costly
 
 
 @router.get("/facets")
-def profile_facets(user: CurrentUser, db: DbSession):
+def profile_facets(user: CurrentUser, db: DbSession, basic: bool = False):
     """Distinct filter values + category counts for the Providers directory.
 
     Cached in-process for a few minutes: on a multi-million-row table these
     DISTINCT / GROUP BY scans are expensive, and the values change slowly.
     """
     _require_provider_directory_access(user)
+    cache = _BASIC_FACETS_CACHE if basic else _FACETS_CACHE
     now = time.monotonic()
-    if _FACETS_CACHE["data"] is not None and now - _FACETS_CACHE["at"] < _FACETS_TTL:
-        return _FACETS_CACHE["data"]
+    if cache["data"] is not None and now - cache["at"] < _FACETS_TTL:
+        return cache["data"]
 
     def distinct(col, exclude=None, *, limit=300, max_len=100):
         rows = db.scalars(
@@ -1598,8 +1600,9 @@ def profile_facets(user: CurrentUser, db: DbSession):
             vals = [v for v in vals if v.lower() not in ex]
         return vals
 
+    professions = distinct(Profile.profession_type)
     license_titles = sorted({
-        *distinct(Profile.profession_type),
+        *professions,
         *distinct(License.license_type),
     })
 
@@ -1614,7 +1617,7 @@ def profile_facets(user: CurrentUser, db: DbSession):
     data = {
         "categories": categories,
         "license_titles": license_titles,
-        "professions": distinct(Profile.profession_type),
+        "professions": professions,
         # Imported rows can contain malformed state values (including numbers).
         # Only offer actual state/territory codes as directory filters.
         "states": db.scalars(
@@ -1622,15 +1625,18 @@ def profile_facets(user: CurrentUser, db: DbSession):
             .where(Profile.state_code.in_(sorted(_US_STATES)))
             .distinct().order_by(Profile.state_code)
         ).all(),
-        "cities": distinct(Profile.city, limit=250, max_len=80),
-        "specialties": distinct(Profile.specialty),
-        # American boards, excluding American Board of Physician Specialties.
-        "boards": distinct(Profile.american_board,
-                           exclude=["American Board of Physician Specialties"],
-                           max_len=150),
     }
-    _FACETS_CACHE["data"] = data
-    _FACETS_CACHE["at"] = now
+    if not basic:
+        data.update({
+            "cities": distinct(Profile.city, limit=250, max_len=80),
+            "specialties": distinct(Profile.specialty),
+            # American boards, excluding American Board of Physician Specialties.
+            "boards": distinct(Profile.american_board,
+                               exclude=["American Board of Physician Specialties"],
+                               max_len=150),
+        })
+    cache["data"] = data
+    cache["at"] = now
     return data
 
 
