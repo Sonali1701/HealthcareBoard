@@ -80,7 +80,18 @@ def profile_search_conditions(query: str) -> list:
     """
     # Two-character infix patterns have no useful trigrams and can scan the
     # whole multi-million-row directory; the licence filter handles RN, MD, etc.
-    tokens = [word for word in re.findall(r"\w+", query[:120]) if len(word) >= 3][:6]
+    words = re.findall(r"\w+", query[:120])[:6]
+    # Short names are common in candidate data. Search them as exact names so
+    # a two-letter query never triggers an unindexed role substring scan.
+    if len(words) == 1 and len(words[0]) == 2:
+        name = words[0].lower()
+        return [or_(
+            func.lower(func.trim(Profile.first_name)) == name,
+            func.lower(func.trim(Profile.last_name)) == name,
+        )]
+    if len(words) == 2 and any(len(word) == 2 for word in words):
+        return [_NAME_VALUE == " ".join(word.lower() for word in words)]
+    tokens = [word for word in words if len(word) >= 3]
     if not tokens:
         return [literal(False)]
     escaped = [token.lower().replace("_", "\\_") for token in tokens]
