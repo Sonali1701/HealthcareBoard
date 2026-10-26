@@ -6,7 +6,7 @@
   <div class="app-grid">
     <aside>
       <div class="panel">
-        <form id="job-filters" hx-get="/jobs" hx-target="#job-results" hx-trigger="change, submit, keyup delay:400ms from:[name=q]"
+        <form id="job-filters" hx-get="/app/jobs" hx-target="#job-results" hx-trigger="change, submit, keyup delay:400ms from:[name=q]"
               hx-push-url="true">
           <div class="field">
             <label class="label">Search</label>
@@ -36,7 +36,7 @@
               <input class="input" name="pay_min" value="{{ f.pay_min }}" type="number" placeholder="50">
             </div>
           </div>
-          <a class="btn btn-ghost btn-sm btn-block" href="/jobs">Reset</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="/app/jobs">Reset</a>
         </form>
       </div>
     </aside>

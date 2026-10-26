@@ -75,7 +75,7 @@ class ContactLookupTests(unittest.TestCase):
         self.engine.dispose()
 
     def _lookup(self, match=MATCH):
-        async def fake_find(name, location=None):
+        async def fake_find(name, location=None, *, dedicated_ip=False):
             self.last_search = (name, location)
             return match
 

@@ -1,5 +1,5 @@
 {% macro job_card(job, employer) %}
-<a class="list-card {% if job.is_featured %}featured{% endif %}" href="/jobs/{{ job.job_id }}">
+<a class="list-card {% if job.is_featured %}featured{% endif %}" href="/app/jobs/{{ job.job_id }}">
   <div class="employer-logo">🏥</div>
   <div style="min-width:0">
     <div style="font-weight:600;font-size:15px;color:var(--gray-800)">{{ job.title }}</div>
@@ -23,7 +23,7 @@
 {% endmacro %}
 
 {% macro candidate_card(p) %}
-<a class="pro-card" href="/talent/{{ p.profile_id }}">
+<a class="pro-card" href="/app/talent/{{ p.profile_id }}">
   <div class="pro-cover"></div>
   <div class="pro-body">
     <div class="pro-avatar">{{ (p.first_name[0] ~ p.last_name[0])|upper }}</div>

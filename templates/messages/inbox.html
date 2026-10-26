@@ -9,7 +9,7 @@
         {% if rows %}
           {% for r in rows %}
             <a class="thread {{ 'active' if active_thread and active_thread.thread_id==r.thread.thread_id else '' }}"
-               href="/messages/{{ r.thread.thread_id }}" style="text-decoration:none;color:inherit">
+               href="/app/messages/{{ r.thread.thread_id }}" style="text-decoration:none;color:inherit">
               <span class="avatar">{{ (r.name.split(' ')|map('first')|join)[:2]|upper }}</span>
               <div style="flex:1;min-width:0">
                 <div style="font-weight:600;font-size:14px">{{ r.name }}</div>
@@ -18,7 +18,7 @@
             </a>
           {% endfor %}
         {% else %}
-          <div class="muted small center" style="padding:20px">No conversations yet.<br>Message a candidate from <a href="/talent">Talent</a>.</div>
+          <div class="muted small center" style="padding:20px">No conversations yet.<br>Message a candidate from <a href="/app/talent">Talent</a>.</div>
         {% endif %}
       </div>
     </aside>
@@ -34,7 +34,7 @@
             {% endfor %}
             {% if not messages %}<div class="muted small center">No messages yet — say hello 👋</div>{% endif %}
           </div>
-          <form method="post" action="/messages/{{ active_thread.thread_id }}/send" class="row" style="gap:8px;margin-top:8px">
+          <form method="post" action="/app/messages/{{ active_thread.thread_id }}/send" class="row" style="gap:8px;margin-top:8px">
             <input class="input" name="body" placeholder="Type a message…" autocomplete="off" autofocus required>
             <button class="btn btn-primary" type="submit">Send</button>
           </form>

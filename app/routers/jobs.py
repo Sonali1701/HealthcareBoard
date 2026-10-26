@@ -830,6 +830,8 @@ def apply_to_job(job_id: str, body: ApplicationCreate, user: CurrentUser, db: Db
     )
     if not profile:
         raise HTTPException(status_code=400, detail="Profile not found")
+    if profile.user_id != user.user_id:
+        raise HTTPException(status_code=403, detail="Cannot apply with another user's profile")
 
     existing = db.scalar(
         select(Application).where(

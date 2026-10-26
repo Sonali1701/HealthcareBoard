@@ -6,7 +6,7 @@
   <div class="container" style="padding-top:40px;padding-bottom:40px">
     <h1>The job board built for healthcare professionals.</h1>
     <p>Find travel, staff, and per-diem roles — or source verified, licensed clinicians in minutes.</p>
-    <form class="searchbar" action="/jobs" method="get">
+    <form class="searchbar" action="/app/jobs" method="get">
       <input class="input" name="q" placeholder="Search specialty, title, or skill…">
       <select class="select" name="specialty" style="max-width:210px">
         <option value="">All specialties</option>
@@ -26,7 +26,7 @@
 
 <div class="row between items-center mt2">
   <h2 style="margin:0">Featured roles</h2>
-  <a href="/jobs">Browse all jobs →</a>
+  <a href="/app/jobs">Browse all jobs →</a>
 </div>
 <div class="grid mt" style="gap:12px">
   {% for job in jobs %}{{ job_card(job, employers.get(job.employer_id)) }}{% endfor %}
@@ -38,6 +38,6 @@
     <h3 style="margin:0">Hiring clinicians?</h3>
     <div class="muted small">Post a job, browse {{ stats.candidates }} verified professionals, and let AI build your shortlist.</div>
   </div>
-  <a class="btn btn-navy" href="/signup">Get started as a recruiter</a>
+  <a class="btn btn-navy" href="/app/signup">Get started as a recruiter</a>
 </div>
 {% endblock %}

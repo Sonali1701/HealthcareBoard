@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container mt2" style="max-width:640px">
   <h2>{{ 'Edit' if employer else 'Create' }} organization</h2>
-  <form method="post" action="/recruiter/employer" class="panel">
+  <form method="post" action="/app/recruiter/employer" class="panel">
     <div class="field"><label class="label">Organization name *</label>
       <input class="input" name="org_name" value="{{ employer.org_name if employer else '' }}" required></div>
     <div class="row" style="gap:12px">
@@ -41,7 +41,7 @@
     {% if member_rows %}
     <div class="grid" style="gap:10px">
       {% for member, member_user in member_rows %}
-      <form method="post" action="/recruiter/employer/member-quick-sourcer-limit" class="row items-center wrap panel" style="gap:12px;padding:12px">
+      <form method="post" action="/app/recruiter/employer/member-quick-sourcer-limit" class="row items-center wrap panel" style="gap:12px;padding:12px">
         <input type="hidden" name="target_user_id" value="{{ member_user.user_id }}">
         <div style="flex:1;min-width:180px">
           <strong>{{ member_user.email }}</strong>

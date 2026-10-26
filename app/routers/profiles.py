@@ -1077,6 +1077,7 @@ _STOP_TOKENS = {
     "them","these","those","it","now","also","instead","from","on","by","within",
     "state","city","area","region","location","jobs","job","role","roles","position",
     "positions","working","work","live","living","reside","residing","new","search",
+    "registered","mile","miles","mi","not","meant","sorry","actually",
 }
 
 
@@ -1131,6 +1132,14 @@ def _copilot_rule_filters(message: str) -> dict:
     # Distance + optional centre: "within 50 miles of Folsom California",
     # "25 mi from Austin TX". Capture the number and the place together, and cut
     # the whole span out of `msg` so neither pollutes the keyword search.
+    zip_radius = re.search(
+        r"\b(?:within|around|about|near)?\s*(\d{1,3})\s*"
+        r"(?:mi|mile|miles|mi\.)\s*(?:of|from|around|near)\s*(\d{5})\b",
+        msg)
+    if zip_radius:
+        out["radius_mi"] = max(1, min(500, int(zip_radius.group(1))))
+        out["zip"] = zip_radius.group(2)
+        msg = msg[:zip_radius.start()] + " " + msg[zip_radius.end():]
     rm = re.search(
         r"\b(?:within|around|about|near|under|<=?)?\s*(\d{1,3})\s*"
         r"(?:mi|mile|miles|mi\.)\b"
@@ -1138,11 +1147,16 @@ def _copilot_rule_filters(message: str) -> dict:
         r"([a-z][a-z.'\- ]{1,38}?))?"
         r"(?=\s*(?:,|\.|$| with | who | that | in ))",
         msg + " ")
-    if rm:
+    if rm and not zip_radius:
         out["radius_mi"] = max(1, min(500, int(rm.group(1))))
         if rm.group(2):
             _set_center(out, rm.group(2))
         msg = msg[:rm.start()] + " " + msg[rm.end():]
+    if "zip" not in out:
+        zip_match = re.search(r"\b\d{5}\b", msg)
+        if zip_match:
+            out["zip"] = zip_match.group(0)
+            msg = msg[:zip_match.start()] + " " + msg[zip_match.end():]
     # A bare "near/around <city>" with no distance still names a centre.
     if "city" not in out:
         nm = re.search(r"\b(?:near|around|close to|nearby|outside of|outside)\s+"

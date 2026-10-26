@@ -479,10 +479,13 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
         .where(TalentPoolMember.pool_id.in_(pool_ids))
         .group_by(TalentPoolMember.stage)).all()) if pool_ids else {}
 
-    runs = db.scalars(select(MatchRun).where(MatchRun.requested_by_user_id == uid)).all()
-    ranked = sum(r.candidate_count or 0 for r in runs)
-    avg_score = (round(sum(float(r.avg_score or 0) for r in runs) / len(runs), 1)
-                 if runs else 0.0)
+    run_count, ranked, score_sum = db.execute(
+        select(func.count(MatchRun.run_id),
+               func.coalesce(func.sum(MatchRun.candidate_count), 0),
+               func.coalesce(func.sum(MatchRun.avg_score), 0))
+        .where(MatchRun.requested_by_user_id == uid)
+    ).one()
+    avg_score = round(float(score_sum) / run_count, 1) if run_count else 0.0
 
     sent = count(select(func.count()).select_from(Message).where(Message.sender_id == uid))
     received = count(select(func.count()).select_from(Message).where(Message.recipient_id == uid))
@@ -523,7 +526,7 @@ def sourcing_activity(user: CurrentUser, db: DbSession, days: int = 30):
             "worked_pct": round(100 * moved / shortlisted, 1) if shortlisted else 0.0,
         },
         "sourcing_runs": {
-            "runs": len(runs), "candidates_ranked": ranked, "avg_match_score": avg_score,
+            "runs": run_count, "candidates_ranked": ranked, "avg_match_score": avg_score,
         },
         "messaging": {"threads": threads, "sent": sent, "received": received},
         "saved_searches": count(select(func.count()).select_from(SavedSearch)

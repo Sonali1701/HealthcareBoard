@@ -5,7 +5,7 @@
 <div class="container mt2">
   <div class="row between items-center">
     <h2 style="margin:0">Welcome, {{ profile.first_name }}</h2>
-    <a class="btn btn-outline" href="/profile">My profile</a>
+    <a class="btn btn-outline" href="/app/profile">My profile</a>
   </div>
 
   <div class="panel mt">
@@ -16,7 +16,7 @@
       <div style="height:100%;width:{{ profile.completion_score }}%;background:linear-gradient(90deg,var(--teal),var(--teal-dark))"></div>
     </div>
     {% if profile.completion_score < 100 %}
-      <div class="small muted mt">Add your specialty, resume and licenses to get better matches. <a href="/profile/edit">Complete profile →</a></div>
+      <div class="small muted mt">Add your specialty, resume and licenses to get better matches. <a href="/app/profile/edit">Complete profile →</a></div>
     {% endif %}
   </div>
 
@@ -29,7 +29,7 @@
         <tbody>
         {% for a in apps %}
           <tr>
-            <td><a href="/jobs/{{ a.job_id }}">{{ job_map.get(a.job_id).title if job_map.get(a.job_id) else 'Job' }}</a></td>
+            <td><a href="/app/jobs/{{ a.job_id }}">{{ job_map.get(a.job_id).title if job_map.get(a.job_id) else 'Job' }}</a></td>
             <td><span class="badge badge-navy">{{ a.status.value }}</span></td>
             <td class="small muted">{{ a.applied_at.strftime('%b %d') }}</td>
           </tr>
@@ -37,7 +37,7 @@
         </tbody>
       </table></div>
       {% else %}
-        <div class="panel muted">No applications yet. <a href="/jobs">Browse jobs →</a></div>
+        <div class="panel muted">No applications yet. <a href="/app/jobs">Browse jobs →</a></div>
       {% endif %}
 
       {% if rec %}
@@ -51,7 +51,7 @@
       {% if saved %}
         <div class="grid" style="gap:10px">
         {% for j in saved %}
-          <a class="card card-p" href="/jobs/{{ j.job_id }}" style="display:block">
+          <a class="card card-p" href="/app/jobs/{{ j.job_id }}" style="display:block">
             <div style="font-weight:600;font-size:14px">{{ j.title }}</div>
             <div class="small muted">{{ [j.city, j.state_code]|select|join(', ') }}</div>
           </a>

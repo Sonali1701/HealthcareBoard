@@ -23,26 +23,26 @@
     <nav style="flex:1;overflow-y:auto">
       <div class="nav-section">Discover</div>
       {% if is_recruiter %}
-        <a class="nav-item {% if active=='recruiter' %}active{% endif %}" href="/recruiter"><i class="fas fa-gauge-high"></i>Dashboard</a>
+        <a class="nav-item {% if active=='recruiter' %}active{% endif %}" href="/app/recruiter"><i class="fas fa-gauge-high"></i>Dashboard</a>
       {% elif user %}
-        <a class="nav-item {% if active=='dashboard' %}active{% endif %}" href="/dashboard"><i class="fas fa-gauge-high"></i>Dashboard</a>
+        <a class="nav-item {% if active=='dashboard' %}active{% endif %}" href="/app/dashboard"><i class="fas fa-gauge-high"></i>Dashboard</a>
       {% endif %}
-      <a class="nav-item {% if active=='jobs' %}active{% endif %}" href="/jobs"><i class="fas fa-briefcase"></i>Find Jobs</a>
-      <a class="nav-item {% if active=='talent' %}active{% endif %}" href="/talent"><i class="fas fa-user-group"></i>Talent</a>
+      <a class="nav-item {% if active=='jobs' %}active{% endif %}" href="/app/jobs"><i class="fas fa-briefcase"></i>Find Jobs</a>
+      <a class="nav-item {% if active=='talent' %}active{% endif %}" href="/app/talent"><i class="fas fa-user-group"></i>Talent</a>
       {% if is_recruiter %}
-        <a class="nav-item {% if active=='matching' %}active{% endif %}" href="/matching"><i class="fas fa-wand-magic-sparkles"></i>AI Matching</a>
+        <a class="nav-item {% if active=='matching' %}active{% endif %}" href="/app/matching"><i class="fas fa-wand-magic-sparkles"></i>AI Matching</a>
       {% endif %}
       {% if user %}
-        <a class="nav-item {% if active=='messages' %}active{% endif %}" href="/messages"><i class="fas fa-comment-dots"></i>Messages</a>
+        <a class="nav-item {% if active=='messages' %}active{% endif %}" href="/app/messages"><i class="fas fa-comment-dots"></i>Messages</a>
       {% endif %}
 
       <div class="nav-section">Tools</div>
-      <a class="nav-item {% if active=='tools' %}active{% endif %}" href="/tools/pay-calculator"><i class="fas fa-calculator"></i>Pay Calculator</a>
+      <a class="nav-item {% if active=='tools' %}active{% endif %}" href="/app/tools/pay-calculator"><i class="fas fa-calculator"></i>Pay Calculator</a>
       {% if user and not is_recruiter %}
-        <a class="nav-item {% if active=='profile' %}active{% endif %}" href="/profile"><i class="fas fa-id-badge"></i>My Profile</a>
+        <a class="nav-item {% if active=='profile' %}active{% endif %}" href="/app/profile"><i class="fas fa-id-badge"></i>My Profile</a>
       {% endif %}
       {% if is_recruiter %}
-        <a class="nav-item {% if active=='org' %}active{% endif %}" href="/recruiter/jobs/new"><i class="fas fa-plus"></i>Post a Job</a>
+        <a class="nav-item {% if active=='org' %}active{% endif %}" href="/app/recruiter/jobs/new"><i class="fas fa-plus"></i>Post a Job</a>
       {% endif %}
     </nav>
 
@@ -54,29 +54,29 @@
             <div class="user-mini-name">{{ user.email.split('@')[0] }}</div>
             <div class="user-mini-role">{{ 'Recruiter' if is_recruiter else 'Job seeker' }}</div>
           </div>
-          <a href="/logout" style="color:rgba(255,255,255,.5)" title="Log out"><i class="fas fa-right-from-bracket"></i></a>
+          <a href="/app/logout" style="color:rgba(255,255,255,.5)" title="Log out"><i class="fas fa-right-from-bracket"></i></a>
         </div>
       {% else %}
-        <a class="btn btn-primary btn-block" href="/signup">Sign up</a>
-        <a class="btn btn-ghost btn-block" style="color:rgba(255,255,255,.7);margin-top:6px" href="/login">Log in</a>
+        <a class="btn btn-primary btn-block" href="/app/signup">Sign up</a>
+        <a class="btn btn-ghost btn-block" style="color:rgba(255,255,255,.7);margin-top:6px" href="/app/login">Log in</a>
       {% endif %}
     </div>
   </aside>
 
   <div class="main-content">
     <div class="topbar">
-      <form class="topbar-search" action="/jobs" method="get">
+      <form class="topbar-search" action="/app/jobs" method="get">
         <i class="fas fa-magnifying-glass"></i>
         <input name="q" placeholder="Search jobs, specialties, talent…">
       </form>
       <div class="topbar-actions">
         {% if user %}
-          <a class="topbar-user" href="{{ '/recruiter' if is_recruiter else '/dashboard' }}">
+          <a class="topbar-user" href="{{ '/app/recruiter' if is_recruiter else '/app/dashboard' }}">
             <span class="avatar">{{ user.email[0]|upper }}</span>
           </a>
         {% else %}
-          <a class="btn btn-ghost btn-sm" href="/login">Log in</a>
-          <a class="btn btn-primary btn-sm" href="/signup">Sign up</a>
+          <a class="btn btn-ghost btn-sm" href="/app/login">Log in</a>
+          <a class="btn btn-primary btn-sm" href="/app/signup">Sign up</a>
         {% endif %}
       </div>
     </div>

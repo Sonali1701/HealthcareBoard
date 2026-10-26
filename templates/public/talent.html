@@ -6,7 +6,7 @@
   <div class="app-grid">
     <aside>
       <div class="panel">
-        <form hx-get="/talent" hx-target="#talent-results" hx-trigger="change, keyup delay:400ms from:[name=q]" hx-push-url="true">
+        <form hx-get="/app/talent" hx-target="#talent-results" hx-trigger="change, keyup delay:400ms from:[name=q]" hx-push-url="true">
           <div class="field">
             <label class="label">Search</label>
             <input class="input" name="q" value="{{ f.q }}" placeholder="name, specialty">
@@ -28,7 +28,7 @@
               <input class="input" name="state" value="{{ f.state }}" maxlength="2" placeholder="NC">
             </div>
           </div>
-          <a class="btn btn-ghost btn-sm btn-block" href="/talent">Reset</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="/app/talent">Reset</a>
         </form>
       </div>
     </aside>

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def get_current_user(
+    request: Request,
     db: DbSession,
     token: Annotated[Optional[str], Depends(oauth2_scheme)] = None,
 ) -> User:
@@ -56,6 +57,10 @@ def get_current_user(
             detail="This account was signed in on another device.",
             headers={"WWW-Authenticate": "Bearer", "X-Session-Superseded": "1"},
         )
+    if user.status == UserStatus.pending_verify and request.url.path not in {
+        "/api/auth/me", "/api/auth/email/request-verification", "/api/auth/logout",
+    }:
+        raise HTTPException(status_code=403, detail="Verify your email to continue")
     return user
 
 
@@ -63,13 +68,14 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 def get_optional_user(
+    request: Request,
     db: DbSession,
     token: Annotated[Optional[str], Depends(oauth2_scheme)] = None,
 ) -> Optional[User]:
     if not token:
         return None
     try:
-        return get_current_user(db=db, token=token)
+        return get_current_user(request=request, db=db, token=token)
     except HTTPException:
         return None
 
@@ -78,6 +84,7 @@ OptionalUser = Annotated[Optional[User], Depends(get_optional_user)]
 
 
 def get_ingest_user(
+    request: Request,
     db: DbSession,
     token: Annotated[Optional[str], Depends(oauth2_scheme)] = None,
     x_capture_token: Annotated[Optional[str], Header()] = None,
@@ -91,7 +98,7 @@ def get_ingest_user(
     It remains valid until the user or an administrator rotates it.
     """
     if token:
-        return get_current_user(db=db, token=token)
+        return get_current_user(request=request, db=db, token=token)
     if x_capture_token:
         user = db.scalar(select(User).where(User.capture_token == x_capture_token))
         if user and user.deleted_at is None and user.status == UserStatus.active:

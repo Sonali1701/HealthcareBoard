@@ -2,7 +2,7 @@
 {% block title %}{{ job.title }}{% endblock %}
 {% block content %}
 <div class="container mt2">
-  <a href="/jobs" class="small">← Back to jobs</a>
+  <a href="/app/jobs" class="small">← Back to jobs</a>
   <div class="app-grid mt">
     <div style="grid-column:1 / 2;order:2">
       <div class="panel side">
@@ -16,11 +16,11 @@
           {% if applied %}
             <button class="btn btn-outline btn-block" disabled>✓ Applied</button>
           {% else %}
-            <form method="post" action="/jobs/{{ job.job_id }}/apply">
+            <form method="post" action="/app/jobs/{{ job.job_id }}/apply">
               <button class="btn btn-primary btn-block" type="submit">Quick Apply</button>
             </form>
           {% endif %}
-          <form method="post" action="/jobs/{{ job.job_id }}/save" class="mt">
+          <form method="post" action="/app/jobs/{{ job.job_id }}/save" class="mt">
             <button class="btn btn-outline btn-block" type="submit">{{ '★ Saved' if saved else '☆ Save job' }}</button>
           </form>
         </div>

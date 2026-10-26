@@ -6,7 +6,7 @@
   <p class="muted">Score your talent pool against a role on skills, experience, location and pay.</p>
   <div class="app-grid">
     <aside>
-      <form method="post" action="/matching" class="panel">
+      <form method="post" action="/app/matching" class="panel">
         <div class="field"><label class="label">Specialty</label>
           <input class="input" name="specialty" value="{{ spec.specialty or 'Allergy & Immunology' }}"></div>
         <div class="field"><label class="label">Profession</label>
@@ -41,7 +41,7 @@
               <span class="badge badge-navy">#{{ c.rank }}</span>
               <span class="avatar">{{ c.initials }}</span>
               <div>
-                <a href="/talent/{{ c.profile_id }}" style="font-weight:700">{{ c.name }}</a>
+                <a href="/app/talent/{{ c.profile_id }}" style="font-weight:700">{{ c.name }}</a>
                 <div class="small muted">{{ c.title or c.specialty or '' }}{% if c.location %} · {{ c.location }}{% endif %}</div>
                 <div class="small muted">{{ c.match_reason }}</div>
               </div>
@@ -49,7 +49,7 @@
             <div class="center">
               <div class="pay" style="font-size:22px">{{ c.score_total|int }}</div>
               <div class="small muted">match</div>
-              <a class="btn btn-outline btn-sm mt" href="/messages/start/{{ c.profile_id }}">Message</a>
+              <a class="btn btn-outline btn-sm mt" href="/app/messages/start/{{ c.profile_id }}">Message</a>
             </div>
           </div>
         {% endfor %}

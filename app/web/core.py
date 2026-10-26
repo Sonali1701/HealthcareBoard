@@ -59,7 +59,22 @@ templates.env.globals["asset_version"] = _asset_version()
 
 class RedirectException(Exception):
     def __init__(self, url: str):
-        self.url = url
+        self.url = _web_url(url)
+
+
+_WEB_ROUTES = (
+    "/signup", "/login", "/logout", "/jobs", "/talent",
+    "/dashboard", "/profile", "/recruiter", "/matching",
+    "/messages", "/tools",
+)
+
+
+def _web_url(url: str) -> str:
+    """Keep legacy web redirects inside the /app mount."""
+    if any(url == route or url.startswith(route + "/") or
+           url.startswith(route + "?") for route in _WEB_ROUTES):
+        return "/app" + url
+    return url
 
 
 # --- Session cookie helpers ------------------------------------------------
@@ -91,7 +106,7 @@ def _user_from_request(request: Request, db: Session) -> Optional[User]:
     if payload.get("type") != ACCESS_TOKEN:
         return None
     user = db.get(User, payload.get("sub"))
-    if not user or user.deleted_at is not None or user.status == UserStatus.suspended:
+    if not user or user.deleted_at is not None or user.status != UserStatus.active:
         return None
     # Single active session: a cookie whose login was superseded elsewhere is
     # treated as signed out (the web guard then redirects to /login).
@@ -131,7 +146,7 @@ def _pop_flash(request: Request):
 
 
 def redirect(url: str, flash: str | None = None, kind: str = "success", status: int = 303):
-    resp = RedirectResponse(url, status_code=status)
+    resp = RedirectResponse(_web_url(url), status_code=status)
     if flash:
         _set_flash(resp, flash, kind)
     return resp
