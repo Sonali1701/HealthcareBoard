@@ -654,6 +654,11 @@ def _provider_conditions(
                       Profile.is_listable.is_(True),
                       Profile.job_category.isnot(None),
                       func.length(func.trim(Profile.job_category)) > 0,
+                      ~Profile.job_category.in_((
+                          "Other / Unclassified", "IT & Engineering",
+                          "Administrative & Management",
+                          "Business, Sales & Other Non-clinical",
+                      )),
                       Profile.specialty.isnot(None),
                       func.length(func.trim(Profile.specialty)) > 0,
                       or_(Profile.screen_reason.is_(None),
