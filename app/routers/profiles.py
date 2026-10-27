@@ -657,6 +657,7 @@ def _provider_conditions(
                       ~Profile.job_category.in_((
                           "Other / Unclassified", "IT & Engineering",
                           "Administrative & Management",
+                          "Administrative / Non-Clinical",
                           "Business, Sales & Other Non-clinical",
                       )),
                       Profile.specialty.isnot(None),
