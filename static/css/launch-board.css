@@ -99,6 +99,7 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 .cell-id{min-width:0}
 .cell-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:600;color:var(--ink)}
 .provider-npi{font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap}
+.rz-name .provider-npi{display:inline-block;margin-left:8px;vertical-align:middle}
 .cell-sub{color:var(--faint);font-size:13px;margin-top:2px}
 /* Marks a name that is still withheld until the contact is revealed.
    font-weight must stay 900 — Font Awesome 6 Free renders solid (fas) glyphs

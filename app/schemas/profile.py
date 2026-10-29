@@ -175,7 +175,7 @@ class ProfileCardOut(BaseModel):
     masked_name: str
     initials: str
     is_released: bool = False
-    # Populated only once released.
+    # NPI is public; name and contact are populated only once released.
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     npi_number: Optional[str] = None

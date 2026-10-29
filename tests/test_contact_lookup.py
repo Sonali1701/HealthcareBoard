@@ -30,6 +30,7 @@ from app.models import AuditLog, Profile, User
 from app.models.enums import UserRole
 from app.services import credits as credit_service
 from app.services import quick_sourcer as qs
+from app.routers.profiles import _profile_card
 
 MATCH = qs.ContactMatch(
     found=True, candidate_id=5, name="Joseph Michael Antario",
@@ -196,6 +197,19 @@ class ContactLookupTests(unittest.TestCase):
         self.assertEqual(revealed.status_code, 200, revealed.text)
         still_visible = self.client.get(f"/api/profiles/{self.pid}/resume")
         self.assertEqual(still_visible.json()["npi_number"], "1234567890")
+
+    def test_misfiled_npi_is_shown_at_top_not_as_work_authorization(self):
+        self.profile.npi_number = None
+        self.profile.work_authorization = "NPI: 1043204035"
+        self.db.commit()
+
+        resume = self.client.get(f"/api/profiles/{self.pid}/resume").json()
+        self.assertEqual(resume["npi_number"], "1043204035")
+        self.assertIsNone(resume["work_authorization"])
+        self.assertEqual(
+            _profile_card(self.profile, released=False)["npi_number"],
+            "1043204035",
+        )
 
     @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
     def test_an_empty_balance_stops_the_lookup_being_saved(self):

@@ -483,6 +483,23 @@ def _entitled_to_resume(db, user, profile: Profile) -> bool:
     return _manages_application_from(db, user, profile)
 
 
+_MISFILED_NPI_RE = re.compile(r"^\s*NPI\s*:?\s*(\d{10})\s*$", re.IGNORECASE)
+
+
+def _public_npi(profile: Profile) -> str | None:
+    """Return the NPI, including old enrichment rows that stored it as work auth."""
+    stored = str(profile.npi_number or "").strip()
+    if stored:
+        return stored
+    match = _MISFILED_NPI_RE.fullmatch(str(profile.work_authorization or ""))
+    return match.group(1) if match else None
+
+
+def _public_work_authorization(profile: Profile) -> str | None:
+    value = str(profile.work_authorization or "").strip()
+    return None if _MISFILED_NPI_RE.fullmatch(value) else (value or None)
+
+
 def _profile_card(profile: Profile, *, released: bool) -> dict:
     """Serialise a directory row, including identity only when released."""
     card = {
@@ -490,7 +507,7 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
         "masked_name": _masked_name(profile),
         "initials": _initials(profile),
         "is_released": released,
-        "npi_number": profile.npi_number,
+        "npi_number": _public_npi(profile),
         "has_email": bool(profile.email),
         "has_phone": bool(profile.phone),
         "has_resume_file": bool((profile.resume_url or "").strip()),
@@ -572,8 +589,9 @@ def _render_uniform_resume(profile: Profile, lines: list[str]) -> str:
         meta.append(f'<i class="fas fa-location-dot"></i> {e(loc)}')
     if profile.years_experience:
         meta.append(f'{profile.years_experience} yrs experience')
-    if getattr(profile, "npi_number", None):
-        meta.append(f'NPI {e(profile.npi_number)}')
+    public_npi = _public_npi(profile)
+    if public_npi:
+        meta.append(f'NPI {e(public_npi)}')
     contact = []
     if profile.email:
         contact.append(f'<i class="fas fa-envelope"></i> {e(profile.email)}')
@@ -1979,6 +1997,7 @@ def get_profile(profile_id: str, db: DbSession, user: CurrentUser):
     # would risk an autoflush writing the masked name back to the database.
     masked = _masked_name(profile).split(" ")
     detail = ProfileDetail.model_validate(profile)
+    detail.npi_number = _public_npi(profile)
     detail.first_name = masked[0] if masked else "?"
     detail.last_name = masked[1] if len(masked) > 1 else ""
     # Withhold directly identifying / reachable fields, while NPI remains public.
@@ -2066,7 +2085,7 @@ def _released_contact_payload(profile: Profile, user: CurrentUser, now,
         "first_name": profile.first_name,
         "last_name": profile.last_name,
         "name": _display_name(profile),
-        "npi_number": profile.npi_number,
+        "npi_number": _public_npi(profile),
         "email": profile.email,
         "phone": profile.phone,
         "contact_updated_by_email": profile.contact_updated_by_email,
@@ -2430,7 +2449,7 @@ async def lookup_profile_contact(
         "first_name": profile.first_name,
         "last_name": profile.last_name,
         "name": _display_name(profile),
-        "npi_number": profile.npi_number,
+        "npi_number": _public_npi(profile),
         "email": profile.email,
         "phone": profile.phone,
         "contact_updated_by_email": profile.contact_updated_by_email,
@@ -2530,7 +2549,7 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
     return {
         "name": name,
         "withheld": not revealed,
-        "npi_number": profile.npi_number,
+        "npi_number": _public_npi(profile),
         "credential": profile.profession_type,
         "role": role,
         "location": ", ".join(b for b in (profile.city, profile.state_code) if b),
@@ -2550,7 +2569,7 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
         "has_compact": any(l["compact"] for l in licenses),
         "work_history": work_history,
         "education": profile.education or [],
-        "work_authorization": profile.work_authorization,
+        "work_authorization": _public_work_authorization(profile),
         "available_date": (profile.available_date.isoformat()
                            if profile.available_date else None),
     }

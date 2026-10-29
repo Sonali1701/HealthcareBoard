@@ -3085,8 +3085,7 @@
     return `<div class="rz">
       <div class="rz-head">
         <div class="rz-avatar">${esc(ini)}</div>
-        <div class="rz-id"><div class="rz-name">${esc(r.name)}${r.withheld ? `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>` : ""}</div>
-          ${r.npi_number ? `<div class="rz-sub"><strong>NPI ${esc(r.npi_number)}</strong></div>` : ""}
+        <div class="rz-id"><div class="rz-name">${esc(r.name)}${r.npi_number ? `<span class="provider-npi">NPI ${esc(r.npi_number)}</span>` : ""}${r.withheld ? `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>` : ""}</div>
           <div class="rz-sub">${esc([r.role, r.location].filter(Boolean).join("  ·  ")) || "Healthcare provider"}</div></div>
         ${r.can_download
           ? `<button class="btn small rz-download" data-download-resume="${esc(r.download_url)}" data-resume-name="${esc(r.name || "resume")}" title="Download the original resume file"><i class="fas fa-download"></i>Download</button>`

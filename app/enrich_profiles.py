@@ -140,6 +140,14 @@ def _clean(v, n):
     return str(v or "").strip()[:n] or None
 
 
+def _work_authorization(v):
+    """Accept work status only; reject identifiers misclassified by the model."""
+    value = _clean(v, 80)
+    if not value or re.fullmatch(r"NPI\s*:?\s*\d{10}", value, re.IGNORECASE):
+        return None
+    return value
+
+
 def _normalise(raw: dict | None) -> dict | None:
     """Validate the model JSON into rows we can safely persist, or None."""
     if not isinstance(raw, dict):
@@ -211,7 +219,7 @@ def _normalise(raw: dict | None) -> dict | None:
         "licenses": licenses,
         "work_history": work,
         "education": education,
-        "work_authorization": _clean(raw.get("work_authorization"), 80),
+        "work_authorization": _work_authorization(raw.get("work_authorization")),
         "available_date": available_date,
         "years_experience": _int(raw.get("years_experience")),
         "specialty": _clean(raw.get("primary_specialty"), 100),

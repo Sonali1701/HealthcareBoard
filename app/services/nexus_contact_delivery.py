@@ -22,12 +22,19 @@ class NexusWriteUncertain(RuntimeError):
 
 
 def _snapshot(profile: Profile) -> dict:
+    npi = (profile.npi_number or "").strip()
+    if not npi:
+        match = re.fullmatch(
+            r"\s*NPI\s*:?\s*(\d{10})\s*", profile.work_authorization or "",
+            re.IGNORECASE,
+        )
+        npi = match.group(1) if match else ""
     return {
         "first_name": (profile.first_name or "").strip(),
         "last_name": (profile.last_name or "").strip(),
         "email": (profile.email or "").strip(),
         "phone": (profile.phone or "").strip(),
-        "npi": (profile.npi_number or "").strip(),
+        "npi": npi,
         "city": (profile.city or "").strip(),
         "state": (profile.state_code or "").strip(),
         "zip": (profile.zip_code or "").strip(),
