@@ -55,7 +55,10 @@ class ContactLookupTests(unittest.TestCase):
                          role=UserRole.recruiter)
         self.db.add(self.user)
         self.profile = Profile(first_name="Joseph", last_name="Antario",
-                               city="Nazareth", state_code="PA")
+                               city="Nazareth", state_code="PA",
+                               npi_number="1234567890",
+                               resume_url="uploads/joseph.pdf",
+                               resume_sections={"sections": {"Professional Summary": ["Clinician"]}})
         self.db.add(self.profile)
         self.db.commit()
         self.pid = self.profile.profile_id
@@ -156,6 +159,43 @@ class ContactLookupTests(unittest.TestCase):
         self.profile.email = self.profile.phone = None
         self.db.commit()
         self.assertEqual(self._lookup().json()["credits_charged"], 0)
+
+    @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
+    def test_bulk_reveal_charges_once_for_each_new_candidate(self):
+        second = Profile(first_name="Taylor", last_name="Morgan",
+                         city="Austin", state_code="TX", npi_number="0987654321")
+        self.db.add(second)
+        credit_service.get_account(self.db, self.user.user_id)
+        self.db.commit()
+        before = credit_service.balance(self.db, self.user.user_id)
+
+        response = self.client.post("/api/profiles/contact-release/bulk", json={
+            "profile_ids": [self.pid, second.profile_id],
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["newly_released"], 2)
+        self.assertEqual(body["credits_charged"], 2)
+        self.assertEqual(credit_service.balance(self.db, self.user.user_id), before - 2)
+        self.assertEqual({item["npi_number"] for item in body["items"]},
+                         {"1234567890", "0987654321"})
+
+        repeated = self.client.post("/api/profiles/contact-release/bulk", json={
+            "profile_ids": [self.pid, second.profile_id],
+        }).json()
+        self.assertEqual(repeated["newly_released"], 0)
+        self.assertEqual(repeated["credits_charged"], 0)
+        self.assertEqual(credit_service.balance(self.db, self.user.user_id), before - 2)
+
+    def test_resume_hides_npi_until_contact_is_revealed(self):
+        hidden = self.client.get(f"/api/profiles/{self.pid}/resume")
+        self.assertEqual(hidden.status_code, 200, hidden.text)
+        self.assertIsNone(hidden.json()["npi_number"])
+
+        revealed = self.client.post(f"/api/profiles/{self.pid}/contact-release")
+        self.assertEqual(revealed.status_code, 200, revealed.text)
+        visible = self.client.get(f"/api/profiles/{self.pid}/resume")
+        self.assertEqual(visible.json()["npi_number"], "1234567890")
 
     @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
     def test_an_empty_balance_stops_the_lookup_being_saved(self):

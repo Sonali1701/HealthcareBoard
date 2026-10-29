@@ -1429,7 +1429,7 @@
         <div class="cell-user">
           <span class="avatar">${esc(p.initials || initials(p.first_name, p.last_name))}</span>
           <div class="cell-id">
-            <div class="cell-name">${esc(displayName(p))}${isRevealed(p.profile_id) ? "" : `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>`}</div>
+            <div class="cell-name">${esc(displayName(p))}${isRevealed(p.profile_id) && p.npi_number ? `<span class="provider-npi">NPI ${esc(p.npi_number)}</span>` : ""}${isRevealed(p.profile_id) ? "" : `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>`}</div>
             <div class="cell-sub">${esc(specialty)}</div>
           </div>
         </div>
@@ -3086,6 +3086,7 @@
       <div class="rz-head">
         <div class="rz-avatar">${esc(ini)}</div>
         <div class="rz-id"><div class="rz-name">${esc(r.name)}${r.withheld ? `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>` : ""}</div>
+          ${r.npi_number ? `<div class="rz-sub"><strong>NPI ${esc(r.npi_number)}</strong></div>` : ""}
           <div class="rz-sub">${esc([r.role, r.location].filter(Boolean).join("  ·  ")) || "Healthcare provider"}</div></div>
         ${r.can_download
           ? `<button class="btn small rz-download" data-download-resume="${esc(r.download_url)}" data-resume-name="${esc(r.name || "resume")}" title="Download the original resume file"><i class="fas fa-download"></i>Download</button>`
@@ -4106,6 +4107,8 @@
     };
     const bulkPool = $("#bulk-to-pool");
     if (bulkPool) bulkPool.onclick = bulkAddToPool;
+    const bulkReveal = $("#bulk-reveal");
+    if (bulkReveal) bulkReveal.onclick = bulkRevealContacts;
     const bulkClear = $("#bulk-clear");
     if (bulkClear) bulkClear.onclick = clearSelection;
     const pfEdit = $("#profile-edit");
@@ -5786,6 +5789,48 @@
     if (!ids.length) return;
     await addMatchesToPool(ids);      // same pool picker the sourcing page uses
     clearSelection();
+  }
+  async function bulkRevealContacts(){
+    const ids = [...S.selected];
+    if (!ids.length) return;
+    const unrevealed = ids.filter(id => !S.releasedContacts.has(id));
+    if (!unrevealed.length) {
+      toast("All selected contacts are already revealed.", {kind:"info"});
+      clearSelection();
+      return;
+    }
+    if (!window.confirm(`Reveal ${unrevealed.length} selected contact${unrevealed.length === 1 ? "" : "s"}? This uses ${unrevealed.length} credit${unrevealed.length === 1 ? "" : "s"}.`)) return;
+    const button = $("#bulk-reveal");
+    const original = button ? button.innerHTML : "";
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner sm"></span>Revealing…';
+    }
+    try {
+      const result = await post("/api/profiles/contact-release/bulk", {profile_ids:ids});
+      (result.items || []).forEach(released => {
+        S.releasedContacts.set(released.profile_id, released);
+        if (S.providerCards.has(released.profile_id)) {
+          S.providerCards.set(released.profile_id, {...S.providerCards.get(released.profile_id), ...released});
+        }
+        if (S.providerLastData) {
+          const items = S.providerLastData.items || [];
+          const index = items.findIndex(item => item.profile_id === released.profile_id);
+          if (index >= 0) items[index] = {...items[index], ...released};
+        }
+      });
+      if (S.providerLastData) renderProviderPage(S.providerLastData);
+      clearSelection();
+      refreshCredits();
+      toast(`${result.newly_released || 0} contact${result.newly_released === 1 ? "" : "s"} revealed. ${result.credits_charged || 0} credit${result.credits_charged === 1 ? "" : "s"} used.`, {kind:"ok"});
+    } catch(e) {
+      toast(e.message || "The selected contacts could not be revealed.", {title:"Bulk reveal failed", kind:"err"});
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.innerHTML = original;
+      }
+    }
   }
 
   // --- Candidate matching (sourcing for a req) -----------------------------

@@ -62,6 +62,10 @@ class ProfileContactUpdate(BaseModel):
     phone: Optional[str] = None
 
 
+class BulkContactRelease(BaseModel):
+    profile_ids: list[str]
+
+
 class CopilotQuery(BaseModel):
     message: str
     # Filters from the previous turn, so a follow-up refines instead of restarting
@@ -506,6 +510,7 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
         card.update(
             first_name=profile.first_name,
             last_name=profile.last_name,
+            npi_number=profile.npi_number,
             email=profile.email,
             phone=profile.phone,
             contact_updated_by_email=profile.contact_updated_by_email,
@@ -2053,6 +2058,120 @@ def _stored_sections(profile: Profile, drop: set) -> "OrderedDict[str, list[str]
     return kept or None
 
 
+def _released_contact_payload(profile: Profile, user: CurrentUser, now,
+                              charge_result: dict | None = None) -> dict:
+    charge_result = charge_result or {"cost": 0, "balance": None}
+    return {
+        "profile_id": profile.profile_id,
+        "first_name": profile.first_name,
+        "last_name": profile.last_name,
+        "name": _display_name(profile),
+        "npi_number": profile.npi_number,
+        "email": profile.email,
+        "phone": profile.phone,
+        "contact_updated_by_email": profile.contact_updated_by_email,
+        "is_released": True,
+        "released_at": now.isoformat(),
+        "released_by_email": user.email,
+        "credits_charged": charge_result.get("cost", 0),
+        "credits_remaining": charge_result.get("balance"),
+    }
+
+
+@router.post("/contact-release/bulk")
+def release_profile_contacts_bulk(
+    body: BulkContactRelease,
+    request: Request,
+    user: CurrentUser,
+    db: DbSession,
+):
+    """Reveal several selected providers in one atomic, per-provider charge."""
+    _require_provider_directory_access(user)
+    profile_ids = list(dict.fromkeys(pid.strip() for pid in body.profile_ids if pid.strip()))
+    if not profile_ids:
+        raise HTTPException(status_code=422, detail="Select at least one provider")
+    if len(profile_ids) > 100:
+        raise HTTPException(status_code=422, detail="Reveal at most 100 providers at a time")
+
+    profiles = db.scalars(select(Profile).where(Profile.profile_id.in_(profile_ids))).all()
+    by_id = {profile.profile_id: profile for profile in profiles}
+    missing = [pid for pid in profile_ids if pid not in by_id]
+    if missing:
+        raise HTTPException(status_code=404, detail="One or more selected providers no longer exist")
+
+    released_ids = _released_profile_ids(db, user, profile_ids)
+    to_release = [
+        by_id[pid] for pid in profile_ids
+        if pid not in released_ids
+        and not bool(by_id[pid].user_id and by_id[pid].user_id == user.user_id)
+    ]
+    charge_by_id: dict[str, dict] = {}
+    total_charged = 0
+    remaining = None
+
+    if settings.credits_enabled and to_release:
+        from ..models import COST_REVEAL_CONTACT
+        from ..services import credits as credit_service
+        unit_cost = credit_service.cost_of(COST_REVEAL_CONTACT)
+        account = credit_service.get_account(db, user.user_id)
+        required = unit_cost * len(to_release)
+        available = account.balance if account else 0
+        if available < required:
+            db.rollback()
+            raise HTTPException(
+                status_code=402,
+                detail=(f"You need {required} credits to reveal {len(to_release)} selected "
+                        f"candidates and have {available}. Top up to continue."),
+            )
+        try:
+            for profile in to_release:
+                result = credit_service.charge(
+                    db, user.user_id, COST_REVEAL_CONTACT,
+                    entity_type="profile", entity_id=profile.profile_id,
+                    idempotency_key=f"reveal:{user.user_id}:{profile.profile_id}",
+                    note="Bulk contact release",
+                )
+                charge_by_id[profile.profile_id] = result
+                total_charged += result.get("cost", 0)
+                remaining = result.get("balance")
+        except credit_service.InsufficientCredits as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=402,
+                detail="Your credit balance changed. No selected contacts were revealed; try again.",
+            ) from exc
+
+    now = utcnow()
+    ip_address = request.client.host if request.client else None
+    for profile in to_release:
+        db.add(AuditLog(
+            actor_user_id=user.user_id,
+            action=RELEASE_ACTION,
+            entity_type="profile",
+            entity_id=profile.profile_id,
+            meta={
+                "via": "bulk_release",
+                "email_available": bool(profile.email),
+                "phone_available": bool(profile.phone),
+            },
+            ip_address=ip_address,
+        ))
+    db.commit()
+
+    items = [
+        _released_contact_payload(by_id[pid], user, now, charge_by_id.get(pid))
+        for pid in profile_ids
+    ]
+    return {
+        "items": items,
+        "selected": len(profile_ids),
+        "newly_released": len(to_release),
+        "already_released": len(profile_ids) - len(to_release),
+        "credits_charged": total_charged,
+        "credits_remaining": remaining,
+    }
+
+
 @router.post("/{profile_id}/contact-release")
 def release_profile_contact(
     profile_id: str,
@@ -2092,7 +2211,7 @@ def release_profile_contact(
     db.add(
         AuditLog(
             actor_user_id=user.user_id,
-            action="provider_contact_released",
+            action=RELEASE_ACTION,
             entity_type="profile",
             entity_id=profile.profile_id,
             meta={
@@ -2106,20 +2225,7 @@ def release_profile_contact(
 
     # The release is what unlocks identity, so the real name comes back here —
     # it is deliberately absent from the directory listing until this point.
-    return {
-        "profile_id": profile.profile_id,
-        "first_name": profile.first_name,
-        "last_name": profile.last_name,
-        "name": _display_name(profile),
-        "email": profile.email,
-        "phone": profile.phone,
-        "contact_updated_by_email": profile.contact_updated_by_email,
-        "is_released": True,
-        "released_at": now.isoformat(),
-        "released_by_email": user.email,
-        "credits_charged": charge_result.get("cost", 0),
-        "credits_remaining": charge_result.get("balance"),
-    }
+    return _released_contact_payload(profile, user, now, charge_result)
 
 
 # --- External contact lookup (Quick Sourcer) ------------------------------
@@ -2318,6 +2424,7 @@ async def lookup_profile_contact(
         "first_name": profile.first_name,
         "last_name": profile.last_name,
         "name": _display_name(profile),
+        "npi_number": profile.npi_number,
         "email": profile.email,
         "phone": profile.phone,
         "contact_updated_by_email": profile.contact_updated_by_email,
@@ -2417,6 +2524,7 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
     return {
         "name": name,
         "withheld": not revealed,
+        "npi_number": profile.npi_number if revealed else None,
         "credential": profile.profession_type,
         "role": role,
         "location": ", ".join(b for b in (profile.city, profile.state_code) if b),

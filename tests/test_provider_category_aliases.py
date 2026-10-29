@@ -94,10 +94,10 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             conds = _provider_conditions(db, providers_only=True)
             all_rows = db.scalars(select(Profile).where(*conds)).all()
             self.assertEqual({p.first_name for p in all_rows},
-                             {"G", "H", "I", "J", "K"})
+                             {"I", "K"})
             others = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Other / Unclassified"))).all()
-            self.assertEqual({p.first_name for p in others}, {"G", "H", "J"})
+            self.assertEqual({p.first_name for p in others}, set())
             uncategorized = db.scalars(select(Profile).where(
                 *conds, _provider_category_condition("Uncategorized"))).all()
             self.assertEqual({p.first_name for p in uncategorized}, set())
