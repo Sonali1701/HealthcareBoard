@@ -43,6 +43,7 @@ from .organization_team import (
 )
 from .zoom_integration import ZoomOrganizationIntegration
 from .ats_integration import AtsOrganizationIntegration
+from .nexus_delivery import NexusContactDelivery
 from .contact_backfill import ProfileContactBackfill
 from .enums import (
     ApplicationStatus,
@@ -110,6 +111,7 @@ __all__ = [
     "MedhuntSmsSender", "MedhuntMessagingPermission",
     "OrganizationTeam", "OrganizationTeamMember",
     "ZoomOrganizationIntegration", "AtsOrganizationIntegration",
+    "NexusContactDelivery",
     "ProfileContactBackfill",
     # outreach
     "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",

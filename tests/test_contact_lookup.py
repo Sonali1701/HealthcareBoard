@@ -187,15 +187,15 @@ class ContactLookupTests(unittest.TestCase):
         self.assertEqual(repeated["credits_charged"], 0)
         self.assertEqual(credit_service.balance(self.db, self.user.user_id), before - 2)
 
-    def test_resume_hides_npi_until_contact_is_revealed(self):
-        hidden = self.client.get(f"/api/profiles/{self.pid}/resume")
-        self.assertEqual(hidden.status_code, 200, hidden.text)
-        self.assertIsNone(hidden.json()["npi_number"])
+    def test_resume_shows_npi_before_contact_is_revealed(self):
+        visible = self.client.get(f"/api/profiles/{self.pid}/resume")
+        self.assertEqual(visible.status_code, 200, visible.text)
+        self.assertEqual(visible.json()["npi_number"], "1234567890")
 
         revealed = self.client.post(f"/api/profiles/{self.pid}/contact-release")
         self.assertEqual(revealed.status_code, 200, revealed.text)
-        visible = self.client.get(f"/api/profiles/{self.pid}/resume")
-        self.assertEqual(visible.json()["npi_number"], "1234567890")
+        still_visible = self.client.get(f"/api/profiles/{self.pid}/resume")
+        self.assertEqual(still_visible.json()["npi_number"], "1234567890")
 
     @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
     def test_an_empty_balance_stops_the_lookup_being_saved(self):

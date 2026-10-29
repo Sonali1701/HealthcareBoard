@@ -1429,7 +1429,7 @@
         <div class="cell-user">
           <span class="avatar">${esc(p.initials || initials(p.first_name, p.last_name))}</span>
           <div class="cell-id">
-            <div class="cell-name">${esc(displayName(p))}${isRevealed(p.profile_id) && p.npi_number ? `<span class="provider-npi">NPI ${esc(p.npi_number)}</span>` : ""}${isRevealed(p.profile_id) ? "" : `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>`}</div>
+            <div class="cell-name">${esc(displayName(p))}${p.npi_number ? `<span class="provider-npi">NPI ${esc(p.npi_number)}</span>` : ""}${isRevealed(p.profile_id) ? "" : `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>`}</div>
             <div class="cell-sub">${esc(specialty)}</div>
           </div>
         </div>

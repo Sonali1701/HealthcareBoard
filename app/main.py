@@ -94,9 +94,12 @@ async def lifespan(app: FastAPI):
     ensure_admin()
     ensure_enterprise_organization_data()
     usage_task = None
+    nexus_task = None
     if settings.weekly_usage_emails_enabled:
         from .services.weekly_usage_reports import scheduler
         usage_task = asyncio.create_task(scheduler())
+    from .services.nexus_contact_delivery import scheduler as nexus_scheduler
+    nexus_task = asyncio.create_task(nexus_scheduler())
     try:
         yield
     finally:
@@ -104,6 +107,10 @@ async def lifespan(app: FastAPI):
             usage_task.cancel()
             with suppress(asyncio.CancelledError):
                 await usage_task
+        if nexus_task:
+            nexus_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await nexus_task
 
 
 app = FastAPI(

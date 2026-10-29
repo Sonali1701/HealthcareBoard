@@ -490,6 +490,7 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
         "masked_name": _masked_name(profile),
         "initials": _initials(profile),
         "is_released": released,
+        "npi_number": profile.npi_number,
         "has_email": bool(profile.email),
         "has_phone": bool(profile.phone),
         "has_resume_file": bool((profile.resume_url or "").strip()),
@@ -510,7 +511,6 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
         card.update(
             first_name=profile.first_name,
             last_name=profile.last_name,
-            npi_number=profile.npi_number,
             email=profile.email,
             phone=profile.phone,
             contact_updated_by_email=profile.contact_updated_by_email,
@@ -1981,16 +1981,16 @@ def get_profile(profile_id: str, db: DbSession, user: CurrentUser):
     detail = ProfileDetail.model_validate(profile)
     detail.first_name = masked[0] if masked else "?"
     detail.last_name = masked[1] if len(masked) > 1 else ""
-    # Withhold every identifying / directly-reachable field, not just name+email.
+    # Withhold directly identifying / reachable fields, while NPI remains public.
     # Leaving resume_url here let a recruiter open the raw résumé (real name,
     # phone, e-mail) without ever paying to reveal the contact; bio, exact
-    # lat/lng, NPI and the photo are identity too. City/state/specialty stay so
+    # lat/lng and the photo are identity too. City/state/specialty and the
+    # public NPI stay so
     # the row is still useful while masked.
     detail.email = None
     detail.phone = None
     detail.resume_url = None
     detail.profile_photo_url = None
-    detail.npi_number = None
     detail.bio = None
     detail.lat = None
     detail.lng = None
@@ -2156,6 +2156,8 @@ def release_profile_contacts_bulk(
             },
             ip_address=ip_address,
         ))
+    from ..services import nexus_contact_delivery
+    nexus_contact_delivery.enqueue_many(db, user, profiles)
     db.commit()
 
     items = [
@@ -2221,6 +2223,8 @@ def release_profile_contact(
             ip_address=request.client.host if request.client else None,
         )
     )
+    from ..services import nexus_contact_delivery
+    nexus_contact_delivery.enqueue(db, user, profile)
     db.commit()
 
     # The release is what unlocks identity, so the real name comes back here —
@@ -2413,6 +2417,8 @@ async def lookup_profile_contact(
                   "phone_available": bool(profile.phone)},
             ip_address=request.client.host if request.client else None,
         ))
+    from ..services import nexus_contact_delivery
+    nexus_contact_delivery.enqueue(db, user, profile)
     db.commit()
     db.refresh(profile)
 
@@ -2524,7 +2530,7 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
     return {
         "name": name,
         "withheld": not revealed,
-        "npi_number": profile.npi_number if revealed else None,
+        "npi_number": profile.npi_number,
         "credential": profile.profession_type,
         "role": role,
         "location": ", ".join(b for b in (profile.city, profile.state_code) if b),
