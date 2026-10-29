@@ -14,9 +14,11 @@ from sqlalchemy.exc import IntegrityError
 
 from ..database import SessionLocal, utcnow
 from ..models import AtsOrganizationIntegration, NexusContactDelivery, Profile, User
-from . import ats_connections
+from . import ats_connections, storage
 
 logger = logging.getLogger("healthboard.nexus_contact_delivery")
+
+
 class NexusWriteUncertain(RuntimeError):
     """A candidate create failed and cannot be retried without duplicate risk."""
 
@@ -40,6 +42,7 @@ def _snapshot(profile: Profile) -> dict:
         "zip": (profile.zip_code or "").strip(),
         "profession": (profile.profession_type or profile.provider_category or "").strip(),
         "specialty": (profile.specialty or profile.job_category or "").strip(),
+        "resume_url": (profile.resume_url or "").strip(),
     }
 
 
@@ -263,6 +266,20 @@ def _pdf(identity: Mapping[str, Any]) -> bytes:
     return bytes(data)
 
 
+def _resume_attachment(identity: Mapping[str, Any]) -> tuple[str, bytes]:
+    """Use the original PDF when available; otherwise create a safe summary."""
+    resume_url = str(identity.get("resume_url") or "").strip()
+    if resume_url:
+        try:
+            key, is_local = storage.key_from_url(resume_url)
+            content = storage.download_bytes(key, prefer_local=is_local)
+            if content.startswith(b"%PDF-") and len(content) <= 10 * 1024 * 1024:
+                return "MedHunt_Provider_Resume.pdf", content
+        except Exception:  # missing/non-PDF files use the generated summary
+            logger.info("Original resume unavailable for Nexus; using provider summary")
+    return "MedHunt_Provider_Profile.pdf", _pdf(identity)
+
+
 def _candidate_id(response: httpx.Response) -> str | None:
     try:
         body = response.json()
@@ -288,12 +305,12 @@ def _deliver(delivery: NexusContactDelivery, integration: AtsOrganizationIntegra
         if email_matches or phone_matches:
             return "already_present", None
         profile = _profile_payload(client, identity, values.get("default_profile") or {})
-        content = _pdf(identity)
+        filename, content = _resume_attachment(identity)
         try:
             response = client.request(
                 "POST", "/api/api-integration/v1/candidate/webhook/create",
                 data={"profileData": json.dumps(profile, separators=(",", ":"))},
-                files=[("profile", ("MedHunt_Provider_Profile.pdf", content, "application/pdf"))],
+                files=[("profile", (filename, content, "application/pdf"))],
             )
         except httpx.HTTPError as exc:
             raise NexusWriteUncertain("Nexus candidate creation needs manual review") from exc

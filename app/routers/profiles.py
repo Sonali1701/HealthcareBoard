@@ -500,6 +500,36 @@ def _public_work_authorization(profile: Profile) -> str | None:
     return None if _MISFILED_NPI_RE.fullmatch(value) else (value or None)
 
 
+def _structured_value(value) -> str | None:
+    text = str(value or "").strip()
+    if not text or not re.search(r"[A-Za-z0-9]", text):
+        return None
+    if text.casefold() in {"n/a", "na", "none", "null", "unknown", "not listed"}:
+        return None
+    return text
+
+
+def _public_education(profile: Profile) -> list[dict]:
+    cleaned = []
+    for raw in profile.education or []:
+        if not isinstance(raw, dict):
+            continue
+        institution = _structured_value(raw.get("institution"))
+        degree = _structured_value(raw.get("degree"))
+        field = _structured_value(raw.get("field"))
+        # A year by itself is not an education record and produced the stray
+        # "1994" seen in legacy resumes.
+        if not (institution or degree or field):
+            continue
+        cleaned.append({
+            "institution": institution,
+            "degree": degree,
+            "field": field,
+            "year": raw.get("year"),
+        })
+    return cleaned
+
+
 def _profile_card(profile: Profile, *, released: bool) -> dict:
     """Serialise a directory row, including identity only when released."""
     card = {
@@ -2534,12 +2564,21 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
                  "compact": bool(l.is_compact),
                  "expiry": l.expiry_date.isoformat() if l.expiry_date else None}
                 for l in profile.licenses]
-    work_history = [{"employer": w.employer_name, "title": w.job_title,
-                     "specialty": w.specialty, "type": w.employment_type,
-                     "location": ", ".join(x for x in (w.city, w.state_code) if x),
-                     "start": w.start_date.isoformat()[:7] if w.start_date else None,
-                     "end": w.end_date.isoformat()[:7] if w.end_date else None}
-                    for w in profile.work_history]
+    work_history = []
+    for w in profile.work_history:
+        employer = _structured_value(w.employer_name)
+        title = _structured_value(w.job_title)
+        if not (employer or title):
+            continue
+        work_history.append({
+            "employer": employer,
+            "title": title,
+            "specialty": _structured_value(w.specialty),
+            "type": _structured_value(w.employment_type),
+            "location": ", ".join(x for x in (w.city, w.state_code) if x),
+            "start": w.start_date.isoformat()[:7] if w.start_date else None,
+            "end": w.end_date.isoformat()[:7] if w.end_date else None,
+        })
     licensed_states = sorted({l["state"] for l in licenses if l["state"]})
 
     # The original résumé file is downloadable only once the contact is revealed
@@ -2568,7 +2607,7 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
         "licensed_states": licensed_states,
         "has_compact": any(l["compact"] for l in licenses),
         "work_history": work_history,
-        "education": profile.education or [],
+        "education": _public_education(profile),
         "work_authorization": _public_work_authorization(profile),
         "available_date": (profile.available_date.isoformat()
                            if profile.available_date else None),

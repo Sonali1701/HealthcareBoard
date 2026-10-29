@@ -211,6 +211,19 @@ class ContactLookupTests(unittest.TestCase):
             "1043204035",
         )
 
+    def test_resume_removes_placeholder_only_education(self):
+        self.profile.education = [
+            {"institution": "—", "degree": "—", "field": None, "year": 1994},
+            {"institution": "State University", "degree": "BSN", "year": 2001},
+        ]
+        self.db.commit()
+
+        education = self.client.get(f"/api/profiles/{self.pid}/resume").json()["education"]
+        self.assertEqual(education, [{
+            "institution": "State University", "degree": "BSN",
+            "field": None, "year": 2001,
+        }])
+
     @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
     def test_an_empty_balance_stops_the_lookup_being_saved(self):
         credit_service.get_account(self.db, self.user.user_id)

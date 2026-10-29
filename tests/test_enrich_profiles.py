@@ -10,3 +10,8 @@ class EnrichmentValidationTests(unittest.TestCase):
     def test_real_work_authorization_is_preserved(self):
         result = _normalise({"work_authorization": "US Citizen"})
         self.assertEqual(result["work_authorization"], "US Citizen")
+
+    def test_placeholder_only_education_is_discarded(self):
+        self.assertIsNone(_normalise({
+            "education": [{"institution": "—", "degree": "—", "year": 1994}],
+        }))

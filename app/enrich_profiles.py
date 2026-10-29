@@ -140,6 +140,15 @@ def _clean(v, n):
     return str(v or "").strip()[:n] or None
 
 
+def _meaningful(v, n):
+    value = _clean(v, n)
+    if not value or not re.search(r"[A-Za-z0-9]", value):
+        return None
+    if value.casefold() in {"n/a", "na", "none", "null", "unknown", "not listed"}:
+        return None
+    return value
+
+
 def _work_authorization(v):
     """Accept work status only; reject identifiers misclassified by the model."""
     value = _clean(v, 80)
@@ -180,14 +189,14 @@ def _normalise(raw: dict | None) -> dict | None:
     for w in raw.get("work_history") or []:
         if not isinstance(w, dict):
             continue
-        emp = _clean(w.get("employer"), 200)
-        title = _clean(w.get("title"), 200)
+        emp = _meaningful(w.get("employer"), 200)
+        title = _meaningful(w.get("title"), 200)
         if not emp and not title:
             continue
         et = str(w.get("employment_type") or "").strip().lower().replace(" ", "_")
         work.append({
             "employer": emp or "—", "title": title or "—",
-            "specialty": _clean(w.get("specialty"), 100),
+            "specialty": _meaningful(w.get("specialty"), 100),
             "employment_type": et if et in {e.replace(" ", "_") for e in _EMP_TYPES} else None,
             "start": _pdate(w.get("start")), "end": _pdate(w.get("end")),
             "city": _clean(w.get("city"), 120), "state": _state(w.get("state")),
@@ -198,12 +207,12 @@ def _normalise(raw: dict | None) -> dict | None:
     for e in raw.get("education") or []:
         if not isinstance(e, dict):
             continue
-        inst = _clean(e.get("institution"), 160)
-        deg = _clean(e.get("degree"), 80)
+        inst = _meaningful(e.get("institution"), 160)
+        deg = _meaningful(e.get("degree"), 80)
         if not inst and not deg:
             continue
         education.append({"institution": inst, "degree": deg,
-                          "field": _clean(e.get("field"), 100),
+                          "field": _meaningful(e.get("field"), 100),
                           "year": _int(e.get("year"), lo=1950, hi=2035)})
     education = education[:10]
 
