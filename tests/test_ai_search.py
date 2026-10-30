@@ -33,6 +33,8 @@ class ProviderAiParsingTests(unittest.TestCase):
             ("nurse practitioners in Austin Texas", {"city": "austin", "state_code": "TX"}),
             ("providers with resumes", {"resume_status": "with_resume"}),
             ("providers without resumes", {"resume_status": "without_resume"}),
+            ("RNs in ZIP code 75001", {"zip": "75001"}),
+            ("RN within 25 miles of 75001", {"zip": "75001", "radius_mi": 25}),
             ("NPI 1234567890", {"npi_number": "1234567890"}),
             ("RN with both email and phone", {"contact_available": "both"}),
         )
@@ -79,10 +81,12 @@ class ProviderAiResultTests(unittest.TestCase):
         self.db.add_all([
             Profile(first_name="Ava", last_name="Lee", profession_type="RN",
                     specialty="ICU", job_category="Nursing", state_code="TX",
+                    zip_code="75001",
                     years_experience=10, resume_url="https://example.test/ava.pdf",
                     npi_number="1234567890", is_listable=True),
             Profile(first_name="Ben", last_name="Ray", profession_type="RN",
                     specialty="ICU", job_category="Nursing", state_code="CA",
+                    zip_code="95814",
                     years_experience=2, resume_url=None, npi_number="0987654321",
                     is_listable=True),
         ])
@@ -106,6 +110,7 @@ class ProviderAiResultTests(unittest.TestCase):
             npi_number="1234567890").one().profile_id)
         self.assertEqual(self.search("providers with resumes")["total"], 1)
         self.assertEqual(self.search("providers without resumes")["total"], 1)
+        self.assertEqual(self.search("RNs in ZIP code 75001")["total"], 1)
         self.assertEqual(self.search("NPI 0987654321")["total"], 1)
 
     def test_nonsense_and_conflicts_do_not_return_arbitrary_profiles(self):

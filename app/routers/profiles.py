@@ -802,6 +802,10 @@ def _provider_conditions(
             conds.append(Profile.lat.isnot(None))
             conds.append(func.earth_box(ec, radius_m).op("@>")(ep))
             conds.append(func.earth_distance(ec, ep) <= radius_m)
+    elif zip:
+        # Without a radius, a ZIP request means an exact postal-code match.
+        # Radius searches are handled above through the geocoded centre.
+        conds.append(Profile.zip_code == zip.strip()[:5])
     elif city:
         conds.append(func.lower(Profile.city).like(f"{city.strip().lower()}%"))
     if american_board:
@@ -1164,6 +1168,7 @@ _STOP_TOKENS = {
     "positions","working","work","live","living","reside","residing","new","search",
     "registered","mile","miles","mi","not","meant","sorry","actually",
     "between","exactly","without","resume","resumes","curriculum","vitae",
+    "zip","zipcode","postal","code",
 }
 
 
