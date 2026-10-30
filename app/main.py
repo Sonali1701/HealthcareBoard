@@ -284,6 +284,9 @@ def features():
         "contact_lookup": settings.quick_sourcer_ready,
         "credits": settings.credits_enabled,
         "payments": settings.payments_enabled,
+        "medhunt_backend": bool(
+            settings.medhunt_api_base_url and settings.medhunt_service_token
+        ),
     }
 
 

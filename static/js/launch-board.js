@@ -380,12 +380,13 @@
     showAdminTab(ADMIN.tab || "overview");
   }
   function showAdminTab(name){
+    if (!S.features.medhunt_backend && ["devices", "replies"].includes(name)) name = "overview";
     clearTimeout(adminApiMonitorTimer);
     adminApiMonitorTimer = null;
     ADMIN.tab = name;
     $$(".admin-tab").forEach(t => t.classList.toggle("active", t.dataset.atab === name));
     $$(".admin-panel").forEach(p => p.classList.toggle("active", p.id === "admin-" + (name === "orgs" ? "orgs" : name)));
-    if (name === "overview") { loadAdminOverview(); loadAdminApiMonitor(); }
+    if (name === "overview") { loadAdminOverview(); if (S.features.medhunt_backend) loadAdminApiMonitor(); }
     if (name === "users") loadAdminUsers();
     if (name === "orgs") loadAdminOrgs();
     if (name === "jobs") loadAdminJobs();
@@ -2246,9 +2247,9 @@
               <td>${Number(m.reveals).toLocaleString()}</td>
               <td>${Number(m.medhunt_enriched || 0).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
           <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your MedHunt administrator.</p></div>` : ""}
-        ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>SMS conversations</h2><p class="team-note">Review who contacted each candidate, see replies and recruiter follow-up, and reassign unanswered replies.</p><div id="org-medhunt-replies"></div></div>` : ""}
+        ${perms.analytics && S.features.medhunt_backend ? `<div class="an-section" style="margin-top:22px"><h2>SMS conversations</h2><p class="team-note">Review who contacted each candidate, see replies and recruiter follow-up, and reassign unanswered replies.</p><div id="org-medhunt-replies"></div></div>` : ""}
         ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>CEIPAL delivery activity</h2><p class="team-note">See which enriched candidates were added to CEIPAL, already existed there, or failed to upload.</p><div id="org-medhunt-ceipal"></div></div>` : ""}
-        ${perms.manage_roles ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
+        ${perms.manage_roles && S.features.medhunt_backend ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
       `;
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
       $$("#orgadmin-panel [data-ats-configure]").forEach(b => b.onclick = () => configureAtsIntegration(
@@ -2297,9 +2298,9 @@
         medhuntSmsSenderByUser.get(b.dataset.medhuntSmsSender) || {}));
       $$("#orgadmin-panel [data-medhunt-messaging-status]").forEach(b => b.onclick = () => setMedhuntMessagingStatus(
         b.dataset.medhuntMessagingUser, b.dataset.medhuntMessagingStatus, emp.employer_id));
-      if (perms.analytics) loadMedhuntReplies("#org-medhunt-replies", emp.employer_id);
+      if (perms.analytics && S.features.medhunt_backend) loadMedhuntReplies("#org-medhunt-replies", emp.employer_id);
       if (perms.analytics) loadMedhuntCeipalDeliveries("#org-medhunt-ceipal", emp.employer_id);
-      if (perms.manage_roles) loadMedhuntDevices("#org-medhunt-devices", emp.employer_id);
+      if (perms.manage_roles && S.features.medhunt_backend) loadMedhuntDevices("#org-medhunt-devices", emp.employer_id);
     } catch(e) { box.innerHTML = errorState("Could not load your organization.", e.message || ""); }
   }
 
@@ -6371,19 +6372,28 @@
   async function loadFeatures(){
     try { S.features = await get("/api/features") || {}; }
     catch(e) { S.features = {}; }   // unknown = off; nothing extra is offered
+    const medhuntReady = !!S.features.medhunt_backend;
+    const repliesNav = $('.nav-item[data-page="medhuntreplies"]');
+    if (repliesNav) repliesNav.classList.toggle("hidden", !medhuntReady);
+    $$('[data-atab="devices"], [data-atab="replies"]').forEach(
+      tab => tab.classList.toggle("hidden", !medhuntReady));
+    const monitor = $("#admin-api-monitor");
+    if (monitor) monitor.classList.toggle("hidden", !medhuntReady);
   }
-  function enterAppPages(){
+  async function enterAppPages(){
+    if (isRecruiter()) await loadFeatures();
     const requested = new URLSearchParams(location.search).get("page");
     const saved = localStorage.getItem("hb_page");
-    const initial = requested && document.getElementById("page-" + requested)
+    let initial = requested && document.getElementById("page-" + requested)
       ? requested : (saved && document.getElementById("page-" + saved) ? saved : "dashboard");
+    if (initial === "medhuntreplies" && !S.features.medhunt_backend) initial = "dashboard";
     showPage(initial);
     handlePurchaseReturn();
     refreshUnreadBadge();
     refreshNotificationBadge();
     refreshCredits();
     if (isRecruiter()){
-      loadFeatures().then(() => { if (S.providerLastData) renderProviderPage(S.providerLastData); });
+      if (S.providerLastData) renderProviderPage(S.providerLastData);
       // Standing searches are re-counted on entry; anything that grew since
       // the last visit turns into a notification.
       loadSavedSearches().then(checkSavedSearches);
@@ -6428,7 +6438,7 @@
       if (ok) {
         $("#boot-splash").classList.add("hidden");
         if (await acceptStashedInvite()) await loadMe();
-        enterAppPages();
+        await enterAppPages();
         return;
       }
     }

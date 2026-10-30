@@ -4,7 +4,7 @@ Run against an isolated/local server before deployment::
 
     python scripts/e2e_release_check.py --base http://127.0.0.1:8000
 
-The check exercises both roles, verifies that authentication survives a hard
+The check exercises the requested roles, verifies that authentication survives a hard
 reload, opens every visible workspace page, and fails on same-origin browser or
 request errors. It intentionally targets ``/`` rather than the retired
 prototype pages under ``/ui``.
@@ -162,6 +162,8 @@ def main() -> int:
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--recruiter-email", default="recruiter@healthboard.dev")
     parser.add_argument("--seeker-email", default="jessica@healthboard.dev")
+    parser.add_argument("--admin-email")
+    parser.add_argument("--skip-seeker", action="store_true")
     parser.add_argument("--password", default="Password123!")
     args = parser.parse_args()
     base = args.base.rstrip("/")
@@ -219,9 +221,19 @@ def main() -> int:
 
         exercise_role(check, browser, base, "recruiter", args.recruiter_email,
                       args.password, ui_login=True)
-        exercise_role(check, browser, base, "job seeker", args.seeker_email,
+        exercise_role(check, browser, base, "recruiter mobile", args.recruiter_email,
                       args.password, viewport={"width": 390, "height": 844})
-        browser.close()
+        if args.admin_email:
+            exercise_role(check, browser, base, "admin", args.admin_email,
+                          args.password)
+            exercise_role(check, browser, base, "admin mobile", args.admin_email,
+                          args.password, viewport={"width": 390, "height": 844})
+        if not args.skip_seeker:
+            exercise_role(check, browser, base, "job seeker", args.seeker_email,
+                          args.password, viewport={"width": 390, "height": 844})
+        # The Playwright context owns the browser process. Letting it stop the
+        # driver here avoids Chrome occasionally waiting forever in close()
+        # after pages with active polling timers have been exercised.
 
     return check.finish()
 
