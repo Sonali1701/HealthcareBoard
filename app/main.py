@@ -244,6 +244,7 @@ def _public_stats_uncached(db) -> dict:
     estimate. It is accurate enough for a marketing headline and answers in
     milliseconds. SQLite retains exact counts for local development/tests.
     """
+    estimated = False
     if db.get_bind().dialect.name == "postgresql":
         providers = db.execute(sa_text(
             "SELECT reltuples::bigint FROM pg_class "
@@ -254,6 +255,8 @@ def _public_stats_uncached(db) -> dict:
             providers = db.execute(sa_text(
                 "SELECT count(*) FROM profiles WHERE is_listable IS TRUE"
             )).scalar() or 0
+        else:
+            estimated = True
         state_values = ",".join(f"('{code}')" for code in _PUBLIC_STATE_CODES)
         states = db.execute(sa_text(
             "SELECT count(*) FROM (VALUES " + state_values + ") AS s(code) "
@@ -272,7 +275,8 @@ def _public_stats_uncached(db) -> dict:
     jobs = db.execute(sa_text(
         "SELECT count(*) FROM job_postings WHERE status = 'active'"
     )).scalar() or 0
-    return {"providers": int(providers), "jobs": int(jobs), "states": int(states)}
+    return {"providers": int(providers), "providers_estimated": estimated,
+            "jobs": int(jobs), "states": int(states)}
 
 
 @app.get("/api/public/stats", tags=["meta"])

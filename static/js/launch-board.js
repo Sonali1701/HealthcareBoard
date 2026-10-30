@@ -6352,13 +6352,18 @@
   // Real figures on the signed-out page. Fails quietly: a marketing number is
   // never worth blocking the login form for.
   async function loadPublicStats(){
-    const fmt = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n);
+    const fmt = n => n >= 1000000 ? (n / 1000000).toFixed(1) + "M"
+      : n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n);
     try {
       const res = await fetch("/api/public/stats", {cache:"no-store"});
       if (!res.ok) return;
       const d = await res.json();
       const set = (id, v) => { const el = $(id); if (el && v != null) el.textContent = fmt(v); };
       set("#stat-providers", d.providers);
+      if (d.providers_estimated && d.providers != null) {
+        const el = $("#stat-providers");
+        if (el) el.textContent = "~" + fmt(d.providers);
+      }
       set("#stat-jobs", d.jobs);
       set("#stat-states", d.states);
     } catch(e) { /* leave the placeholders */ }

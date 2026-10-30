@@ -77,7 +77,8 @@ class LaunchWebFlowTests(unittest.TestCase):
                               title="Open role", status="active"))
             db.commit()
             self.assertEqual(_public_stats_uncached(db), {
-                "providers": 2, "jobs": 1, "states": 1,
+                "providers": 2, "providers_estimated": False,
+                "jobs": 1, "states": 1,
             })
 
     def test_public_stats_use_profile_index_estimate_on_postgres(self):
@@ -89,7 +90,8 @@ class LaunchWebFlowTests(unittest.TestCase):
         results[2].scalar.return_value = 501
         db.execute.side_effect = results
         self.assertEqual(_public_stats_uncached(db), {
-            "providers": 11600000, "jobs": 501, "states": 51,
+            "providers": 11600000, "providers_estimated": True,
+            "jobs": 501, "states": 51,
         })
         self.assertEqual(db.execute.call_count, 3)
 
