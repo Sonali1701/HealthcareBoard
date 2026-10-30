@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
+from app.config import Settings
 from app.models import Profile, User
 from app.models.enums import UserRole, UserStatus
 from app.routers.profiles import (
@@ -21,6 +22,15 @@ from app.routers.profiles import (
 
 
 class ProviderAiParsingTests(unittest.TestCase):
+    def test_llm_key_follows_selected_provider(self):
+        openai = Settings(llm_base_url="https://api.openai.com/v1",
+                          llm_api_key="openai-test", gemini_api_key="gemini-test")
+        gemini = Settings(
+            llm_base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+            llm_api_key="openai-test", gemini_api_key="gemini-test")
+        self.assertEqual(openai.llm_api_key, "openai-test")
+        self.assertEqual(gemini.llm_api_key, "gemini-test")
+
     def test_common_phrases_are_structured_without_an_llm(self):
         cases = (
             ("RN in CA", {"state_code": "CA", "license_title": "RN"}),

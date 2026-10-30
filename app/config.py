@@ -196,8 +196,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _prefer_gemini_key(self):
-        """If GEMINI_API_KEY is set, use it as the LLM key (paid key wins)."""
-        if self.gemini_api_key:
+        """Use a Gemini key only for the Gemini-compatible endpoint.
+
+        A leftover GEMINI_API_KEY must not replace LLM_API_KEY when the
+        configured provider is OpenAI, DeepSeek, or another compatible API.
+        """
+        if (self.gemini_api_key and
+                "generativelanguage.googleapis.com" in self.llm_base_url.lower()):
             self.llm_api_key = self.gemini_api_key
         return self
 
