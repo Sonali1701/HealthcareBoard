@@ -10,7 +10,7 @@ from html import escape, unescape
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, literal, or_, select, text as sa_text
 from sqlalchemy.orm import selectinload
 
@@ -67,7 +67,7 @@ class BulkContactRelease(BaseModel):
 
 
 class CopilotQuery(BaseModel):
-    message: str
+    message: str = Field(max_length=500)
     # Filters from the previous turn, so a follow-up refines instead of restarting
     # ("RN nurses" → then "only in California"). Client-supplied, so re-validated.
     context: Optional[dict] = None
@@ -1011,13 +1011,28 @@ def search_profiles(
 # (so results inherit the identity masking). The model never sees provider data
 # and never writes SQL — it only fills a small, validated JSON of filters.
 
-_COPILOT_CATS = {"physicians": "Physicians", "nursing": "Nursing",
+_COPILOT_CATS = {"physician": "Physician", "physicians": "Physicians",
+                 "nursing": "Nursing", "therapy": "Therapy",
+                 "mental & behavioural health": "Mental & Behavioural Health",
+                 "social work & community services": "Social Work & Community Services",
+                 "pharmacy": "Pharmacy", "dental": "Dental",
+                 "home health & personal care": "Home Health & Personal Care",
+                 "physician assistant": "Physician Assistant",
+                 "allied health & technicians": "Allied Health & Technicians",
                  "allied": "Allied", "app": "APP", "other": "Others",
                  "others": "Others", "facilities": "Facilities",
                  "trainees": "Trainees", "support": "Support",
                  "non-clinical": "Non-clinical"}
 _COPILOT_LICENSES = {"RN", "MD", "NP", "PA", "LPN", "CNA", "PT", "DO", "CRNA",
                      "RT", "OT", "PHARMD", "CNM", "DNP", "FNP", "LVN", "LCSW"}
+_LICENSE_CATEGORY = {
+    "RN": "Nursing", "NP": "Nursing", "LPN": "Nursing", "LVN": "Nursing",
+    "CNA": "Nursing", "CRNA": "Nursing", "CNM": "Nursing", "DNP": "Nursing",
+    "FNP": "Nursing", "MD": "Physician", "DO": "Physician",
+    "PA": "Physician Assistant", "PT": "Therapy", "OT": "Therapy",
+    "RT": "Allied Health & Technicians", "PHARMD": "Pharmacy",
+    "LCSW": "Social Work & Community Services",
+}
 # US state + territory codes, so "California" -> "CA" is validated, not trusted.
 _US_STATES = {
     "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -1034,13 +1049,14 @@ _COPILOT_INSTR = (
     "Return JSON with exactly these keys (use null when the request does not "
     "specify one):\n"
     '{"q":null,"category":null,"license_title":null,"state_code":null,'
-    '"city":null,"zip":null,"radius_mi":null,"compact":null,"min_experience":null,'
-    '"max_experience":null,"contact_available":null}\n\n'
-    "- category: one of \"Physicians\",\"Nursing\",\"Allied\",\"APP\","
-    "\"Facilities\",\"Trainees\",\"Support\",\"Non-clinical\",\"Others\". "
-    "Nurse/RN/LPN/CNA -> Nursing. Doctor/physician/MD/DO -> Physicians. "
-    "NP/PA/CRNA/nurse practitioner -> APP. Therapist/PT/OT/RT/tech/allied -> "
-    "Allied. null if unclear.\n"
+    '"city":null,"zip":null,"radius_mi":null,"min_experience":null,'
+    '"max_experience":null,"contact_available":null,"resume_status":null,"npi_number":null,'
+    '"licensed_state":null,"worked_at":null}\n\n'
+    "- category: use the most specific directory category: \"Physician\","
+    "\"Nursing\",\"Therapy\",\"Mental & Behavioural Health\","
+    "\"Social Work & Community Services\",\"Pharmacy\",\"Dental\","
+    "\"Home Health & Personal Care\",\"Physician Assistant\", or "
+    "\"Allied Health & Technicians\". null if unclear.\n"
     "- license_title: a credential ONLY if named: RN, MD, NP, PA, LPN, CNA, PT, "
     "DO, CRNA, RT, OT, PharmD. Else null.\n"
     "- state_code: where the candidate LIVES — 2-letter US code (California -> "
@@ -1054,21 +1070,20 @@ _COPILOT_INSTR = (
     "of 95630', 'near 90210'). Put ONLY the 5 digits. null if none.\n"
     "- radius_mi: whole miles when a distance is given ('within 50 miles of', "
     "'around 25 mi from', '25 miles from 95630'). null if none.\n"
-    "- compact: true when they ask for a compact / multistate / eNLC nursing "
-    "license; else null.\n"
     "- worked_at: an employer / health-system name when they ask for someone who "
     "'worked at', 'has experience at', or 'was employed by' it (e.g. 'worked at "
     "Kaiser' -> \"Kaiser\"). null otherwise.\n"
-    "- travel_experience: true when they ask for prior travel assignments / "
-    "travel experience; else null.\n"
     "- min_experience / max_experience: whole years. 'more than 5 years' -> "
-    "min_experience 5. 'at least 3' -> min 3. 'under 2' -> max_experience 2. A "
+    "min_experience 6. 'at least 3' -> min 3. 'under 2' -> max_experience 1. A "
     "bare experience amount is a minimum: 'with 10 years experience', '10 years', "
     "'10 yrs exp' -> min_experience 10.\n"
-    "- contact_available: \"any\" if they ask for reachable candidates / with "
-    "contact info; else null.\n"
+    "- contact_available: one of \"any\", \"both\", \"email\", \"phone\", or "
+    "\"missing\" when explicitly requested; else null.\n"
+    "- resume_status: \"with_resume\" or \"without_resume\" when explicitly "
+    "requested; else null.\n"
+    "- npi_number: exactly 10 digits only when an NPI is explicitly provided.\n"
     "- q: any remaining descriptive keywords (specialty like 'ICU','telemetry', "
-    "'med-surg'; qualifiers like 'compact license','bilingual'; certifications). "
+    "'med-surg'; qualifications like 'bilingual'; certifications). "
     "NORMALISE informal or misspelled specialties to the standard searchable term: "
     "'medsurg'/'medsurgian'/'med surg' -> 'med surg'; 'tele' -> 'telemetry'; 'l&d' "
     "-> 'labor delivery'; 'peds' -> 'pediatric'; 'er'/'ed' -> 'emergency'. "
@@ -1078,20 +1093,22 @@ _COPILOT_INSTR = (
     "put an excluded or retracted term into q or any other field.\n"
     "IGNORE availability / willingness phrases that are not filterable facts — "
     "'open to travel', 'willing to travel', 'open to relocation', 'available now', "
-    "'who are', 'looking for'. Never put these words into q.\n\n"
+    "'who are', 'looking for'. Never put these words into q.\n"
+    "Compact-license and travel-history filters are unavailable; never emit them "
+    "and never put those phrases into q.\n\n"
     "Examples:\n"
     "'RN who are open to travel in Folsom' -> "
     '{"q":null,"category":"Nursing","license_title":"RN","state_code":"CA",'
     '"city":"Folsom","radius_mi":null,"min_experience":null,"max_experience":null,'
     '"contact_available":null}\n'
     "'CRNA instead of RN ER' -> "
-    '{"q":null,"category":"APP","license_title":"CRNA","state_code":null,'
+    '{"q":null,"category":"Nursing","license_title":"CRNA","state_code":null,'
     '"city":null,"radius_mi":null,"min_experience":null,"max_experience":null,'
     '"contact_available":null}\n'
-    "'Find ICU nurses in California with compact licenses' -> "
-    '{"q":"icu compact license","category":"Nursing","license_title":null,'
+    "'Find ICU nurses in California with resumes' -> "
+    '{"q":"icu","category":"Nursing","license_title":null,'
     '"state_code":"CA","city":null,"radius_mi":null,"min_experience":null,'
-    '"max_experience":null,"contact_available":null}\n'
+    '"max_experience":null,"contact_available":null,"resume_status":"with_resume"}\n'
     "'RN ICU around 50 miles from Folsom California' -> "
     '{"q":"icu","category":"Nursing","license_title":"RN","state_code":"CA",'
     '"city":"Folsom","radius_mi":50,"min_experience":null,"max_experience":null,'
@@ -1117,11 +1134,20 @@ _CATEGORY_CUES = [
     (("facility", "organization"), "Facilities"),
     (("student", "trainee"), "Trainees"),
     (("homemaker", "companion", "caregiver"), "Support"),
-    (("nurse practitioner", "physician assistant", "crna", "aprn"), "APP"),
-    (("physician", "doctor", "surgeon"), "Physicians"),
+    (("social worker", "case worker", "lcsw"), "Social Work & Community Services"),
+    (("psychiatrist", "psychologist", "counselor", "counsellor", "behavioral health",
+      "behavioural health"), "Mental & Behavioural Health"),
+    (("pharmacist", "pharmacy", "pharmd"), "Pharmacy"),
+    (("dentist", "dental", "hygienist"), "Dental"),
+    (("physical therapist", "occupational therapist", "speech therapist",
+      "respiratory therapist", "therapy"), "Therapy"),
+    (("home health", "personal care", "home care"), "Home Health & Personal Care"),
+    (("physician assistant",), "Physician Assistant"),
+    (("nurse practitioner", "crna", "aprn"), "Nursing"),
+    (("physician", "doctor", "surgeon"), "Physician"),
     (("nurse", "nursing"), "Nursing"),
     (("therapist", "therapy", "technologist", "technician", "pathologist",
-      "pharmacist", "dietitian", "paramedic"), "Allied"),
+      "dietitian", "paramedic"), "Allied Health & Technicians"),
 ]
 _STOP_TOKENS = {
     "find","show","me","us","get","list","all","any","the","a","an","in","with",
@@ -1137,6 +1163,7 @@ _STOP_TOKENS = {
     "state","city","area","region","location","jobs","job","role","roles","position",
     "positions","working","work","live","living","reside","residing","new","search",
     "registered","mile","miles","mi","not","meant","sorry","actually",
+    "between","exactly","without","resume","resumes","curriculum","vitae",
 }
 
 
@@ -1166,8 +1193,19 @@ def _set_center(out: dict, place: str) -> None:
 def _copilot_rule_filters(message: str) -> dict:
     """Best-effort filter extraction without an LLM — keyword/regex based, so the
     copilot still works when the model is unavailable (down or out of quota)."""
-    msg = " " + message.lower().strip() + " "
+    msg = " " + message[:500].lower().strip() + " "
     out: dict = {}
+
+    npi_match = re.search(r"\bnpi(?:\s+(?:number|#))?\s*[:#-]?\s*(\d{10})\b", msg)
+    if npi_match:
+        out["npi_number"] = npi_match.group(1)
+        msg = msg[:npi_match.start()] + " " + msg[npi_match.end():]
+
+    # Strip explicitly rejected credentials before role detection.
+    license_words = "|".join(sorted((re.escape(x.lower()) for x in _COPILOT_LICENSES),
+                                    key=len, reverse=True))
+    msg = re.sub(rf"\b(?:not|no|without|rather than|instead of)\s+"
+                 rf"(?:{license_words})s?\b", " ", msg)
 
     # Licensure reach — "licensed in / can work in / eligible to work in <state>"
     # is about where they can PRACTICE, not where they live. Capture it first and
@@ -1182,11 +1220,37 @@ def _copilot_rule_filters(message: str) -> dict:
             out["licensed_state"] = code
             msg = msg.replace(lm.group(0), " ")
 
+    # A city followed by a state is unambiguous even without a distance:
+    # "nurse practitioners in Austin Texas".
+    state_names = "|".join(re.escape(name) for name in sorted(
+        _STATE_NAMES, key=len, reverse=True))
+    located = re.search(
+        rf"\b(?:in|near|around|from|based in|located in|living in|residing in)\s+"
+        rf"([a-z][a-z.'-]*(?:\s+[a-z][a-z.'-]*){{0,3}}?)\s*,?\s+"
+        rf"({state_names}|[a-z]{{2}})\b", msg)
+    if located:
+        state_text = located.group(2)
+        code = (_STATE_NAMES.get(state_text)
+                or (state_text.upper() if state_text.upper() in _US_STATES else None))
+        if code:
+            out["state_code"] = code
+            city = re.sub(r"\s+", " ", located.group(1)).strip()
+            if city and city not in _STOP_TOKENS:
+                out["city"] = city
+            msg = msg[:located.start()] + " " + msg[located.end():]
+
     for name, code in sorted(_STATE_NAMES.items(), key=lambda kv: -len(kv[0])):
         if f" {name} " in msg or f" {name}," in msg:
             out["state_code"] = code
             msg = msg.replace(name, " ")
             break
+
+    state_code_match = re.search(
+        r"\b(?:in|near|around|from|based in|located in|living in|residing in)\s+"
+        r"([a-z]{2})\b", msg)
+    if state_code_match and state_code_match.group(1).upper() in _US_STATES:
+        out["state_code"] = state_code_match.group(1).upper()
+        msg = msg[:state_code_match.start()] + " " + msg[state_code_match.end():]
 
     # Distance + optional centre: "within 50 miles of Folsom California",
     # "25 mi from Austin TX". Capture the number and the place together, and cut
@@ -1233,36 +1297,73 @@ def _copilot_rule_filters(message: str) -> dict:
         if re.search(rf"\b{lic.lower()}s?\b", msg):     # allow "MDs", "RNs"
             out["license_title"] = "PharmD" if lic == "PHARMD" else lic
             if "category" not in out:
-                if lic in {"RN", "LPN", "LVN", "CNA"}:
-                    out["category"] = "Nursing"
-                elif lic in {"MD", "DO"}:
-                    out["category"] = "Physicians"
-                elif lic in {"NP", "PA", "CRNA"}:
-                    out["category"] = "APP"
+                out["category"] = _LICENSE_CATEGORY.get(lic)
+                if not out["category"]:
+                    out.pop("category")
             break
 
-    m = re.search(r"(?:more than|over|at least|minimum(?:\s+of)?|min|greater than|"
-                  r">=?|above)\s*(\d{1,2})\s*\+?\s*year", msg)
-    if not m:
-        m = re.search(r"(\d{1,2})\s*\+\s*year", msg)      # "5+ years"
-    if m:
-        out["min_experience"] = _clean_int(m.group(1))
-    m = re.search(r"(?:under|less than|below|<=?|at most|max(?:imum)?|fewer than)\s*"
-                  r"(\d{1,2})\s*year", msg)
-    if m:
-        out["max_experience"] = _clean_int(m.group(1))
+    exp_range = re.search(
+        r"\bbetween\s+(\d{1,2})\s+(?:and|to|-)\s*(\d{1,2})\s*years?\b", msg)
+    if not exp_range:
+        exp_range = re.search(r"\b(\d{1,2})\s*(?:-|to)\s*(\d{1,2})\s*years?\b", msg)
+    if exp_range:
+        low, high = sorted((int(exp_range.group(1)), int(exp_range.group(2))))
+        out["min_experience"], out["max_experience"] = low, high
+        msg = msg[:exp_range.start()] + " " + msg[exp_range.end():]
+    else:
+        minimum = re.search(
+            r"\b(more than|over|greater than|above|>|at least|minimum(?:\s+of)?|"
+            r"min|>=?)\s*(\d{1,2})\s*\+?\s*years?\b", msg)
+        if not minimum:
+            minimum = re.search(r"\b(\d{1,2})\s*\+\s*years?\b", msg)
+        if minimum:
+            value = int(minimum.group(minimum.lastindex))
+            strict = minimum.lastindex == 2 and minimum.group(1) in {
+                "more than", "over", "greater than", "above", ">"
+            }
+            out["min_experience"] = min(80, value + (1 if strict else 0))
+            msg = msg[:minimum.start()] + " " + msg[minimum.end():]
+        maximum = re.search(
+            r"\b(under|less than|below|fewer than|<|at most|max(?:imum)?|<=)\s*"
+            r"(\d{1,2})\s*years?\b", msg)
+        if maximum:
+            value = int(maximum.group(2))
+            strict = maximum.group(1) in {"under", "less than", "below", "fewer than", "<"}
+            out["max_experience"] = max(0, value - (1 if strict else 0))
+            msg = msg[:maximum.start()] + " " + msg[maximum.end():]
+        if "min_experience" not in out and "max_experience" not in out:
+            bare = re.search(r"\b(?:with\s+)?(\d{1,2})\s*years?\s*(?:of\s+)?"
+                             r"(?:experience|exp)?\b", msg)
+            if bare:
+                out["min_experience"] = int(bare.group(1))
+                msg = msg[:bare.start()] + " " + msg[bare.end():]
+    if re.search(r"\bnew[ -]?grads?\b|\bentry[ -]?level\b", msg):
+        out["max_experience"] = 1
+        msg = re.sub(r"\bnew[ -]?grads?\b|\bentry[ -]?level\b", " ", msg)
 
-    if re.search(r"\b(with contact|reachable|has (?:email|phone|contact)|contactable)\b", msg):
+    if re.search(r"\b(?:without|no|missing)\s+(?:a\s+)?(?:resumes?|résumés?|cvs?)\b", msg):
+        out["resume_status"] = "without_resume"
+        msg = re.sub(r"\b(?:without|no|missing)\s+(?:a\s+)?(?:resumes?|résumés?|cvs?)\b", " ", msg)
+    elif re.search(r"\b(?:with|has|have|available)\s+(?:a\s+)?(?:resumes?|résumés?|cvs?)\b", msg):
+        out["resume_status"] = "with_resume"
+        msg = re.sub(r"\b(?:with|has|have|available)\s+(?:a\s+)?(?:resumes?|résumés?|cvs?)\b", " ", msg)
+
+    if re.search(r"\b(?:with both|has both)\s+(?:email\s+(?:and|\+)\s+phone|"
+                 r"phone\s+(?:and|\+)\s+email)\b", msg):
+        out["contact_available"] = "both"
+    elif re.search(r"\b(?:with|has)\s+email(?:\s+only)?\b", msg):
+        out["contact_available"] = "email"
+    elif re.search(r"\b(?:with|has)\s+phone(?:\s+only)?\b", msg):
+        out["contact_available"] = "phone"
+    elif re.search(r"\b(with contact|reachable|has contact|contactable)\b", msg):
         out["contact_available"] = "any"
+    if "contact_available" in out:
+        msg = re.sub(r"\b(?:with|has|have|both|only|email|phone|contact|contactable|reachable)\b",
+                     " ", msg)
 
-    # Compact / multistate (eNLC) licence — a real, filterable field now.
-    if re.search(r"\b(compact|multi[\s-]?state|enlc|nlc)\b", msg):
-        out["compact"] = True
-
-    # Prior travel assignments (work-history employment_type).
-    if re.search(r"\b(travel(?:ed)? (?:experience|assignment|background|nurse|nursing|rn|history)"
-                 r"|has travel(?:ed)?|worked travel|travel contracts?)\b", msg):
-        out["travel_experience"] = True
+    # Compact-license and travel-history coverage is incomplete in the current
+    # directory. Keep those phrases out of structured filters so AI search does
+    # not present partial data as complete results.
 
     # Worked at a specific employer / health system (work history).
     wm = re.search(r"\b(?:worked (?:at|for)|experience at|employed (?:at|by))\s+"
@@ -1274,19 +1375,28 @@ def _copilot_rule_filters(message: str) -> dict:
             out["worked_at"] = emp
             msg = msg.replace(wm.group(0).strip(), " ")
 
-    # Whatever descriptive keywords remain (specialty, "compact", "bilingual" …).
+    # Whatever descriptive keywords remain (specialty, certifications, etc.).
     # Skip role/credential words already captured as category/license, so a
     # leftover plural like "practitioners" can't become a required keyword.
     role_words = {"nurse", "physician", "doctor", "surgeon", "therapist",
                   "practitioner", "assistant", "technologist", "technician",
                   "pathologist", "pharmacist", "dietitian", "paramedic", "aprn",
-                  "provider", "candidate", "clinician"}
+                  "provider", "candidate", "clinician", "social", "worker"}
     licenses_lc = {l.lower() for l in _COPILOT_LICENSES}
     consumed = {out.get("license_title", "").lower(),
                 (out.get("state_code") or "").lower()}
     consumed |= set((out.get("city") or "").lower().split())   # centre-city words
+    keyword_aliases = {
+        "cardiologist": "cardiology", "cardiologists": "cardiology",
+        "oncologist": "oncology", "oncologists": "oncology",
+        "neurologist": "neurology", "neurologists": "neurology",
+        "anesthesiologist": "anesthesiology", "anesthesiologists": "anesthesiology",
+        "pediatrician": "pediatric", "pediatricians": "pediatric",
+        "medsurg": "med-surg", "tele": "telemetry", "peds": "pediatric",
+    }
     kws = []
     for tok in re.findall(r"[a-z][a-z/&-]{1,}", msg):
+        tok = keyword_aliases.get(tok, tok)
         singular = tok[:-1] if tok.endswith("s") else tok
         if (tok in _STOP_TOKENS or tok in consumed or tok in licenses_lc
                 or singular in licenses_lc or singular in role_words
@@ -1307,32 +1417,44 @@ def _clean_int(value, lo=0, hi=80):
     return max(lo, min(hi, n)) if n >= lo else None
 
 
+def _safe_copilot_text(value, max_length: int) -> str | None:
+    """Accept human names/terms while rejecting wildcard and control payloads."""
+    text_value = re.sub(r"\s+", " ", str(value or "")).strip()
+    if (not text_value or text_value.lower() == "null" or "%" in text_value
+            or "_" in text_value or len(text_value) > max_length
+            or not re.fullmatch(r"[\w\s.&/'-]+", text_value, re.UNICODE)):
+        return None
+    return text_value
+
+
 def _copilot_filters(raw: dict) -> dict:
     """Validate the model's JSON down to filters the search actually supports."""
     if not isinstance(raw, dict):
         return {}
     out: dict = {}
-    q = str(raw.get("q") or "").strip().lower()
-    if q and q != "null":
-        out["q"] = q[:120]
+    q = _safe_copilot_text(raw.get("q"), 120)
+    if q:
+        out["q"] = q.lower()
     cat = str(raw.get("category") or "").strip().lower()
     if cat in _COPILOT_CATS:
         out["category"] = _COPILOT_CATS[cat]
     lic = str(raw.get("license_title") or "").strip().upper().replace(".", "")
     if lic in _COPILOT_LICENSES:
         out["license_title"] = "PharmD" if lic == "PHARMD" else lic
+        out["category"] = _LICENSE_CATEGORY.get(lic, out.get("category"))
     st = str(raw.get("state_code") or "").strip().upper()
     if st in _US_STATES:
         out["state_code"] = st
     ls = str(raw.get("licensed_state") or "").strip().upper()
     if ls in _US_STATES:
         out["licensed_state"] = ls
-    city = str(raw.get("city") or "").strip()
-    zc = re.sub(r"\D", "", str(raw.get("zip") or ""))
+    city = _safe_copilot_text(raw.get("city"), 60) or ""
+    zip_value = str(raw.get("zip") or "").strip()
+    zc = zip_value[:5] if re.fullmatch(r"\d{5}(?:-\d{4})?", zip_value) else ""
     if not zc and re.fullmatch(r"\d{5}", city):   # a bare 5-digit "city" is a ZIP
         zc, city = city, ""
-    if city and city.lower() != "null":
-        out["city"] = city[:60]
+    if city:
+        out["city"] = city
     if len(zc) == 5:
         out["zip"] = zc
     rad = _clean_int(raw.get("radius_mi"), lo=1, hi=500)
@@ -1344,15 +1466,23 @@ def _copilot_filters(raw: dict) -> dict:
     mx = _clean_int(raw.get("max_experience"))
     if mx is not None:
         out["max_experience"] = mx
-    if str(raw.get("contact_available") or "").strip().lower() == "any":
-        out["contact_available"] = "any"
-    if raw.get("compact") in (True, "true", "True", 1, "1"):
-        out["compact"] = True
-    if raw.get("travel_experience") in (True, "true", "True", 1, "1"):
-        out["travel_experience"] = True
-    wa = str(raw.get("worked_at") or "").strip()
-    if wa and wa.lower() != "null":
-        out["worked_at"] = wa[:60]
+    if (out.get("min_experience") is not None
+            and out.get("max_experience") is not None
+            and out["min_experience"] > out["max_experience"]):
+        out.pop("min_experience", None)
+        out.pop("max_experience", None)
+    contact = str(raw.get("contact_available") or "").strip().lower()
+    if contact in {"any", "both", "email", "phone", "missing"}:
+        out["contact_available"] = contact
+    resume = str(raw.get("resume_status") or "").strip().lower()
+    if resume in {"with_resume", "without_resume"}:
+        out["resume_status"] = resume
+    npi = re.sub(r"\s+", "", str(raw.get("npi_number") or ""))
+    if re.fullmatch(r"\d{10}", npi):
+        out["npi_number"] = npi
+    wa = _safe_copilot_text(raw.get("worked_at"), 60)
+    if wa:
+        out["worked_at"] = wa
     return out
 
 
@@ -1371,9 +1501,9 @@ _FILLER_TERMS = {
     "nurse", "nurses", "nursing", "physician", "physicians", "doctor", "doctors",
     "therapist", "therapists", "provider", "providers", "candidate", "candidates",
     "staff", "charge", "float", "per", "diem",
-    # Captured as the structured `compact` filter, not a keyword.
+    # Unsupported until directory coverage is complete; disclosed to the user.
     "compact", "multistate", "multi-state", "enlc", "nlc", "license", "licence",
-    # Captured as travel_experience, not a keyword.
+    # Unsupported until directory coverage is complete; disclosed to the user.
     "travel", "traveled", "travelling", "traveling", "assignment", "assignments",
 }
 
@@ -1386,7 +1516,7 @@ _RESET_RE = re.compile(
 # Fields carried between turns. `q` is merged token-wise; the rest override.
 _MERGE_FIELDS = ("category", "license_title", "state_code", "licensed_state",
                  "city", "zip", "radius_mi", "min_experience", "max_experience",
-                 "contact_available", "compact", "worked_at", "travel_experience")
+                 "contact_available", "resume_status", "npi_number", "worked_at")
 
 
 def _merge_copilot_filters(context: dict, delta: dict) -> dict:
@@ -1396,6 +1526,16 @@ def _merge_copilot_filters(context: dict, delta: dict) -> dict:
     for k in _MERGE_FIELDS:
         if delta.get(k) not in (None, ""):
             merged[k] = delta[k]
+    # A new upper bound replaces an incompatible previous lower bound, and vice
+    # versa. This makes refinements such as "under 3 years" deterministic.
+    if ("max_experience" in delta and "min_experience" not in delta
+            and merged.get("min_experience") is not None
+            and merged["min_experience"] > merged["max_experience"]):
+        merged.pop("min_experience", None)
+    if ("min_experience" in delta and "max_experience" not in delta
+            and merged.get("max_experience") is not None
+            and merged["max_experience"] < merged["min_experience"]):
+        merged.pop("max_experience", None)
     # When the follow-up changes the role — a different licence or category — its
     # keywords describe the NEW intent, so the previous turn's keywords are
     # dropped rather than accumulated ("RN erd" then "crna" must not become
@@ -1442,20 +1582,22 @@ def _copilot_summary(filters: dict, total: int, soft: list | None = None,
         bits.append(f"≤{filters['max_experience']} yrs")
     if filters.get("licensed_state"):
         bits.append(f"can work in {filters['licensed_state']}")
-    if filters.get("compact"):
-        bits.append("compact license")
+    if filters.get("npi_number"):
+        bits.append(f"NPI {filters['npi_number']}")
     if filters.get("worked_at"):
         bits.append(f"worked at {filters['worked_at']}")
-    if filters.get("travel_experience"):
-        bits.append("travel experience")
     if filters.get("contact_available"):
-        bits.append("with contact")
+        bits.append(f"contact: {filters['contact_available']}")
+    if filters.get("resume_status") == "with_resume":
+        bits.append("with résumé")
+    elif filters.get("resume_status") == "without_resume":
+        bits.append("without résumé")
     phrase = " · ".join(bits) if bits else "all providers"
     note = (f" I can’t filter by {', '.join(soft)} yet, so that wasn’t applied."
             if soft else "")
-    if not filters and not soft:
+    if not filters:
         return ("I can search the provider directory — try “ICU nurses in "
-                "California with 5+ years” or “RN with more than 5 years”.")
+                "California with 5+ years” or “RN with more than 5 years”." + note)
     if total == 0:
         return (f"No providers matched {phrase}. Try removing a filter or "
                 f"broadening the location.{note}")
@@ -1475,11 +1617,9 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
     if not message:
         return {"answer": _copilot_summary({}, 0), "filters": {}, "items": [], "total": 0}
 
-    # Two extractors, merged: the rule pass reliably catches precise structured
-    # signals (licensed_state, compact, radius, city, license), while the LLM
-    # handles fuzzy phrasing. The LLM wins on any shared field; the rules fill
-    # the gaps it misses — and the rules alone keep things working if the LLM is
-    # down or out of quota.
+    # Deterministic rules own explicit structured facts, while the model helps
+    # normalize fuzzy specialty wording. Rules also keep search working if the
+    # model is unavailable or out of quota.
     rule_delta = _copilot_rule_filters(message)
     llm_delta: dict = {}
     if settings.llm_enabled and settings.llm_api_key and settings.llm_model:
@@ -1492,19 +1632,26 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
             llm_delta = _copilot_filters(raw or {})
         except Exception:  # noqa: BLE001
             llm_delta = {}
-    delta = {**rule_delta, **llm_delta}
-    # The LLM is the authority on free-text keywords. When it parsed the query,
-    # its q wins outright — including "no keywords at all" — so the rule
-    # extractor's leftover words ("sorry", "instead of rn") never leak in as
-    # spurious search filters.
-    if llm_delta:
+    delta = {**llm_delta, **rule_delta}
+    # A non-empty model keyword phrase can normalize fuzzy specialty wording.
+    if llm_delta.get("q"):
         delta["q"] = llm_delta.get("q")   # may be None → clears rule-extractor noise
+
+    if rule_delta.get("licensed_state") and not rule_delta.get("state_code"):
+        delta.pop("state_code", None)
 
     # Refine the previous turn's filters unless the user asked to start over.
     # The client-supplied context is re-validated, never trusted as-is.
     prior = {} if _RESET_RE.search(message) else _copilot_filters(body.context or {})
     refined = bool(prior)
     filters = _merge_copilot_filters(prior, delta)
+    if not (filters.get("zip") or filters.get("city")):
+        filters.pop("radius_mi", None)
+    if (filters.get("min_experience") is not None
+            and filters.get("max_experience") is not None
+            and filters["min_experience"] > filters["max_experience"]):
+        return {"answer": "The experience range conflicts. Please enter a valid minimum and maximum.",
+                "filters": {}, "items": [], "total": 0}
 
     category = filters.get("category")
     # Search the same four fields as the provider search box.
@@ -1512,6 +1659,11 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
     # would wrongly zero out an otherwise-good search — and note them instead.
     raw_tokens = [t for t in (filters.get("q") or "").split() if len(t) >= 2]
     soft = [t for t in raw_tokens if t in _SOFT_TERMS]
+    if re.search(r"\b(compact|multi[\s-]?state|enlc|nlc)\b", message, re.IGNORECASE):
+        soft.append("compact-license status")
+    if re.search(r"\btravel(?:ed|ing)?\s+(?:experience|assignments?|history|nurs(?:e|ing))\b",
+                 message, re.IGNORECASE):
+        soft.append("travel history")
     # Also drop generic stopwords the LLM sometimes dumps into q ("experience",
     # "with", role words) so they can't become spurious required keywords.
     hard = [t for t in raw_tokens if t not in _SOFT_TERMS and t not in _FILLER_TERMS
@@ -1520,9 +1672,15 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
     if not filters["q"]:
         filters.pop("q")
 
+    if not filters:
+        return {"answer": _copilot_summary({}, 0, soft), "filters": {},
+                "items": [], "total": 0}
+
     search_filters = {k: v for k, v in filters.items()
-                      if k not in ("category", "q")}
+                      if k not in ("category", "q", "npi_number")}
     conds = _provider_conditions(db, providers_only=True, **search_filters)
+    if filters.get("npi_number"):
+        conds.append(Profile.npi_number == filters["npi_number"])
     if hard:
         conds.extend(profile_search_conditions(" ".join(hard)))
     stmt = select(Profile).where(*conds)
