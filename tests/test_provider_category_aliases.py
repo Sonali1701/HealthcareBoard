@@ -136,6 +136,29 @@ class ProviderCategoryAliasTests(unittest.TestCase):
             db.close()
             engine.dispose()
 
+    def test_five_digit_zip_matches_zip_plus_four_storage(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        try:
+            db.add_all([
+                Profile(first_name="Five", last_name="Digit", specialty="RN",
+                        job_category="Nursing", zip_code="75201", is_listable=True),
+                Profile(first_name="Nine", last_name="Digit", specialty="RN",
+                        job_category="Nursing", zip_code="752011234", is_listable=True),
+                Profile(first_name="Dashed", last_name="Zip", specialty="RN",
+                        job_category="Nursing", zip_code="75201-1234", is_listable=True),
+                Profile(first_name="Other", last_name="Zip", specialty="RN",
+                        job_category="Nursing", zip_code="75202", is_listable=True),
+            ])
+            db.commit()
+            rows = db.scalars(select(Profile).where(*_provider_conditions(
+                db, providers_only=True, zip="75201"))).all()
+            self.assertEqual({row.first_name for row in rows}, {"Five", "Nine", "Dashed"})
+        finally:
+            db.close()
+            engine.dispose()
+
     def test_registered_nurse_search_excludes_physician_mentions_and_needs_no_resume(self):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)

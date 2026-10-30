@@ -803,9 +803,16 @@ def _provider_conditions(
             conds.append(func.earth_box(ec, radius_m).op("@>")(ep))
             conds.append(func.earth_distance(ec, ep) <= radius_m)
     elif zip:
-        # Without a radius, a ZIP request means an exact postal-code match.
-        # Radius searches are handled above through the geocoded centre.
-        conds.append(Profile.zip_code == zip.strip()[:5])
+        # NPPES commonly stores ZIP+4 as either 123456789 or 12345-6789.
+        # Production has an index on this normalized five-digit expression;
+        # keep SQLite's portable equivalent for local development and tests.
+        zip5 = zip.strip()[:5]
+        if db.get_bind().dialect.name == "postgresql":
+            normalized_zip = func.substr(
+                func.regexp_replace(Profile.zip_code, "[^0-9]", "", "g"), 1, 5)
+            conds.append(normalized_zip == zip5)
+        else:
+            conds.append(Profile.zip_code.startswith(zip5))
     elif city:
         conds.append(func.lower(Profile.city).like(f"{city.strip().lower()}%"))
     if american_board:

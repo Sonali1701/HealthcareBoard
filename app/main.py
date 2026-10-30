@@ -228,6 +228,51 @@ for module in (
 # worker, no matter how much traffic the signed-out page gets.
 _stats_cache: dict = {"at": 0.0, "data": None}
 _STATS_TTL_SECONDS = 300
+_PUBLIC_STATE_CODES = (
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID",
+    "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+    "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
+    "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+    "WI", "WY", "DC",
+)
+
+
+def _public_stats_uncached(db) -> dict:
+    """Fetch headline counts without scanning the full profiles table.
+
+    PostgreSQL's partial directory index carries an ANALYZE-maintained row
+    estimate. It is accurate enough for a marketing headline and answers in
+    milliseconds. SQLite retains exact counts for local development/tests.
+    """
+    if db.get_bind().dialect.name == "postgresql":
+        providers = db.execute(sa_text(
+            "SELECT reltuples::bigint FROM pg_class "
+            "WHERE relname = 'ix_profiles_listable_cat' "
+            "AND relnamespace = 'public'::regnamespace"
+        )).scalar()
+        if providers is None or providers < 0:
+            providers = db.execute(sa_text(
+                "SELECT count(*) FROM profiles WHERE is_listable IS TRUE"
+            )).scalar() or 0
+        state_values = ",".join(f"('{code}')" for code in _PUBLIC_STATE_CODES)
+        states = db.execute(sa_text(
+            "SELECT count(*) FROM (VALUES " + state_values + ") AS s(code) "
+            "WHERE EXISTS (SELECT 1 FROM profiles p "
+            "WHERE p.state_code = s.code AND p.is_listable IS TRUE)"
+        )).scalar() or 0
+    else:
+        providers = db.execute(sa_text(
+            "SELECT count(*) FROM profiles WHERE is_listable IS TRUE"
+        )).scalar() or 0
+        placeholders = ",".join(f"'{code}'" for code in _PUBLIC_STATE_CODES)
+        states = db.execute(sa_text(
+            "SELECT count(DISTINCT upper(state_code)) FROM profiles "
+            "WHERE is_listable IS TRUE AND upper(state_code) IN (" + placeholders + ")"
+        )).scalar() or 0
+    jobs = db.execute(sa_text(
+        "SELECT count(*) FROM job_postings WHERE status = 'active'"
+    )).scalar() or 0
+    return {"providers": int(providers), "jobs": int(jobs), "states": int(states)}
 
 
 @app.get("/api/public/stats", tags=["meta"])
@@ -246,19 +291,7 @@ def public_stats():
 
     db = SessionLocal()
     try:
-        providers = db.execute(sa_text(
-            "SELECT count(*) FROM profiles WHERE is_listable IS TRUE")).scalar() or 0
-        jobs = db.execute(sa_text(
-            "SELECT count(*) FROM job_postings WHERE status = 'active'")).scalar() or 0
-        # Constrained to real US state codes: the imported data carries junk
-        # values, and a distinct count reported 61 "states".
-        states = db.execute(sa_text(
-            "SELECT count(DISTINCT upper(state_code)) FROM profiles "
-            "WHERE is_listable IS TRUE AND upper(state_code) IN "
-            "('AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL',"
-            "'IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT',"
-            "'NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI',"
-            "'SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC')")).scalar() or 0
+        result = _public_stats_uncached(db)
     except Exception:
         # Serve the last good value through a blip rather than a bare null.
         if _stats_cache["data"] is not None:
@@ -267,7 +300,6 @@ def public_stats():
     finally:
         db.close()
 
-    result = {"providers": providers, "jobs": jobs, "states": states}
     _stats_cache["data"] = result
     _stats_cache["at"] = now
     return result

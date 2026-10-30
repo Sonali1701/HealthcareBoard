@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import Base, get_db
-from app.main import app
+from app.main import _public_stats_uncached, app
 from app.models import Application, CreditAccount, Employer, JobPosting, MatchRun, Profile, User
 from app.routers.admin import _overview_profile_counts
 from app.routers.profiles import _copilot_rule_filters
@@ -55,6 +55,43 @@ class LaunchWebFlowTests(unittest.TestCase):
     def test_admin_profile_count_remains_exact_on_sqlite(self):
         with self.sessions() as db:
             self.assertEqual(_overview_profile_counts(db), (0, 0, False))
+
+    def test_public_stats_are_exact_on_sqlite(self):
+        with self.sessions() as db:
+            db.add_all([
+                Profile(first_name="One", last_name="Nurse", state_code="TX",
+                        is_listable=True),
+                Profile(first_name="Two", last_name="Nurse", state_code="TX",
+                        is_listable=True),
+                Profile(first_name="Hidden", last_name="Nurse", state_code="CA",
+                        is_listable=False),
+            ])
+            owner = User(email="stats-owner@example.com", password_hash="unused",
+                         role="recruiter", status="active")
+            db.add(owner)
+            db.flush()
+            employer = Employer(owner_user_id=owner.user_id, org_name="Stats Clinic")
+            db.add(employer)
+            db.flush()
+            db.add(JobPosting(employer_id=employer.employer_id,
+                              title="Open role", status="active"))
+            db.commit()
+            self.assertEqual(_public_stats_uncached(db), {
+                "providers": 2, "jobs": 1, "states": 1,
+            })
+
+    def test_public_stats_use_profile_index_estimate_on_postgres(self):
+        db = mock.Mock()
+        db.get_bind.return_value.dialect.name = "postgresql"
+        results = [mock.Mock(), mock.Mock(), mock.Mock()]
+        results[0].scalar.return_value = 11600000
+        results[1].scalar.return_value = 51
+        results[2].scalar.return_value = 501
+        db.execute.side_effect = results
+        self.assertEqual(_public_stats_uncached(db), {
+            "providers": 11600000, "jobs": 501, "states": 51,
+        })
+        self.assertEqual(db.execute.call_count, 3)
 
     def test_web_signup_login_and_local_redirect(self):
         page = self.client.get("/app/signup")
