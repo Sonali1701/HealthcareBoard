@@ -1229,9 +1229,9 @@
   }
 
   // Built to scale to millions of rows: server-side filtering + paging. We never
-  // fetch an exact COUNT for broad browses (that's an O(rows) scan) — the tab
-  // totals come from the cached /facets endpoint, and Prev/Next uses the API's
-  // has_next flag. An exact total is requested only for selective filter combos.
+  // fetch an exact COUNT with the result page (that's an O(rows) scan). Tab
+  // totals come from the cached facets/counts endpoints, and Prev/Next uses the
+  // result endpoint's has_next flag.
   const PAGE_SIZE = 60;
   // Curated license/title options (relevant to healthcare staffing) shown with
   // full names. Codes not listed here (MBBS, PharmD, degrees, ...) are hidden.
@@ -1298,16 +1298,30 @@
   async function refreshCounts(){
     if (!isRecruiter()) return;
     const seq = ++_countSeq;
-    if (!hasNonCategoryFilters()){ S.activeCounts = S.facetCategories; paintCounts(); return; }
+    if (!hasNonCategoryFilters()){
+      S.activeCounts = S.facetCategories;
+      S.providerTotal = facetTotalFor(S.provider.category);
+      paintCounts();
+      if (S.providerLastData) renderPager(S.providerLastData);
+      return;
+    }
     const key = countParams();
-    if (_countCache.has(key)){ S.activeCounts = _countCache.get(key); paintCounts(); return; }
+    if (_countCache.has(key)){
+      S.activeCounts = _countCache.get(key);
+      S.providerTotal = facetTotalFor(S.provider.category);
+      paintCounts();
+      if (S.providerLastData) renderPager(S.providerLastData);
+      return;
+    }
     let counts;
     try { counts = await get("/api/profiles/category-counts?" + key); }
     catch(e){ return; }
     if (seq !== _countSeq) return;   // a newer filter change superseded this
     _countCache.set(key, counts);
     S.activeCounts = counts;
+    S.providerTotal = facetTotalFor(S.provider.category);
     paintCounts();
+    if (S.providerLastData) renderPager(S.providerLastData);
   }
   async function fetchProviders(params){
     const key = params.toString();
@@ -1358,7 +1372,12 @@
     if (prev) prev.onclick = () => { if (S.providerOffset > 0){ S.providerOffset = Math.max(0, S.providerOffset - PAGE_SIZE); loadProviders(); document.querySelector('.main').scrollTo(0,0); } };
     if (next) next.onclick = () => { if (S.providerHasNext){ S.providerOffset += PAGE_SIZE; loadProviders(); document.querySelector('.main').scrollTo(0,0); } };
   }
-  function providerFilterChanged(){ S.providerOffset = 0; refreshCounts(); loadProviders(); }
+  function providerFilterChanged(){
+    S.providerOffset = 0;
+    S.providerTotal = null;
+    refreshCounts();
+    loadProviders();
+  }
   function setExperienceFilter(value){
     S.provider.min_experience = "";
     S.provider.max_experience = "";
@@ -1452,9 +1471,9 @@
   async function loadProviders(){
     if (!isRecruiter()) return;
     const filtered = hasNonCategoryFilters();
-    // Exact count only for selective filter combos, computed once on page 1.
-    const wantCount = filtered && S.providerOffset === 0;
-    const params = providerParams(S.provider, {offset:S.providerOffset, count:wantCount});
+    // Category counts are already fetched independently and cached.  Waiting
+    // for another exact COUNT here makes the result rows wait on a full scan.
+    const params = providerParams(S.provider, {offset:S.providerOffset, count:false});
     const seq = ++S.providerReq;
     if (!S.providerCache.has(params.toString())) {
       $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, "Loading providers...");
@@ -3982,6 +4001,7 @@
       t.classList.add("active");
       S.provider.category = t.dataset.category;
       S.providerOffset = 0;
+      S.providerTotal = facetTotalFor(S.provider.category);
       loadProviders();
     };
     const resetBtn = $("#search-reset");
