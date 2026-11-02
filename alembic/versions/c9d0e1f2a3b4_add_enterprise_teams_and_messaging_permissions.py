@@ -91,11 +91,48 @@ def upgrade() -> None:
         sa.UniqueConstraint("employer_id", name="uq_zoom_organization_employer"),
     )
     op.create_index("ix_zoom_organization_account", "zoom_organization_integrations", ["zoom_account_id"])
-    op.add_column("team_invites", sa.Column("team_id", sa.String(length=36), nullable=True))
-    op.create_foreign_key(
-        "fk_team_invites_team_id", "team_invites", "organization_teams",
-        ["team_id"], ["team_id"], ondelete="SET NULL",
-    )
+    # ``team_invites`` was originally added through ``create_all`` without an
+    # Alembic revision. Existing installations therefore have the table, while
+    # a database created only by ``alembic upgrade head`` does not. Keep this
+    # revision valid for both paths so a clean production database is
+    # reproducible from migrations alone.
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("team_invites"):
+        op.create_table(
+            "team_invites",
+            sa.Column("invite_id", sa.String(length=36), nullable=False),
+            sa.Column("employer_id", sa.String(length=36), nullable=False),
+            sa.Column("team_id", sa.String(length=36), nullable=True),
+            sa.Column("email", sa.String(length=255), nullable=False),
+            sa.Column("role", sa.String(length=50), nullable=False, server_default="recruiter"),
+            sa.Column("token_hash", sa.String(length=64), nullable=False),
+            sa.Column("status", sa.String(length=20), nullable=False, server_default="pending"),
+            sa.Column("invited_by_user_id", sa.String(length=36), nullable=True),
+            sa.Column("created_at", sa.DateTime(), nullable=False),
+            sa.Column("expires_at", sa.DateTime(), nullable=False),
+            sa.ForeignKeyConstraint(["employer_id"], ["employers.employer_id"], ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(["team_id"], ["organization_teams.team_id"], ondelete="SET NULL"),
+            sa.ForeignKeyConstraint(["invited_by_user_id"], ["users.user_id"], ondelete="SET NULL"),
+            sa.PrimaryKeyConstraint("invite_id"),
+            sa.UniqueConstraint("token_hash"),
+        )
+        op.create_index("ix_team_invites_email", "team_invites", ["email"])
+        op.create_index("ix_team_invites_status", "team_invites", ["status"])
+        op.create_index("ix_team_invites_token_hash", "team_invites", ["token_hash"], unique=True)
+    else:
+        invite_columns = {column["name"] for column in inspector.get_columns("team_invites")}
+        if "team_id" not in invite_columns:
+            op.add_column(
+                "team_invites", sa.Column("team_id", sa.String(length=36), nullable=True)
+            )
+            # SQLite cannot add named foreign keys after table creation. Local
+            # SQLite databases still get the column; PostgreSQL also receives
+            # the database-level constraint.
+            if op.get_bind().dialect.name != "sqlite":
+                op.create_foreign_key(
+                    "fk_team_invites_team_id", "team_invites", "organization_teams",
+                    ["team_id"], ["team_id"], ondelete="SET NULL",
+                )
 
 
 def downgrade() -> None:

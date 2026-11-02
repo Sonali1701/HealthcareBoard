@@ -21,4 +21,5 @@ data/
 exports/
 *_manifest.jsonl
 *.log
+*.stackdump
 .audit_*/

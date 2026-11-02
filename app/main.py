@@ -479,12 +479,15 @@ def _make_page_route(filename: str):
     return _serve
 
 
-for _path, _file in _PROTOTYPE_ROUTES.items():
-    app.add_api_route(_path, _make_page_route(_file), include_in_schema=False)
+if not settings.is_production:
+    for _path, _file in _PROTOTYPE_ROUTES.items():
+        app.add_api_route(_path, _make_page_route(_file), include_in_schema=False)
 
 
 @app.get("/ui/{page}", include_in_schema=False)
 def serve_ui(page: str):
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
     candidate = (PROJECT_ROOT / page).resolve()
     if (candidate.parent == PROJECT_ROOT and candidate.suffix == ".html"
             and candidate.exists()):
@@ -534,10 +537,14 @@ def serve_file(key: str, user: CurrentUser, db: DbSession):
     return RedirectResponse(f"/static/uploads/{key}")
 
 
-# --- Jinja web app (kept available under /app/* for the simpler UI) --------
-for module in (web_public, web_auth, web_seeker, web_recruiter,
-               web_matching, web_messages, web_tools):
-    app.include_router(module.router, prefix="/app")
+# --- Development-only Jinja app -------------------------------------------
+# The launch product uses the API-backed board. The older Jinja interface and
+# prototype pages remain useful for local reference, but exposing both products
+# in production creates stale duplicate flows and bypass risks.
+if not settings.is_production:
+    for module in (web_public, web_auth, web_seeker, web_recruiter,
+                   web_matching, web_messages, web_tools):
+        app.include_router(module.router, prefix="/app")
 
 
 # --- Static assets --------------------------------------------------------
@@ -552,6 +559,8 @@ def legacy_api_client():
     exposing it under the normal asset prefix keeps those pages functional
     without mounting the whole project directory.
     """
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(PROJECT_ROOT / "hb-api.js",
                         media_type="application/javascript")
 
