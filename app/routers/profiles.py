@@ -2732,7 +2732,9 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
     # healthcare-specific payoff: licenses, compact reach, work history.
     licenses = [{"type": l.license_type, "state": l.state_code,
                  "compact": bool(l.is_compact),
-                 "expiry": l.expiry_date.isoformat() if l.expiry_date else None}
+                 "expiry": l.expiry_date.isoformat() if l.expiry_date else None,
+                 "verification_status": l.verification_status or "never_checked",
+                 "verified": l.verification_status == "active"}
                 for l in profile.licenses]
     work_history = []
     for w in profile.work_history:
@@ -2749,7 +2751,12 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
             "start": w.start_date.isoformat()[:7] if w.start_date else None,
             "end": w.end_date.isoformat()[:7] if w.end_date else None,
         })
-    licensed_states = sorted({l["state"] for l in licenses if l["state"]})
+    licensed_states = sorted({l["state"] for l in licenses
+                              if l["state"] and l["verified"]})
+    reported_license_states = sorted({l["state"] for l in licenses if l["state"]})
+    reported_board = (profile.american_board if profile.american_board and
+                      re.search(r"board|abms|osteopathic|certif|\bAB[A-Z]{2,}\b",
+                                profile.american_board, re.I) else None)
 
     # The original résumé file is downloadable only once the contact is revealed
     # (or it's the provider's own profile). Expose the app endpoint, never the
@@ -2768,19 +2775,22 @@ def view_resume(profile_id: str, user: CurrentUser, db: DbSession):
         "can_download": can_download,
         "download_url": (f"/api/profiles/{profile.profile_id}/resume/download"
                          if can_download else None),
-        "board": profile.american_board,
+        "board": reported_board,
         "years_experience": profile.years_experience,
         "sections": sections,
         "skills": skills[:20],
         # --- enriched structured data ---
         "licenses": licenses,
         "licensed_states": licensed_states,
-        "has_compact": any(l["compact"] for l in licenses),
+        "reported_license_states": reported_license_states,
+        "has_compact": any(l["compact"] and l["verified"] for l in licenses),
+        "reported_has_compact": any(l["compact"] for l in licenses),
         "work_history": work_history,
         "education": _public_education(profile),
         "work_authorization": _public_work_authorization(profile),
         "available_date": (profile.available_date.isoformat()
-                           if profile.available_date else None),
+                           if profile.available_date and
+                           profile.available_date >= utcnow().date() else None),
     }
 
 
@@ -2876,8 +2886,10 @@ def profile_summary(profile_id: str, user: CurrentUser, db: DbSession):
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    licenses = [{"type": l.license_type, "state": l.state_code, "compact": bool(l.is_compact)}
-                for l in profile.licenses][:12]
+    licenses = [{"type": l.license_type, "state": l.state_code,
+                 "compact": bool(l.is_compact)}
+                for l in profile.licenses
+                if l.verification_status == "active"][:12]
     work = [{"employer": w.employer_name, "title": w.job_title,
              "specialty": w.specialty, "type": w.employment_type}
             for w in profile.work_history][:8]
@@ -2890,7 +2902,7 @@ def profile_summary(profile_id: str, user: CurrentUser, db: DbSession):
         "licenses": licenses, "licensed_in": compact_states,
         "has_compact_license": any(l["compact"] for l in licenses),
         "travel_experience": any(w.get("type") == "travel" for w in work),
-        "work_history": work, "education": profile.education or [],
+        "work_history": work, "education": _public_education(profile),
     }
     if not (licenses or work or profile.specialty or profile.years_experience
             or profile.education):
