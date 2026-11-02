@@ -21,6 +21,14 @@ from .database import engine
 
 STATEMENTS = [
     "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+    # The default Providers page is intentionally count-free, but it still has
+    # to find the best 21 eligible rows in a table with millions of profiles.
+    # The older category index cannot provide this global ordering, so Postgres
+    # otherwise parallel-scans and sorts the directory on every cold request.
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_provider_browse_score "
+    "ON profiles (completion_score DESC, profile_id) "
+    "WHERE is_listable IS TRUE AND merged_into IS NULL "
+    "AND job_category IS NOT NULL AND specialty IS NOT NULL",
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_cat_score "
     "ON profiles (provider_category, completion_score DESC, profile_id)",
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_search_trgm "
