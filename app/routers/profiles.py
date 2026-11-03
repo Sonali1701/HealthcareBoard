@@ -1979,17 +1979,35 @@ def screening_report(user: CurrentUser, db: DbSession, limit: int = Query(10, ge
 
 _FACETS_CACHE: dict = {"data": None, "at": 0.0}
 _BASIC_FACETS_CACHE: dict = {"data": None, "at": 0.0}
+_CATEGORY_COUNTS_CACHE: dict = {"data": None, "at": 0.0}
 _FACETS_TTL = 300.0  # seconds — distinct/group-by over millions of rows is costly
 
 
 @router.get("/facets")
-def profile_facets(user: CurrentUser, db: DbSession, basic: bool = False):
+def profile_facets(user: CurrentUser, db: DbSession, basic: bool = False,
+                   counts_only: bool = False):
     """Distinct filter values + category counts for the Providers directory.
 
     Cached in-process for a few minutes: on a multi-million-row table these
     DISTINCT / GROUP BY scans are expensive, and the values change slowly.
     """
     _require_provider_directory_access(user)
+    if counts_only:
+        now = time.monotonic()
+        if (_CATEGORY_COUNTS_CACHE["data"] is not None
+                and now - _CATEGORY_COUNTS_CACHE["at"] < _FACETS_TTL):
+            return _CATEGORY_COUNTS_CACHE["data"]
+        directory_category = _directory_category_expression()
+        cat_rows = db.execute(
+            select(directory_category, func.count())
+            .where(*_provider_conditions(db, providers_only=True))
+            .group_by(directory_category)
+        ).all()
+        data = {"categories": _fold_provider_category_counts(cat_rows)}
+        _CATEGORY_COUNTS_CACHE["data"] = data
+        _CATEGORY_COUNTS_CACHE["at"] = now
+        return data
+
     cache = _BASIC_FACETS_CACHE if basic else _FACETS_CACHE
     now = time.monotonic()
     if cache["data"] is not None and now - cache["at"] < _FACETS_TTL:

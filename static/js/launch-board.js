@@ -342,7 +342,7 @@
     $$(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.page === id));
     if (id === "dashboard") loadDashboard();
     if (id === "jobs") loadJobs();
-    if (id === "providers") { if (!S.facetsLoaded) loadProviderFacets(); loadProviders(); loadSavedSearches(); }
+    if (id === "providers") { initProviderFilterOptions(); if (!S.facetsLoaded) loadProviderFacets(); loadProviders(); loadSavedSearches(); }
     if (id === "ai") setTimeout(() => { const el = $("#ai-input"); if (el) el.focus(); }, 60);
     if (id === "jobai") setTimeout(() => { const el = $("#jai-input"); if (el) el.focus(); }, 60);
     if (id === "extension") loadExtensionPage();
@@ -1254,6 +1254,27 @@
     PT:"Physical Therapist (PT)", OT:"Occupational Therapist (OT)",
   };
   const LICENSE_ORDER = ["MD","DO","NP","PA","CRNA","CNM","DNP","FNP","RN","LPN","LVN","CNA","RT","PT","OT"];
+  const PROVIDER_STATE_CODES = ["AK","AL","AR","AZ","CA","CO","CT","DC","DE","FL","GA","GU","HI","IA","ID","IL","IN","KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ","NM","NV","NY","OH","OK","OR","PA","PR","RI","SC","SD","TN","TX","UT","VA","VI","VT","WA","WI","WV","WY"];
+  function initProviderFilterOptions(){
+    if (S.providerDirectoryTotal == null){
+      try {
+        const cached = Number(localStorage.getItem("hb_provider_directory_total"));
+        if (Number.isSafeInteger(cached) && cached >= 0) S.providerDirectoryTotal = cached;
+      } catch(e) {}
+    }
+    const license = $("#provider-license-title");
+    if (license && license.options.length <= 1){
+      license.innerHTML = `<option value="">Any license/title</option>` + LICENSE_ORDER
+        .map(code => `<option value="${code}">${esc(LICENSE_LABELS[code])}</option>`).join("");
+    }
+    const state = $("#provider-state");
+    if (state && state.options.length <= 1){
+      state.innerHTML = `<option value="">Any state</option>`
+        + PROVIDER_STATE_CODES.map(code => `<option value="${code}">${code}</option>`).join("");
+    }
+    syncProviderControls();
+    $("#providers-count").textContent = providerCountLabel();
+  }
   function providerParams(state=S.provider, opts={}){
     const params = new URLSearchParams({limit:String(PAGE_SIZE), providers_only:"true"});
     Object.entries(state).forEach(([k,v]) => {
@@ -1321,7 +1342,7 @@
   // The headline shows the whole directory's size and stays constant regardless of
   // the selected tab/filter. The current view's count lives on the tabs + the pager.
   function providerCountLabel(){
-    const t = facetTotalFor("");
+    const t = S.providerDirectoryTotal ?? facetTotalFor("");
     return t == null ? "Providers" : `${t.toLocaleString()} providers`;
   }
   function renderProviderPage(data){
@@ -1488,17 +1509,13 @@
   async function loadProviderFacets(){
     if (!isRecruiter() || S.facetsLoaded) return;
     try {
-      const f = await get("/api/profiles/facets?basic=true");
+      const f = await get("/api/profiles/facets?counts_only=true");
       S.facetsLoaded = true;
       S.facetCategories = f.categories || {};
+      S.providerDirectoryTotal = Object.values(S.facetCategories)
+        .reduce((sum, count) => sum + (Number(count) || 0), 0);
+      try { localStorage.setItem("hb_provider_directory_total", String(S.providerDirectoryTotal)); } catch(e) {}
       renderProviderTabs();
-      const avail = new Set((f.license_titles || f.professions || []).map(v => String(v).toUpperCase().replace(/[.\s-]/g, "")));
-      const licOpts = LICENSE_ORDER.filter(code => avail.has(code)).map(code => `<option value="${code}">${esc(LICENSE_LABELS[code])}</option>`);
-      $("#provider-license-title").innerHTML = `<option value="">Any license/title</option>` + licOpts.join("");
-      $("#provider-state").innerHTML = `<option value="">Any state</option>` + (f.states || []).map(v => `<option>${esc(v)}</option>`).join("");
-      // The selects only just gained their options — re-apply any active filter
-      // (e.g. one the copilot set) so the dropdowns reflect it.
-      syncProviderControls();
       // Show directory-wide tab counts only when no search filter is active.
       paintCounts();
       // Facets arrived after the first paint: refresh the current view's pager.
