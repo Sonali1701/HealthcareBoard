@@ -11,8 +11,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, literal, or_, select, text as sa_text
-from sqlalchemy.orm import selectinload
+from sqlalchemy import and_, column, func, lateral, literal, or_, select, table, text as sa_text, true
+from sqlalchemy.orm import load_only, selectinload
 
 from ..config import settings
 from ..database import utcnow
@@ -25,7 +25,7 @@ from ..importers.parsing import (
 )
 from ..services import quick_sourcer, storage
 from ..services.provider_geo import radius_branches
-from ..services.profile_search import profile_search_conditions
+from ..services.profile_search import profile_search_conditions, role_search_terms
 from ..models import (
     AuditLog,
     Certification,
@@ -565,6 +565,17 @@ def _profile_card(profile: Profile, *, released: bool) -> dict:
     return card
 
 
+_CARD_COLUMNS = (
+    Profile.profile_id, Profile.user_id, Profile.first_name, Profile.last_name,
+    Profile.email, Profile.phone, Profile.resume_url, Profile.headline,
+    Profile.specialty, Profile.profession_type, Profile.provider_category,
+    Profile.job_category, Profile.american_board, Profile.years_experience,
+    Profile.city, Profile.state_code, Profile.completion_score,
+    Profile.npi_number, Profile.work_authorization,
+    Profile.contact_updated_by_email,
+)
+
+
 def _redact_name(text: str, profile: Profile) -> str:
     """Replace the candidate's own name inside résumé text with initials."""
     tokens = [t for t in ((profile.first_name or "").strip(),
@@ -840,7 +851,10 @@ def _provider_conditions(
     if resume_status in {"with_resume", "without_resume"}:
         has_resume = (Profile.resume_url.isnot(None)
                       & (func.length(func.trim(Profile.resume_url)) > 0))
-        conds.append(has_resume if resume_status == "with_resume" else ~has_resume)
+        conds.append(has_resume if resume_status == "with_resume" else or_(
+            Profile.resume_url.is_(None),
+            func.length(func.trim(Profile.resume_url)) == 0,
+        ))
     return conds
 
 
@@ -851,6 +865,54 @@ def _provider_radius_branches(db, zip, city, state_code, radius_mi):
     if center is None:
         return None
     return radius_branches(*center, radius_mi * 1609.344)
+
+
+def _catalog_role_page(db, query, conditions, category, limit, offset):
+    """Page a known role through its indexed specialty values."""
+    role = role_search_terms(query)
+    if not role or offset > 600 or re.search(
+            r"\bregistered\s+nurses?\b", query, re.IGNORECASE):
+        return None
+    role_category, words = role
+    # A category-only query is already served by the ordered category index.
+    if all(word in role_category.casefold() for word in words):
+        return None
+    catalog = table("provider_specialty_catalog",
+                    column("specialty_value"), column("specialty_key"),
+                    column("job_category"))
+    terms = (select(catalog.c.specialty_value, catalog.c.job_category)
+             .where(catalog.c.job_category == role_category,
+                    *(catalog.c.specialty_key.like(f"%{word}%") for word in words))
+             .cte("role_terms").prefix_with("MATERIALIZED"))
+    take = offset + limit + 1
+    filters = [*conditions, Profile.specialty == terms.c.specialty_value,
+               Profile.job_category == terms.c.job_category]
+    if category:
+        filters.append(_provider_category_condition(category))
+    hits = lateral(
+        select(Profile.profile_id.label("profile_id"),
+               Profile.completion_score.label("completion_score"))
+        .where(*filters)
+        .order_by(Profile.completion_score.desc(), Profile.profile_id)
+        .limit(take)
+    ).alias("role_hits")
+    # PostgreSQL sometimes chooses a bitmap scan and sorts every matching
+    # specialty. The ordered specialty index can stop as soon as the page is
+    # filled. Scope the planner setting to this statement's transaction.
+    db.execute(sa_text("SET LOCAL enable_bitmapscan = off"))
+    try:
+        ids = db.scalars(
+            select(hits.c.profile_id).select_from(terms.join(hits, true()))
+            .order_by(hits.c.completion_score.desc(), hits.c.profile_id)
+            .limit(limit + 1).offset(offset)
+        ).all()
+    finally:
+        db.execute(sa_text("SET LOCAL enable_bitmapscan = DEFAULT"))
+    by_id = {p.profile_id: p for p in db.scalars(
+        select(Profile).options(load_only(*_CARD_COLUMNS))
+        .where(Profile.profile_id.in_(ids))
+    ).all()} if ids else {}
+    return [by_id[profile_id] for profile_id in ids if profile_id in by_id]
 
 
 _UNCATEGORIZED = "Uncategorized"
@@ -946,17 +1008,18 @@ def search_profiles(
 ):
     _require_provider_directory_access(user)
     geo_branches = _provider_radius_branches(db, zip, city, state_code, radius_mi)
-    conds = _provider_conditions(
-        db, q=q, providers_only=providers_only, specialty=specialty,
-        license_title=license_title, profession_type=profession_type,
-        state_code=state_code, city=city, zip=zip, radius_mi=radius_mi,
-        american_board=american_board, open_to_work=open_to_work,
-        min_experience=min_experience, max_experience=max_experience,
-        contact_available=contact_available, resume_status=resume_status,
-        compact=compact,
+    search_filters = dict(
+        specialty=specialty, license_title=license_title,
+        profession_type=profession_type, state_code=state_code, city=city,
+        zip=zip, radius_mi=radius_mi, american_board=american_board,
+        open_to_work=open_to_work, min_experience=min_experience,
+        max_experience=max_experience, contact_available=contact_available,
+        resume_status=resume_status, compact=compact,
         licensed_state=licensed_state, worked_at=worked_at,
         travel_experience=travel_experience,
         split_radius=geo_branches is not None)
+    conds = _provider_conditions(db, q=q, providers_only=providers_only,
+                                 **search_filters)
     stmt = select(Profile).where(*conds)
     if category:
         stmt = stmt.where(_provider_category_condition(category))
@@ -989,16 +1052,25 @@ def search_profiles(
                                    -(r.completion_score or 0), r.profile_id))
         page_ids = [r.profile_id for r in ranked[offset:offset + limit + 1]]
         by_id = {r.profile_id: r for r in db.scalars(
-            select(Profile).where(Profile.profile_id.in_(page_ids))).all()}
+            select(Profile).options(load_only(*_CARD_COLUMNS))
+            .where(Profile.profile_id.in_(page_ids))).all()}
         rows = [by_id[pid] for pid in page_ids if pid in by_id]
     else:
         if count:
             total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         # Fetch one extra row to know if there's a next page without a full COUNT.
-        rows = db.scalars(
-            stmt.order_by(Profile.completion_score.desc(), Profile.profile_id)
-            .limit(limit + 1).offset(offset)
-        ).all()
+        rows = None
+        if q and providers_only and db.get_bind().dialect.name == "postgresql":
+            base_conditions = _provider_conditions(
+                db, q=None, providers_only=True, **search_filters)
+            rows = _catalog_role_page(db, q, base_conditions, category,
+                                      limit, offset)
+        if rows is None:
+            rows = db.scalars(
+                stmt.options(load_only(*_CARD_COLUMNS))
+                .order_by(Profile.completion_score.desc(), Profile.profile_id)
+                .limit(limit + 1).offset(offset)
+            ).all()
     has_next = len(rows) > limit
     page_rows = rows[:limit]
     # Identity is withheld unless this recruiter already released the profile

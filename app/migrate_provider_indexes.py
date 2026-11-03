@@ -29,6 +29,19 @@ STATEMENTS = [
     "ON profiles (completion_score DESC, profile_id) "
     "WHERE is_listable IS TRUE AND merged_into IS NULL "
     "AND job_category IS NOT NULL AND specialty IS NOT NULL",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_provider_category_score "
+    "ON profiles (job_category, completion_score DESC, profile_id) "
+    "WHERE is_listable IS TRUE AND merged_into IS NULL "
+    "AND specialty IS NOT NULL",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_provider_no_resume_score "
+    "ON profiles (completion_score DESC, profile_id) "
+    "WHERE is_listable IS TRUE AND merged_into IS NULL "
+    "AND job_category IS NOT NULL AND specialty IS NOT NULL "
+    "AND (resume_url IS NULL OR length(trim(resume_url)) = 0)",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_specialty_score "
+    "ON profiles (specialty, completion_score DESC, profile_id) "
+    "WHERE is_listable IS TRUE AND merged_into IS NULL "
+    "AND job_category IS NOT NULL",
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_cat_score "
     "ON profiles (provider_category, completion_score DESC, profile_id)",
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_search_trgm "

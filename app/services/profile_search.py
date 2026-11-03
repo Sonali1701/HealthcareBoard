@@ -119,3 +119,12 @@ def profile_search_conditions(query: str) -> list:
         *(_SEARCH_VALUE.like(pattern, escape="\\") for pattern in patterns),
         or_(name_match, role_match) if not category else role_match,
     ]
+
+
+def role_search_terms(query: str) -> tuple[str, list[str]] | None:
+    """Return an unambiguous source category and its search words, if known."""
+    words = re.findall(r"\w+", query[:120].casefold())[:6]
+    if not words or any(len(word) < 3 for word in words):
+        return None
+    category = _role_category(" ".join(words))
+    return (category, words) if category else None
