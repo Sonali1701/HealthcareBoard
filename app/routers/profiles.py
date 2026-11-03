@@ -859,6 +859,24 @@ def _provider_conditions(
     return conds
 
 
+def _license_title_profile_ids(title: str):
+    """Return title matches through the existing B-tree indexes.
+
+    Applying lower() inside the old OR predicate prevented PostgreSQL from
+    using the profession_type and license_type indexes, so it walked the whole
+    score-ordered provider index to find a page of matches.
+    """
+    title = title.strip()
+    variants = {title, title.lower(), title.upper(), title.title()}
+    profile_matches = select(Profile.profile_id.label("profile_id")).where(
+        Profile.profession_type.in_(variants)
+    )
+    license_matches = select(License.profile_id.label("profile_id")).where(
+        License.license_type.in_(variants)
+    )
+    return profile_matches.union(license_matches)
+
+
 def _provider_radius_branches(db, zip, city, state_code, radius_mi):
     if not radius_mi or not (zip or city):
         return None
@@ -1133,8 +1151,16 @@ def search_profiles(
         licensed_state=licensed_state, worked_at=worked_at,
         travel_experience=travel_experience,
         split_radius=geo_branches is not None)
+    title_profile_ids = None
+    if providers_only and license_title and db.get_bind().dialect.name == "postgresql":
+        title_profile_ids = _license_title_profile_ids(license_title)
+        # Use the union of indexed profile and license IDs instead of a lower()
+        # predicate plus correlated OR, which can scan millions of providers.
+        search_filters["license_title"] = None
     conds = _provider_conditions(db, q=q, providers_only=providers_only,
                                  **search_filters)
+    if title_profile_ids is not None:
+        conds.append(Profile.profile_id.in_(title_profile_ids))
     stmt = select(Profile).where(*conds)
     if category:
         stmt = stmt.where(_provider_category_condition(category))
@@ -1165,6 +1191,8 @@ def search_profiles(
         if q and providers_only and db.get_bind().dialect.name == "postgresql":
             base_conditions = _provider_conditions(
                 db, q=None, providers_only=True, **search_filters)
+            if title_profile_ids is not None:
+                base_conditions.append(Profile.profile_id.in_(title_profile_ids))
             rows = _catalog_role_page(db, q, base_conditions, category,
                                       limit, offset)
             if rows is None:
