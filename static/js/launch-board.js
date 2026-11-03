@@ -8,7 +8,7 @@
     },
     providerCache:new Map(), providerInflight:new Map(), providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
     providerOffset:0, providerTotal:null, providerHasNext:false, facetCategories:{},
-    providerLastData:null, facetsLoaded:false, activeCounts:null,
+    providerLastData:null, facetsLoaded:false,
     // Messaging + talent pools
     threads:[], activeThread:null, threadPoll:null, msgFilter:"",
     threadsReq:0, threadReq:0,
@@ -1265,7 +1265,7 @@
     return ["q","license_title","state_code","licensed_state","worked_at","city","min_experience","max_experience","contact_available","resume_status"].some(k => s[k]) || !!(s.radius_mi && (s.zip || s.city));
   }
   function facetTotalFor(category){
-    const c = S.activeCounts || S.facetCategories;   // counts reflect the active filters
+    const c = S.facetCategories;
     if (!c || !Object.keys(c).length) return null;
     return category ? (c[category] || 0) : Object.values(c).reduce((s,n)=>s+(Number(n)||0),0);
   }
@@ -1276,53 +1276,17 @@
       + categories.map(category => `<button class="tab" data-category="${esc(category)}">${esc(category)}</button>`).join("");
     syncProviderControls();
   }
-  // Faceted counts: the headline + tab numbers reflect the CURRENT filters.
-  function countParams(){
-    const s = S.provider, p = new URLSearchParams();
-    ["q","license_title","state_code","licensed_state","worked_at","city","min_experience","max_experience","contact_available","resume_status"].forEach(k => { if (s[k]) p.set(k, s[k]); });
-    if (s.radius_mi && (s.zip || s.city)){ if (s.zip) p.set("zip", s.zip); p.set("radius_mi", s.radius_mi); }
-    return p.toString();
-  }
   function paintCounts(){
-    const c = S.activeCounts || S.facetCategories || {};
+    const c = S.facetCategories || {};
     const total = Object.values(c).reduce((s,n)=>s+(Number(n)||0),0);
-    $("#providers-count").textContent = `${total.toLocaleString()} provider${total===1?"":"s"}`;
+    $("#providers-count").textContent = providerCountLabel();
+    const filtered = hasNonCategoryFilters();
     $$("#provider-tabs .tab").forEach(t => {
       if (t.dataset.base == null) t.dataset.base = t.textContent.replace(/\s+[\d,]+$/, "").trim();
       const n = t.dataset.category ? (c[t.dataset.category] || 0) : total;
-      t.textContent = `${t.dataset.base} ${Number(n).toLocaleString()}`;
+      // Directory-wide counts would be misleading beside filtered results.
+      t.textContent = filtered ? t.dataset.base : `${t.dataset.base} ${Number(n).toLocaleString()}`;
     });
-  }
-  let _countSeq = 0;
-  let _providerCountTimer;
-  const _countCache = new Map();
-  async function refreshCounts(){
-    if (!isRecruiter()) return;
-    const seq = ++_countSeq;
-    if (!hasNonCategoryFilters()){
-      S.activeCounts = S.facetCategories;
-      S.providerTotal = facetTotalFor(S.provider.category);
-      paintCounts();
-      if (S.providerLastData) renderPager(S.providerLastData);
-      return;
-    }
-    const key = countParams();
-    if (_countCache.has(key)){
-      S.activeCounts = _countCache.get(key);
-      S.providerTotal = facetTotalFor(S.provider.category);
-      paintCounts();
-      if (S.providerLastData) renderPager(S.providerLastData);
-      return;
-    }
-    let counts;
-    try { counts = await get("/api/profiles/category-counts?" + key); }
-    catch(e){ return; }
-    if (seq !== _countSeq || key !== countParams()) return;
-    _countCache.set(key, counts);
-    S.activeCounts = counts;
-    S.providerTotal = facetTotalFor(S.provider.category);
-    paintCounts();
-    if (S.providerLastData) renderPager(S.providerLastData);
   }
   async function fetchProviders(params){
     const key = params.toString();
@@ -1482,8 +1446,9 @@
   async function loadProviders(){
     if (!isRecruiter()) return;
     const filtered = hasNonCategoryFilters();
-    // Category counts are already fetched independently and cached.  Waiting
-    // for another exact COUNT here makes the result rows wait on a full scan.
+    // Read only this page plus one row for Next; filtered totals require a full scan.
+    if (filtered && S.providerOffset === 0) S.providerTotal = null;
+    paintCounts();
     const params = providerParams(S.provider, {offset:S.providerOffset, count:false});
     const seq = ++S.providerReq;
     if (!S.providerCache.has(params.toString())) {
@@ -1493,21 +1458,12 @@
     try {
       const data = await fetchProviders(params);
       if (seq !== S.providerReq) return;   // a newer request superseded this one
-      if (data.total != null) S.providerTotal = data.total;         // filtered page 1
+      if (data.total != null) S.providerTotal = data.total;
       else if (!filtered) S.providerTotal = facetTotalFor(S.provider.category);
-      // (filtered offset>0 keeps the total captured on page 1)
       S.providerHasNext = !!data.has_next;
       S.providerLastData = data;
       renderProviderPage(data);
       renderPager(data);
-      // Exact tab counts can scan millions of rows. Start them only after the
-      // result page has rendered so they cannot delay the visible providers.
-      if (filtered && S.providerOffset === 0){
-        clearTimeout(_providerCountTimer);
-        _providerCountTimer = setTimeout(() => {
-          if (seq === S.providerReq) refreshCounts();
-        }, 400);
-      }
     } catch(e) {
       if (seq !== S.providerReq) return;
       const message = e.status === 403 ? "Recruiter access required."
@@ -1534,8 +1490,7 @@
       // The selects only just gained their options — re-apply any active filter
       // (e.g. one the copilot set) so the dropdowns reflect it.
       syncProviderControls();
-      // Set the tab + headline counts (respecting any filters already applied).
-      if (!hasNonCategoryFilters()) S.activeCounts = S.facetCategories;
+      // Show directory-wide tab counts only when no search filter is active.
       paintCounts();
       // Facets arrived after the first paint: refresh the current view's pager.
       if (!hasNonCategoryFilters() && S.providerLastData){
@@ -4026,7 +3981,7 @@
       t.classList.add("active");
       S.provider.category = t.dataset.category;
       S.providerOffset = 0;
-      S.providerTotal = facetTotalFor(S.provider.category);
+      S.providerTotal = hasNonCategoryFilters() ? null : facetTotalFor(S.provider.category);
       loadProviders();
     };
     const resetBtn = $("#search-reset");
