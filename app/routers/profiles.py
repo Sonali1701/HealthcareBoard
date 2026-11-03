@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, column, func, lateral, literal, or_, select, table, text as sa_text, true
+from sqlalchemy import and_, column, func, lateral, literal, or_, select, table, text as sa_text, true, union_all
 from sqlalchemy.orm import load_only, selectinload
 
 from ..config import settings
@@ -821,6 +821,7 @@ def _provider_conditions(
         if db.get_bind().dialect.name == "postgresql":
             normalized_zip = func.substr(
                 func.regexp_replace(Profile.zip_code, "[^0-9]", "", "g"), 1, 5)
+            conds.append(Profile.zip_code.isnot(None))
             conds.append(normalized_zip == zip5)
         else:
             conds.append(Profile.zip_code.startswith(zip5))
@@ -867,6 +868,40 @@ def _provider_radius_branches(db, zip, city, state_code, radius_mi):
     return radius_branches(*center, radius_mi * 1609.344)
 
 
+def _provider_radius_page_ids(db, conditions, branches, center, category,
+                              limit, offset, has_query=False):
+    """Page exact coordinates first, then ZIP and city centroid matches."""
+    page_ids = []
+    remaining_offset = offset
+    category_filter = ([_provider_category_condition(category)] if category else [])
+    for index, branch in enumerate(branches):
+        needed = limit + 1 - len(page_ids)
+        take = remaining_offset + needed
+        statement = (select(Profile.profile_id)
+                     .where(*conditions, branch, *category_filter))
+        if index == 0:
+            # The earth GiST index can return nearest exact coordinates in
+            # order, stopping once the page is full.
+            distance = func.ll_to_earth(Profile.lat, Profile.lng).op("<->")(
+                func.ll_to_earth(*center))
+            statement = statement.order_by(distance, Profile.profile_id)
+        else:
+            statement = statement.order_by(Profile.completion_score.desc(),
+                                           Profile.profile_id)
+        if index == 0 and has_query:
+            # A trigram bitmap scan followed by a geographic sort is much
+            # slower than walking the earth index to the first nearby matches.
+            db.execute(sa_text("SET LOCAL enable_bitmapscan = off"))
+        found = db.scalars(statement.limit(take)).all()
+        if index == 0 and has_query:
+            db.execute(sa_text("SET LOCAL enable_bitmapscan = DEFAULT"))
+        page_ids.extend(found[remaining_offset:remaining_offset + needed])
+        remaining_offset = max(0, remaining_offset - len(found))
+        if len(page_ids) > limit:
+            break
+    return page_ids
+
+
 def _catalog_role_page(db, query, conditions, category, limit, offset):
     """Page a known role through its indexed specialty values."""
     role = role_search_terms(query)
@@ -911,14 +946,83 @@ def _catalog_role_page(db, query, conditions, category, limit, offset):
     # specialty. The ordered specialty index can stop as soon as the page is
     # filled. Scope the planner setting to this statement's transaction.
     db.execute(sa_text("SET LOCAL enable_bitmapscan = off"))
-    try:
-        ids = db.scalars(
-            select(hits.c.profile_id).select_from(terms.join(hits, true()))
-            .order_by(hits.c.completion_score.desc(), hits.c.profile_id)
-            .limit(limit + 1).offset(offset)
-        ).all()
-    finally:
-        db.execute(sa_text("SET LOCAL enable_bitmapscan = DEFAULT"))
+    ids = db.scalars(
+        select(hits.c.profile_id).select_from(terms.join(hits, true()))
+        .order_by(hits.c.completion_score.desc(), hits.c.profile_id)
+        .limit(limit + 1).offset(offset)
+    ).all()
+    db.execute(sa_text("SET LOCAL enable_bitmapscan = DEFAULT"))
+    by_id = {p.profile_id: p for p in db.scalars(
+        select(Profile).options(load_only(*_CARD_COLUMNS))
+        .where(Profile.profile_id.in_(ids))
+    ).all()} if ids else {}
+    return [by_id[profile_id] for profile_id in ids if profile_id in by_id]
+
+
+def _single_word_page(db, query, conditions, category, limit, offset):
+    """Merge indexed name, specialty, and category matches for one word."""
+    words = re.findall(r"\w+", query[:120].casefold())[:6]
+    if (len(words) != 1 or len(words[0]) < 3 or "_" in words[0]
+            or role_search_terms(query)):
+        return None
+    word = words[0]
+    take = offset + limit + 1
+    filters = [*conditions]
+    if category:
+        filters.append(_provider_category_condition(category))
+
+    def ranked_name(name, label):
+        return (select(Profile.profile_id.label("profile_id"),
+                       Profile.completion_score.label("completion_score"))
+                .where(*filters, name.isnot(None),
+                       func.lower(func.trim(name)) == word)
+                .order_by(Profile.completion_score.desc(), Profile.profile_id)
+                .limit(take).cte(label))
+
+    first = ranked_name(Profile.first_name, "first_name_hits")
+    last = ranked_name(Profile.last_name, "last_name_hits")
+    catalog = table("provider_specialty_catalog",
+                    column("specialty_value"), column("specialty_key"),
+                    column("job_category"))
+    pattern = f"%{word}%"
+    specialties = (select(catalog.c.specialty_value, catalog.c.job_category)
+                   .where(catalog.c.specialty_key.like(pattern))
+                   .cte("specialty_terms").prefix_with("MATERIALIZED"))
+    specialty_hit = lateral(
+        select(Profile.profile_id.label("profile_id"),
+               Profile.completion_score.label("completion_score"))
+        .where(*filters, Profile.specialty == specialties.c.specialty_value,
+               Profile.job_category == specialties.c.job_category)
+        .order_by(Profile.completion_score.desc(), Profile.profile_id)
+        .limit(take)
+    ).alias("specialty_hit")
+    categories = (select(catalog.c.job_category)
+                  .where(func.lower(catalog.c.job_category).like(pattern))
+                  .distinct().cte("category_terms"))
+    category_hit = lateral(
+        select(Profile.profile_id.label("profile_id"),
+               Profile.completion_score.label("completion_score"))
+        .where(*filters, Profile.job_category == categories.c.job_category)
+        .order_by(Profile.completion_score.desc(), Profile.profile_id)
+        .limit(take)
+    ).alias("category_hit")
+    candidates = union_all(
+        select(first.c.profile_id, first.c.completion_score),
+        select(last.c.profile_id, last.c.completion_score),
+        select(specialty_hit.c.profile_id, specialty_hit.c.completion_score)
+        .select_from(specialties.join(specialty_hit, true())),
+        select(category_hit.c.profile_id, category_hit.c.completion_score)
+        .select_from(categories.join(category_hit, true())),
+    ).cte("candidate_ids")
+    db.execute(sa_text("SET LOCAL enable_bitmapscan = off"))
+    ids = db.scalars(
+        select(candidates.c.profile_id)
+        .group_by(candidates.c.profile_id, candidates.c.completion_score)
+        .order_by(candidates.c.completion_score.desc(),
+                  candidates.c.profile_id)
+        .limit(limit + 1).offset(offset)
+    ).all()
+    db.execute(sa_text("SET LOCAL enable_bitmapscan = DEFAULT"))
     by_id = {p.profile_id: p for p in db.scalars(
         select(Profile).options(load_only(*_CARD_COLUMNS))
         .where(Profile.profile_id.in_(ids))
@@ -1037,31 +1141,18 @@ def search_profiles(
 
     total = None
     if geo_branches:
-        # Each indexed location arm is disjoint; count and page within the arms
-        # to avoid a table scan or a large primary-key join.
+        # Each location arm is disjoint. Prefer precise stored coordinates;
+        # only query centroid fallbacks when the requested page needs them.
         if count:
             total = sum(db.scalar(select(func.count()).select_from(Profile)
                                   .where(*conds, branch,
                                          *([_provider_category_condition(category)]
                                            if category else []))) or 0
                         for branch in geo_branches)
-        take = offset + limit + 1
-        ranked = []
-        for index, branch in enumerate(geo_branches):
-            candidates = (select(Profile.profile_id.label("profile_id"),
-                                 Profile.completion_score.label("completion_score"))
-                          .where(*conds, branch,
-                                 *([_provider_category_condition(category)]
-                                   if category else []))
-                          .cte(f"radius_candidates_{index}")
-                          .prefix_with("MATERIALIZED"))
-            ranked.extend(db.execute(
-                select(candidates.c.profile_id, candidates.c.completion_score)
-                .order_by(candidates.c.completion_score.desc(), candidates.c.profile_id)
-                .limit(take)).all())
-        ranked.sort(key=lambda r: (r.completion_score is not None,
-                                   -(r.completion_score or 0), r.profile_id))
-        page_ids = [r.profile_id for r in ranked[offset:offset + limit + 1]]
+        center = _geocode_zip(db, zip) if zip else _geocode_city(db, city, state_code)
+        page_ids = _provider_radius_page_ids(
+            db, conds, geo_branches, center, category, limit, offset,
+            has_query=bool(q))
         by_id = {r.profile_id: r for r in db.scalars(
             select(Profile).options(load_only(*_CARD_COLUMNS))
             .where(Profile.profile_id.in_(page_ids))).all()}
@@ -1076,6 +1167,9 @@ def search_profiles(
                 db, q=None, providers_only=True, **search_filters)
             rows = _catalog_role_page(db, q, base_conditions, category,
                                       limit, offset)
+            if rows is None:
+                rows = _single_word_page(db, q, base_conditions, category,
+                                         limit, offset)
         if rows is None:
             rows = db.scalars(
                 stmt.options(load_only(*_CARD_COLUMNS))

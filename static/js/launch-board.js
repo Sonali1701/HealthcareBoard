@@ -1294,6 +1294,7 @@
     });
   }
   let _countSeq = 0;
+  let _providerCountTimer;
   const _countCache = new Map();
   async function refreshCounts(){
     if (!isRecruiter()) return;
@@ -1316,7 +1317,7 @@
     let counts;
     try { counts = await get("/api/profiles/category-counts?" + key); }
     catch(e){ return; }
-    if (seq !== _countSeq) return;   // a newer filter change superseded this
+    if (seq !== _countSeq || key !== countParams()) return;
     _countCache.set(key, counts);
     S.activeCounts = counts;
     S.providerTotal = facetTotalFor(S.provider.category);
@@ -1386,7 +1387,6 @@
   function providerFilterChanged(){
     S.providerOffset = 0;
     S.providerTotal = null;
-    refreshCounts();
     loadProviders();
   }
   function setExperienceFilter(value){
@@ -1500,6 +1500,14 @@
       S.providerLastData = data;
       renderProviderPage(data);
       renderPager(data);
+      // Exact tab counts can scan millions of rows. Start them only after the
+      // result page has rendered so they cannot delay the visible providers.
+      if (filtered && S.providerOffset === 0){
+        clearTimeout(_providerCountTimer);
+        _providerCountTimer = setTimeout(() => {
+          if (seq === S.providerReq) refreshCounts();
+        }, 400);
+      }
     } catch(e) {
       if (seq !== S.providerReq) return;
       const message = e.status === 403 ? "Recruiter access required."
@@ -3539,7 +3547,6 @@
     S.providerOffset = 0;
     syncProviderControls();
     showPage("providers");   // makes the page active + loads facets + loadProviders
-    refreshCounts();         // headline + tab counts for these filters
   }
 
   // --- Get Extension page -------------------------------------------------
@@ -5734,7 +5741,6 @@
     S.providerOffset = 0;
     syncProviderControls();
     loadProviders();
-    refreshCounts();
     s.new_matches = 0;              // acknowledged by opening it
     renderSavedChips();
   }

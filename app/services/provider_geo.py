@@ -83,7 +83,7 @@ def radius_branches(latitude: float, longitude: float, radius_m: float):
         and_(Profile.lat.isnot(None), Profile.lng.isnot(None),
              nearby(Profile.lat, Profile.lng)),
         and_(missing, Profile.zip_code.isnot(None),
-             zip5 == any_(func.array(nearby_zips.scalar_subquery()))),
+             zip5.in_(nearby_zips)),
         and_(missing, Profile.city.isnot(None), Profile.state_code.isnot(None),
              or_(Profile.zip_code.is_(None),
                  ~zip5.in_(select(ZIP_CENTROIDS.c.zip))),
