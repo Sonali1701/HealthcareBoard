@@ -104,14 +104,14 @@
     return [city, state].filter(Boolean).join(", ");
   };
 
-  async function api(method, path, body, _retried){
+  async function api(method, path, body, _retried, signal){
     const headers = {};
     let transientAuthFailure = false;
     if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
     if (token()) headers.Authorization = "Bearer " + token();
     // no-store: this data (threads, pools, counts) changes constantly, and a
     // cached GET would silently render stale state after a write.
-    const res = await fetch(path, {method, headers, cache:"no-store", body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined});
+    const res = await fetch(path, {method, headers, cache:"no-store", signal, body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined});
     // Single active session: the server signals (via header) that this login was
     // superseded by one on another device. Sign out locally and say why.
     if (res.status === 401 && token() && res.headers.get("X-Session-Superseded") === "1"){
@@ -123,7 +123,7 @@
     // the login screen mid-task. Never for the auth endpoints themselves.
     if (res.status === 401 && token() && !_retried && !path.startsWith("/api/auth/")){
       const outcome = await refreshTokens();
-      if (outcome === "ok") return api(method, path, body, true);
+      if (outcome === "ok") return api(method, path, body, true, signal);
       if (outcome === "superseded"){
         const err = new Error("Signed out"); err.status = 401; err.superseded = true; throw err;
       }
@@ -198,7 +198,7 @@
     })();
     return _refreshing;
   }
-  const get = p => api("GET", p);
+  const get = (p, options={}) => api("GET", p, undefined, false, options.signal);
   const post = (p,b={}) => api("POST", p, b);
   const patch = (p,b={}) => api("PATCH", p, b);
   const put = (p,b={}) => api("PUT", p, b);
@@ -1327,9 +1327,20 @@
     const key = params.toString();
     if (S.providerCache.has(key)) return S.providerCache.get(key);
     if (S.providerInflight.has(key)) return S.providerInflight.get(key);
-    const req = get("/api/profiles?" + key)
-      .then(d => { S.providerCache.set(key,d); S.providerInflight.delete(key); return d; })
-      .catch(e => { S.providerInflight.delete(key); throw e; });
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error("Provider search timed out");
+        error.providerTimeout = true;
+        reject(error);
+        controller.abort();
+      }, 30000);
+    });
+    const req = Promise.race([
+      get("/api/profiles?" + key, {signal:controller.signal}), deadline
+    ]).then(d => { S.providerCache.set(key,d); return d; })
+      .finally(() => { clearTimeout(timer); S.providerInflight.delete(key); });
     S.providerInflight.set(key, req);
     return req;
   }
@@ -1337,7 +1348,7 @@
   // the selected tab/filter. The current view's count lives on the tabs + the pager.
   function providerCountLabel(){
     const t = facetTotalFor("");
-    return t == null ? "Loading providers…" : `${t.toLocaleString()} providers`;
+    return t == null ? "Providers" : `${t.toLocaleString()} providers`;
   }
   function renderProviderPage(data){
     const items = data.items || [];
@@ -1490,7 +1501,14 @@
       renderProviderPage(data);
       renderPager(data);
     } catch(e) {
-      $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, e.status === 403 ? "Recruiter access required." : "Could not load providers.");
+      if (seq !== S.providerReq) return;
+      const message = e.status === 403 ? "Recruiter access required."
+        : e.providerTimeout ? "Provider search took too long." : "Could not load providers.";
+      $("#providers-grid").innerHTML = stateRow(PROVIDER_COLS,
+        errorState(message, e.providerTimeout ? "Try fewer filters, or retry the search." : "Please try again.")
+        + (e.status === 403 ? "" : '<button class="btn small" id="provider-retry">Retry</button>'));
+      const retry = $("#provider-retry");
+      if (retry) retry.onclick = () => loadProviders();
       $("#providers-pager").innerHTML = "";
     }
   }
