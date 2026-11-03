@@ -46,6 +46,13 @@ STATEMENTS = [
     "ON profiles (provider_category, completion_score DESC, profile_id)",
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_search_trgm "
     "ON profiles USING gin (search_text gin_trgm_ops)",
+    # The directory search now matches names, specialty, and job category
+    # directly. Keep this expression identical to _SEARCH_VALUE in
+    # services/profile_search.py so phrase searches can use the trigram index.
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_directory_search_trgm "
+    "ON profiles USING gin ((lower(coalesce(first_name, '') || ' ' || "
+    "coalesce(last_name, '') || ' ' || coalesce(specialty, '') || ' ' || "
+    "coalesce(job_category, ''))) gin_trgm_ops)",
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_city_lower "
     "ON profiles (lower(city) text_pattern_ops)",
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_experience "

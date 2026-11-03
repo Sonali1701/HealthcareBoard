@@ -1326,20 +1326,11 @@
     const key = params.toString();
     if (S.providerCache.has(key)) return S.providerCache.get(key);
     if (S.providerInflight.has(key)) return S.providerInflight.get(key);
-    const controller = new AbortController();
-    let timer;
-    const deadline = new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        const error = new Error("Provider search timed out");
-        error.providerTimeout = true;
-        reject(error);
-        controller.abort();
-      }, 30000);
-    });
-    const req = Promise.race([
-      get("/api/profiles?" + key, {signal:controller.signal}), deadline
-    ]).then(d => { S.providerCache.set(key,d); return d; })
-      .finally(() => { clearTimeout(timer); S.providerInflight.delete(key); });
+    // Let large filtered searches finish; a client deadline only turns a slow
+    // query into a failed search and encourages users to repeat the same work.
+    const req = get("/api/profiles?" + key)
+      .then(d => { S.providerCache.set(key,d); return d; })
+      .finally(() => { S.providerInflight.delete(key); });
     S.providerInflight.set(key, req);
     return req;
   }
@@ -1486,7 +1477,13 @@
     const params = providerParams(S.provider, {offset:S.providerOffset, count:false});
     const seq = ++S.providerReq;
     if (!S.providerCache.has(params.toString())) {
-      $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, "Loading providers...");
+      if (S.providerLastData) {
+        // Keep the last page visible while a new search runs. The pager gives
+        // unobtrusive feedback without replacing useful results with a loader.
+        $("#providers-pager").innerHTML = '<span class="pager-label">Updating providers…</span>';
+      } else {
+        $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, "Loading providers...");
+      }
       $("#providers-count").textContent = providerCountLabel();   // constant grand total
     }
     try {
@@ -1500,14 +1497,14 @@
       renderPager(data);
     } catch(e) {
       if (seq !== S.providerReq) return;
-      const message = e.status === 403 ? "Recruiter access required."
-        : e.providerTimeout ? "Provider search took too long." : "Could not load providers.";
-      $("#providers-grid").innerHTML = stateRow(PROVIDER_COLS,
-        errorState(message, e.providerTimeout ? "Try fewer filters, or retry the search." : "Please try again.")
-        + (e.status === 403 ? "" : '<button class="btn small" id="provider-retry">Retry</button>'));
-      const retry = $("#provider-retry");
-      if (retry) retry.onclick = () => loadProviders();
-      $("#providers-pager").innerHTML = "";
+      if (S.providerLastData) {
+        $("#providers-pager").innerHTML = '<span class="pager-label">Could not update results. Showing the previous page.</span>';
+      } else {
+        const message = e.status === 403 ? "Recruiter access required." : "Could not load providers.";
+        $("#providers-grid").innerHTML = stateRow(PROVIDER_COLS,
+          errorState(message, "The results will remain here when the service responds."));
+        $("#providers-pager").innerHTML = "";
+      }
     }
   }
   async function loadProviderFacets(){

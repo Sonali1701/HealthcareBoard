@@ -1140,6 +1140,11 @@ def search_profiles(
     offset: int = Query(0, ge=0),
 ):
     _require_provider_directory_access(user)
+    if db.get_bind().dialect.name == "postgresql":
+        # Provider searches may touch the large Neon directory on a cold cache.
+        # Do not let the database's short default statement timeout turn a slow
+        # search into an error after we have removed the browser-side deadline.
+        db.execute(sa_text("SET LOCAL statement_timeout = 0"))
     geo_branches = _provider_radius_branches(db, zip, city, state_code, radius_mi)
     search_filters = dict(
         specialty=specialty, license_title=license_title,
