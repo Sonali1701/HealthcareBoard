@@ -874,9 +874,21 @@ def _catalog_role_page(db, query, conditions, category, limit, offset):
             r"\bregistered\s+nurses?\b", query, re.IGNORECASE):
         return None
     role_category, words = role
-    # A category-only query is already served by the ordered category index.
+    take = offset + limit + 1
     if all(word in role_category.casefold() for word in words):
-        return None
+        filters = [*conditions, Profile.job_category == role_category]
+        if category:
+            filters.append(_provider_category_condition(category))
+        ids = db.scalars(
+            select(Profile.profile_id).where(*filters)
+            .order_by(Profile.completion_score.desc(), Profile.profile_id)
+            .limit(limit + 1).offset(offset)
+        ).all()
+        by_id = {p.profile_id: p for p in db.scalars(
+            select(Profile).options(load_only(*_CARD_COLUMNS))
+            .where(Profile.profile_id.in_(ids))
+        ).all()} if ids else {}
+        return [by_id[profile_id] for profile_id in ids if profile_id in by_id]
     catalog = table("provider_specialty_catalog",
                     column("specialty_value"), column("specialty_key"),
                     column("job_category"))
@@ -884,7 +896,6 @@ def _catalog_role_page(db, query, conditions, category, limit, offset):
              .where(catalog.c.job_category == role_category,
                     *(catalog.c.specialty_key.like(f"%{word}%") for word in words))
              .cte("role_terms").prefix_with("MATERIALIZED"))
-    take = offset + limit + 1
     filters = [*conditions, Profile.specialty == terms.c.specialty_value,
                Profile.job_category == terms.c.job_category]
     if category:
