@@ -1258,8 +1258,11 @@
   function initProviderFilterOptions(){
     if (S.providerDirectoryTotal == null){
       try {
-        const cached = Number(localStorage.getItem("hb_provider_directory_total"));
-        if (Number.isSafeInteger(cached) && cached >= 0) S.providerDirectoryTotal = cached;
+        const stored = localStorage.getItem("hb_provider_directory_total");
+        if (stored != null && stored.trim() !== "") {
+          const cached = Number(stored);
+          if (Number.isSafeInteger(cached) && cached > 0) S.providerDirectoryTotal = cached;
+        }
       } catch(e) {}
     }
     const license = $("#provider-license-title");
@@ -1311,6 +1314,7 @@
     const total = Object.values(c).reduce((s,n)=>s+(Number(n)||0),0);
     $("#providers-count").textContent = providerCountLabel();
     const filtered = hasNonCategoryFilters();
+    if (!S.facetsLoaded && !Object.keys(c).length) return;
     $$("#provider-tabs .tab").forEach(t => {
       if (t.dataset.base == null) t.dataset.base = t.textContent.replace(/\s+[\d,]+$/, "").trim();
       const n = t.dataset.category ? (c[t.dataset.category] || 0) : total;
@@ -1343,7 +1347,7 @@
   // the selected tab/filter. The current view's count lives on the tabs + the pager.
   function providerCountLabel(){
     const t = S.providerDirectoryTotal ?? facetTotalFor("");
-    return t == null ? "Providers" : `${t.toLocaleString()} providers`;
+    return t == null ? "Loading provider count…" : `${t.toLocaleString()} providers`;
   }
   function renderProviderPage(data){
     const items = data.items || [];
