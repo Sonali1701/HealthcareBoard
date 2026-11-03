@@ -83,6 +83,7 @@ def search_jobs(
     group_openings: bool = Query(
         False, description="Collapse identical roles at the same facility into "
                            "one row carrying an `openings` count"),
+    count: bool = True,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
@@ -109,14 +110,16 @@ def search_jobs(
         stmt = stmt.where(JobPosting.facility == facility)
 
     if group_openings:
-        return _grouped_page(db, stmt, limit, offset)
+        return _grouped_page(db, stmt, limit, offset, count=count)
 
-    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    total = (db.scalar(select(func.count()).select_from(stmt.subquery())) or 0) if count else None
     rows = db.scalars(
         stmt.order_by(JobPosting.is_featured.desc(), JobPosting.created_at.desc())
-        .limit(limit).offset(offset)
+        .limit(limit + (0 if count else 1)).offset(offset)
     ).all()
-    return Page(items=rows, total=total, limit=limit, offset=offset)
+    has_next = total > offset + len(rows) if total is not None else len(rows) > limit
+    return Page(items=rows[:limit], total=total, limit=limit, offset=offset,
+                has_next=has_next)
 
 
 # Agencies file one requisition per seat, so a single role at one facility can
@@ -127,7 +130,7 @@ _GROUP_KEY = (JobPosting.title, JobPosting.facility, JobPosting.city,
               JobPosting.state_code, JobPosting.pay_rate_max)
 
 
-def _grouped_page(db, stmt, limit: int, offset: int) -> Page:
+def _grouped_page(db, stmt, limit: int, offset: int, *, count: bool = True) -> Page:
     base = stmt.subquery()
     groups = (
         select(*[getattr(base.c, c.key) for c in _GROUP_KEY],
@@ -136,12 +139,14 @@ def _grouped_page(db, stmt, limit: int, offset: int) -> Page:
         .group_by(*[getattr(base.c, c.key) for c in _GROUP_KEY])
     ).subquery()
 
-    total = db.scalar(select(func.count()).select_from(groups)) or 0
+    total = (db.scalar(select(func.count()).select_from(groups)) or 0) if count else None
     rows = db.execute(
         select(groups.c.job_id, groups.c.openings)
         .order_by(groups.c.openings.desc(), groups.c.job_id)
-        .limit(limit).offset(offset)
+        .limit(limit + (0 if count else 1)).offset(offset)
     ).all()
+    has_next = total > offset + len(rows) if total is not None else len(rows) > limit
+    rows = rows[:limit]
     openings = {jid: n for jid, n in rows}
     jobs = db.scalars(
         select(JobPosting).where(JobPosting.job_id.in_(list(openings)))
@@ -151,7 +156,8 @@ def _grouped_page(db, stmt, limit: int, offset: int) -> Page:
         out = JobOut.model_validate(job)
         out.openings = openings[job.job_id]
         items.append(out)
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(items=items, total=total, limit=limit, offset=offset,
+                has_next=has_next)
 
 
 @router.post("", response_model=JobOut, status_code=status.HTTP_201_CREATED)

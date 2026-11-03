@@ -1212,20 +1212,29 @@
   }
 
   async function loadJobs(){
-    const params = new URLSearchParams({limit:"50", group_openings:"true"});
+    const params = new URLSearchParams({limit:"50", group_openings:"true", count:"false"});
     if ($("#job-q").value.trim()) params.set("q", $("#job-q").value.trim());
     if ($("#job-type").value) params.set("job_type", $("#job-type").value);
     if ($("#job-state").value.trim()) params.set("state_code", $("#job-state").value.trim().toUpperCase());
-    $("#jobs-list").innerHTML = loadingRow(JOB_COLS, "Loading jobs...");
+    const list = $("#jobs-list");
+    const request = S.jobsReq = (S.jobsReq || 0) + 1;
+    list.setAttribute("aria-busy", "true");
+    if (!list.querySelector("tr")) list.innerHTML = loadingRow(JOB_COLS, "Loading jobs...");
     try {
       const data = await get("/api/jobs?" + params.toString());
+      if (request !== S.jobsReq) return;
       const seats = data.items.reduce((n,j) => n + (j.openings || 1), 0);
-      $("#jobs-count").textContent = `${data.total} role${data.total === 1 ? "" : "s"}`
+      const shown = data.items.length;
+      $("#jobs-count").textContent = `${shown}${data.has_next ? "+" : ""} role${shown === 1 && !data.has_next ? "" : "s"}`
         + (seats > data.items.length ? ` · ${seats} openings on this page` : "");
       data.items.forEach(j => S.jobsById.set(j.job_id, j));   // for the sourcing header
-      $("#jobs-list").innerHTML = data.items.length ? data.items.map(jobRow).join("") : emptyRow(JOB_COLS, "No jobs match this search",
+      list.innerHTML = data.items.length ? data.items.map(jobRow).join("") : emptyRow(JOB_COLS, "No jobs match this search",
                "Try a broader title, or clear the state filter.", "fa-briefcase");
-    } catch(e) { $("#jobs-list").innerHTML = errorRow(JOB_COLS, "Could not load jobs"); }
+    } catch(e) {
+      if (request === S.jobsReq) list.innerHTML = errorRow(JOB_COLS, "Could not load jobs");
+    } finally {
+      if (request === S.jobsReq) list.removeAttribute("aria-busy");
+    }
   }
 
   // Built to scale to millions of rows: server-side filtering + paging. We never
@@ -2027,7 +2036,9 @@
   async function loadOrgAdmin(){
     const box = $("#orgadmin-panel");
     if (!box) return;
-    box.innerHTML = loading("Loading your organization…");
+    const request = S.orgAdminReq = (S.orgAdminReq || 0) + 1;
+    box.setAttribute("aria-busy", "true");
+    if (!box.childElementCount) box.innerHTML = loading("Loading your organization…");
     try {
       let kpis = {};
       try {
@@ -2041,10 +2052,13 @@
         box.innerHTML = `<div class="match-empty"><i class="fas fa-building"></i><h3>No organization yet</h3>
           <p>Create one from Job Orders to manage members, roles and usage.</p>
           <button class="btn primary" data-page="employer"><i class="fas fa-arrow-right"></i>Go to Job Orders</button></div>`;
+        box.dataset.loaded = "true";
         return;
       }
-      const mem = await get(`/api/employers/${emp.employer_id}/members`);
-      const teamData = await get(`/api/employers/${emp.employer_id}/teams`);
+      const [mem, teamData] = await Promise.all([
+        get(`/api/employers/${emp.employer_id}/members`),
+        get(`/api/employers/${emp.employer_id}/teams`),
+      ]);
       const orgTeams = teamData.items || [];
       S.orgTeams = orgTeams;
       S.managedTeamIds = new Set(teamData.managed_team_ids || []);
@@ -2054,29 +2068,23 @@
       );
       const perms = mem.permissions || {manage_members:false, manage_roles:false, analytics:false, settings:false};
       S.teamPerms = perms;
-      let zoomIntegration = null;
-      let atsIntegrations = [];
-      if (perms.settings){
-        try { zoomIntegration = await get(`/api/integrations/zoom/status?employer_id=${encodeURIComponent(emp.employer_id)}`); } catch(_){}
-        try { atsIntegrations = (await get(`/api/integrations/ats/status?employer_id=${encodeURIComponent(emp.employer_id)}`)).items || []; } catch(_){}
-      }
       const myRole = mem.my_role || "recruiter";
-      let invites = [];
-      if (perms.manage_members){
-        try { invites = (await get(`/api/employers/${emp.employer_id}/invites`)).items || []; } catch(_){}
-      }
-      let usage = null;
-      if (perms.analytics){
-        try { usage = await get(`/api/employers/${emp.employer_id}/usage`); } catch(_){}
-      }
-      let medhuntCredits = [];
-      if (perms.medhunt_credits){
-        try { medhuntCredits = (await get(`/api/extension/medhunt/credits/team?employer_id=${encodeURIComponent(emp.employer_id)}`)).items || []; } catch(_){}
-      }
-      let medhuntSmsSenders = [];
-      if (perms.manage_members){
-        try { medhuntSmsSenders = (await get(`/api/extension/medhunt/sms-senders?employer_id=${encodeURIComponent(emp.employer_id)}`)).items || []; } catch(_){}
-      }
+      const employerId = encodeURIComponent(emp.employer_id);
+      const [zoomResult, atsResult, inviteResult, usageResult, creditsResult, smsResult] = await Promise.all([
+        perms.settings ? get(`/api/integrations/zoom/status?employer_id=${employerId}`).catch(() => null) : null,
+        perms.settings ? get(`/api/integrations/ats/status?employer_id=${employerId}`).catch(() => null) : null,
+        perms.manage_members ? get(`/api/employers/${emp.employer_id}/invites`).catch(() => null) : null,
+        perms.analytics ? get(`/api/employers/${emp.employer_id}/usage`).catch(() => null) : null,
+        perms.medhunt_credits ? get(`/api/extension/medhunt/credits/team?employer_id=${employerId}`).catch(() => null) : null,
+        perms.manage_members ? get(`/api/extension/medhunt/sms-senders?employer_id=${employerId}`).catch(() => null) : null,
+      ]);
+      if (request !== S.orgAdminReq) return;
+      const zoomIntegration = zoomResult;
+      const atsIntegrations = atsResult?.items || [];
+      const invites = inviteResult?.items || [];
+      const usage = usageResult;
+      const medhuntCredits = creditsResult?.items || [];
+      const medhuntSmsSenders = smsResult?.items || [];
       const medhuntCreditByUser = new Map(medhuntCredits.map(item => [item.user_id, item.balance]));
       const medhuntSmsSenderByUser = new Map(medhuntSmsSenders.map(item => [item.user_id, item]));
       const atsIntegrationByProvider = new Map(atsIntegrations.map(item => [item.provider, item]));
@@ -2143,6 +2151,7 @@
         <td class="td-actions"><button class="btn small" data-invite-revoke="${esc(i.invite_id)}" title="Revoke"><i class="fas fa-xmark"></i></button></td>
       </tr>`).join("");
 
+      if (request !== S.orgAdminReq) return;
       box.innerHTML = `
         <div class="oa-head">
           <div class="oa-org">
@@ -2251,6 +2260,7 @@
         ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>CEIPAL delivery activity</h2><p class="team-note">See which enriched candidates were added to CEIPAL, already existed there, or failed to upload.</p><div id="org-medhunt-ceipal"></div></div>` : ""}
         ${perms.manage_roles && S.features.medhunt_backend ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
       `;
+      box.dataset.loaded = "true";
       const ed = $("#oa-edit"); if (ed) ed.onclick = () => editOrg(emp);
       $$("#orgadmin-panel [data-ats-configure]").forEach(b => b.onclick = () => configureAtsIntegration(
         b.dataset.atsConfigure, emp.employer_id, atsIntegrationByProvider.get(b.dataset.atsConfigure) || {}));
@@ -2301,7 +2311,13 @@
       if (perms.analytics && S.features.medhunt_backend) loadMedhuntReplies("#org-medhunt-replies", emp.employer_id);
       if (perms.analytics) loadMedhuntCeipalDeliveries("#org-medhunt-ceipal", emp.employer_id);
       if (perms.manage_roles && S.features.medhunt_backend) loadMedhuntDevices("#org-medhunt-devices", emp.employer_id);
-    } catch(e) { box.innerHTML = errorState("Could not load your organization.", e.message || ""); }
+    } catch(e) {
+      if (request === S.orgAdminReq && !box.dataset.loaded) {
+        box.innerHTML = errorState("Could not load your organization.", e.message || "");
+      }
+    } finally {
+      if (request === S.orgAdminReq) box.removeAttribute("aria-busy");
+    }
   }
 
   async function configureMedhuntSmsSender(userId, email, employerId, current={}){

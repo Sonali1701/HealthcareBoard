@@ -1537,3 +1537,4 @@ tr.is-selected{background:var(--accent-soft)}
   .lp-foot-links{gap:12px;flex-wrap:wrap;justify-content:center}
   .verify-card{padding:26px 18px 22px}
 }
+#jobs-list[aria-busy="true"], #orgadmin-panel[aria-busy="true"] { opacity: .58; }
