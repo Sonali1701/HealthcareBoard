@@ -1382,6 +1382,12 @@
       // failure must never replace already rendered search results.
     }
   }
+  function coarseProviderCount(value){
+    const count = Math.max(0, Math.floor(Number(value) || 0));
+    const step = count < 100 ? 10 : count < 500 ? 100 : count < 5000 ? 500
+      : count < 50000 ? 1000 : count < 1000000 ? 10000 : 100000;
+    return `${(Math.floor(count / step) * step).toLocaleString()}+`;
+  }
   // Keep the directory size visible and show the current filtered estimate or
   // exact match count beside it when a search is active.
   function providerCountLabel(){
@@ -1389,7 +1395,7 @@
     const directory = t == null ? "Loading provider count…" : `${t.toLocaleString()} providers`;
     if (!hasNonCategoryFilters()) return directory;
     if (S.providerTotal != null) return `${directory} · ${S.providerTotal.toLocaleString()} match these filters`;
-    if (S.providerEstimate != null) return `${directory} · About ${S.providerEstimate.toLocaleString()} match these filters (estimated)`;
+    if (S.providerEstimate != null) return `${directory} · ${coarseProviderCount(S.providerEstimate)} match these filters (estimated)`;
     if (S.providerLowerBound != null) return `${directory} · At least ${S.providerLowerBound.toLocaleString()} match these filters`;
     return directory;
   }
@@ -1419,7 +1425,7 @@
     const label = !shown ? ""
       : total != null ? `${start.toLocaleString()}–${end.toLocaleString()} of ${total.toLocaleString()}`
       : estimate != null
-        ? `${start.toLocaleString()}–${end.toLocaleString()} of about ${estimate.toLocaleString()} (estimated; counting exact total…)`
+        ? `${start.toLocaleString()}–${end.toLocaleString()} of ${coarseProviderCount(estimate)} (estimated; counting exact total…)`
       : S.providerHasNext
         ? `${start.toLocaleString()}–${end.toLocaleString()}+ matches · counting total…`
         : `${start.toLocaleString()}–${end.toLocaleString()} matches`;
