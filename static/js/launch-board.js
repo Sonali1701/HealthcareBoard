@@ -7,7 +7,8 @@
       licensed_state:"", worked_at:""
     },
     providerCache:new Map(), providerInflight:new Map(), providerCountCache:new Map(), providerCountInflight:new Map(),
-    providerCountKey:null, providerCountTimer:0, providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
+    providerCountKey:null, providerCountTimer:0, providerStatusTimer:0,
+    providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
     providerOffset:0, providerTotal:null, providerEstimate:null, providerLowerBound:null, providerHasNext:false, facetCategories:{},
     providerLastData:null, facetsLoaded:false,
     // Messaging + talent pools
@@ -1534,6 +1535,26 @@
       </td>
     </tr>`;
   }
+  function showProviderUpdateStatus(state, hasPrevious=false){
+    const status = $("#providers-update-status");
+    const table = $("#providers-table-wrap");
+    clearTimeout(S.providerStatusTimer);
+    if (!status || !table) return;
+    table.classList.toggle("is-updating", state === "loading" && hasPrevious);
+    table.setAttribute("aria-busy", state === "loading" ? "true" : "false");
+    status.hidden = false;
+    status.className = `provider-update-status is-${state}`;
+    if (state === "loading") {
+      status.innerHTML = `<span class="spinner sm dark" aria-hidden="true"></span>${hasPrevious
+        ? "Updating providers… Previous results shown." : "Loading providers…"}`;
+    } else if (state === "done") {
+      status.innerHTML = '<i class="fas fa-circle-check" aria-hidden="true"></i>Results updated';
+      S.providerStatusTimer = setTimeout(() => { status.hidden = true; }, 3000);
+    } else {
+      status.innerHTML = `<i class="fas fa-triangle-exclamation" aria-hidden="true"></i>${hasPrevious
+        ? "Could not update providers. Previous results shown." : "Could not load providers."}`;
+    }
+  }
   async function loadProviders(){
     if (!isRecruiter()) return;
     clearTimeout(S.providerCountTimer);
@@ -1547,14 +1568,12 @@
     const params = providerParams(S.provider, {offset:S.providerOffset, count:false, estimate:filtered});
     const seq = ++S.providerReq;
     if (!S.providerCache.has(params.toString())) {
-      if (S.providerLastData) {
-        // Keep the last page visible while a new search runs. The pager gives
-        // unobtrusive feedback without replacing useful results with a loader.
-        $("#providers-pager").innerHTML = '<span class="pager-label">Updating providers…</span>';
-      } else {
+      showProviderUpdateStatus("loading", !!S.providerLastData);
+      // Keep previous rows visible and dimmed until this request finishes.
+      if (!S.providerLastData) {
         $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, "Loading providers...");
       }
-      $("#providers-count").textContent = providerCountLabel();   // constant grand total
+      $("#providers-count").textContent = providerCountLabel();
     }
     try {
       const data = await fetchProviders(params);
@@ -1575,6 +1594,7 @@
       S.providerLastData = data;
       renderProviderPage(data);
       renderPager(data);
+      showProviderUpdateStatus("done");
       if (filtered && data.total == null && data.has_next) {
         S.providerCountTimer = setTimeout(() => {
           if (seq === S.providerReq) fetchProviderCount(params);
@@ -1582,13 +1602,12 @@
       }
     } catch(e) {
       if (seq !== S.providerReq) return;
-      if (S.providerLastData) {
-        $("#providers-pager").innerHTML = '<span class="pager-label">Could not update results. Showing the previous page.</span>';
-      } else {
+      showProviderUpdateStatus("error", !!S.providerLastData);
+      $("#providers-pager").innerHTML = "";
+      if (!S.providerLastData) {
         const message = e.status === 403 ? "Recruiter access required." : "Could not load providers.";
         $("#providers-grid").innerHTML = stateRow(PROVIDER_COLS,
           errorState(message, "The results will remain here when the service responds."));
-        $("#providers-pager").innerHTML = "";
       }
     }
   }

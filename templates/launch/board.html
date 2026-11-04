@@ -368,7 +368,9 @@
     </section>
 
     <section id="page-providers" class="page">
-      <div class="section-head"><div><h1>Providers</h1><p id="providers-count">Loading providers...</p></div></div>
+      <div class="section-head"><div><h1>Providers</h1><p id="providers-count">Loading providers...</p></div>
+        <div id="providers-update-status" class="provider-update-status" role="status" aria-live="polite" hidden></div>
+      </div>
       <div class="filter-row provider-filters">
         <input id="provider-q" class="input" placeholder="Search name, specialty, category (3+ letters)">
         <select id="provider-license-title" class="input"><option value="">Any license/title</option></select>
@@ -403,7 +405,7 @@
         <button class="btn primary small" id="bulk-to-pool"><i class="fas fa-layer-group"></i>Add to pool</button>
         <button class="btn ghost small" id="bulk-clear">Clear</button>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap" id="providers-table-wrap">
         <table class="table">
           <thead><tr>
             <th class="th-check"><input type="checkbox" id="bulk-all" title="Select all on this page"></th>
