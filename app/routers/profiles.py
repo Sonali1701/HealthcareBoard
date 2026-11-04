@@ -1201,6 +1201,31 @@ def _fold_provider_category_counts(rows) -> dict[str, int]:
     return counts
 
 
+def _planned_row_estimate(db, statement) -> int | None:
+    """Read PostgreSQL's planner estimate without scanning matching profiles."""
+    if db.get_bind().dialect.name != "postgresql":
+        return None
+    # A complex filter can still take time to plan. Keep the estimate optional
+    # and roll back only its savepoint if planning times out.
+    savepoint = db.begin_nested()
+    try:
+        compiled = statement.compile(
+            dialect=db.get_bind().dialect,
+            compile_kwargs={"render_postcompile": True},
+        )
+        db.execute(sa_text("SET LOCAL statement_timeout = '1200ms'"))
+        plan = db.connection().exec_driver_sql(
+            "EXPLAIN (FORMAT JSON) " + str(compiled), compiled.params,
+        ).scalar()
+        if isinstance(plan, str):
+            plan = json.loads(plan)
+        return max(0, int(plan[0]["Plan"]["Plan Rows"]))
+    except Exception:
+        return None
+    finally:
+        savepoint.rollback()
+
+
 @router.get("", response_model=Page[ProfileCardOut])
 def search_profiles(
     db: DbSession,
@@ -1231,6 +1256,7 @@ def search_profiles(
     worked_at: Optional[str] = Query(None, description="Has a past role at this employer/health system"),
     travel_experience: Optional[bool] = Query(None, description="Has prior travel assignments"),
     count: bool = Query(True, description="Include exact total (skip on huge result sets)"),
+    estimate: bool = Query(False, description="Include a fast approximate total from PostgreSQL statistics"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
@@ -1292,6 +1318,21 @@ def search_profiles(
         stmt = stmt.where(_provider_category_condition(category))
 
     total = None
+    estimated_total = None
+    if estimate and not count and providers_only:
+        if geo_branches:
+            # The location arms are disjoint. One UNION ALL plan retains their
+            # individual estimates and avoids three planning round trips.
+            estimated_total = _planned_row_estimate(db, union_all(*(
+                select(Profile.profile_id).where(
+                    *conds, branch,
+                    *([_provider_category_condition(category)] if category else []),
+                ) for branch in geo_branches
+            )))
+        else:
+            estimated_total = _planned_row_estimate(
+                db, stmt.with_only_columns(Profile.profile_id,
+                                           maintain_column_froms=True))
     if geo_branches:
         # Each location arm is disjoint. Prefer precise stored coordinates;
         # only query centroid fallbacks when the requested page needs them.
@@ -1358,6 +1399,9 @@ def search_profiles(
             else:
                 rows = db.scalars(page_stmt).all()
     has_next = len(rows) > limit
+    if estimated_total is not None:
+        estimated_total = max(estimated_total, offset + min(len(rows), limit)
+                              + int(has_next))
     page_rows = rows[:limit]
     # Identity is withheld unless this recruiter already released the profile
     # (or it is their own) — one extra lookup for the whole page, not per row.
@@ -1370,7 +1414,8 @@ def search_profiles(
         )
         for r in page_rows
     ]
-    return Page(items=items, total=total, limit=limit, offset=offset,
+    return Page(items=items, total=total, estimated_total=estimated_total,
+                limit=limit, offset=offset,
                 has_next=has_next)
 
 

@@ -24,6 +24,7 @@ class Page(BaseModel, Generic[T]):
 
     items: list[T]
     total: Optional[int] = None
+    estimated_total: Optional[int] = None
     limit: int
     offset: int
     has_next: bool = False

@@ -8,7 +8,7 @@
     },
     providerCache:new Map(), providerInflight:new Map(), providerCountCache:new Map(), providerCountInflight:new Map(),
     providerCountKey:null, providerCountTimer:0, providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
-    providerOffset:0, providerTotal:null, providerHasNext:false, facetCategories:{},
+    providerOffset:0, providerTotal:null, providerEstimate:null, providerLowerBound:null, providerHasNext:false, facetCategories:{},
     providerLastData:null, facetsLoaded:false,
     // Messaging + talent pools
     threads:[], activeThread:null, threadPoll:null, msgFilter:"",
@@ -1292,6 +1292,7 @@
     }
     params.set("offset", String(opts.offset || 0));
     params.set("count", opts.count ? "1" : "0");
+    if (opts.estimate) params.set("estimate", "1");
     return params;
   }
   function hasNonCategoryFilters(){
@@ -1343,10 +1344,13 @@
     params.set("limit", "1");
     params.set("offset", "0");
     params.set("count", "1");
+    params.delete("estimate");
     const key = params.toString();
     S.providerCountKey = key;
     if (S.providerCountCache.has(key)) {
       S.providerTotal = S.providerCountCache.get(key);
+      S.providerEstimate = null;
+      $("#providers-count").textContent = providerCountLabel();
       if (S.providerCountKey === key) renderPager(S.providerLastData || {items:[]});
       return;
     }
@@ -1369,6 +1373,8 @@
       const total = await request;
       if (total != null && S.providerCountKey === key) {
         S.providerTotal = total;
+        S.providerEstimate = null;
+        $("#providers-count").textContent = providerCountLabel();
         renderPager(S.providerLastData || {items:[]});
       }
     } catch(e) {
@@ -1376,11 +1382,16 @@
       // failure must never replace already rendered search results.
     }
   }
-  // The headline shows the whole directory's size and stays constant regardless of
-  // the selected tab/filter. The current view's count lives on the tabs + the pager.
+  // Keep the directory size visible and show the current filtered estimate or
+  // exact match count beside it when a search is active.
   function providerCountLabel(){
     const t = S.providerDirectoryTotal ?? facetTotalFor("");
-    return t == null ? "Loading provider count…" : `${t.toLocaleString()} providers`;
+    const directory = t == null ? "Loading provider count…" : `${t.toLocaleString()} providers`;
+    if (!hasNonCategoryFilters()) return directory;
+    if (S.providerTotal != null) return `${directory} · ${S.providerTotal.toLocaleString()} match these filters`;
+    if (S.providerEstimate != null) return `${directory} · About ${S.providerEstimate.toLocaleString()} match these filters (estimated)`;
+    if (S.providerLowerBound != null) return `${directory} · At least ${S.providerLowerBound.toLocaleString()} match these filters`;
+    return directory;
   }
   function renderProviderPage(data){
     const items = data.items || [];
@@ -1404,8 +1415,11 @@
     const start = shown ? S.providerOffset + 1 : 0;
     const end = S.providerOffset + shown;
     const total = S.providerTotal;
+    const estimate = S.providerEstimate;
     const label = !shown ? ""
       : total != null ? `${start.toLocaleString()}–${end.toLocaleString()} of ${total.toLocaleString()}`
+      : estimate != null
+        ? `${start.toLocaleString()}–${end.toLocaleString()} of about ${estimate.toLocaleString()} (estimated; counting exact total…)`
       : S.providerHasNext
         ? `${start.toLocaleString()}–${end.toLocaleString()}+ matches · counting total…`
         : `${start.toLocaleString()}–${end.toLocaleString()} matches`;
@@ -1420,6 +1434,8 @@
   function providerFilterChanged(){
     S.providerOffset = 0;
     S.providerTotal = null;
+    S.providerEstimate = null;
+    S.providerLowerBound = null;
     loadProviders();
   }
   function setExperienceFilter(value){
@@ -1519,8 +1535,10 @@
     const filtered = hasNonCategoryFilters();
     // Read only this page plus one row for Next; filtered totals require a full scan.
     if (filtered && S.providerOffset === 0) S.providerTotal = null;
+    if (filtered) S.providerEstimate = null;
+    S.providerLowerBound = null;
     paintCounts();
-    const params = providerParams(S.provider, {offset:S.providerOffset, count:false});
+    const params = providerParams(S.provider, {offset:S.providerOffset, count:false, estimate:filtered});
     const seq = ++S.providerReq;
     if (!S.providerCache.has(params.toString())) {
       if (S.providerLastData) {
@@ -1538,6 +1556,15 @@
       if (data.total != null) S.providerTotal = data.total;
       else if (!filtered) S.providerTotal = facetTotalFor(S.provider.category);
       else if (!data.has_next) S.providerTotal = S.providerOffset + (data.items || []).length;
+      if (filtered) S.providerLowerBound = S.providerOffset + (data.items || []).length + Number(!!data.has_next);
+      if (filtered && S.providerTotal == null && data.estimated_total != null
+          && Number.isFinite(Number(data.estimated_total))) {
+        const lowerBound = S.providerOffset + (data.items || []).length + Number(!!data.has_next);
+        const directoryTotal = facetTotalFor(S.provider.category);
+        const estimate = Math.max(lowerBound, Number(data.estimated_total));
+        S.providerEstimate = directoryTotal != null && directoryTotal >= lowerBound
+          ? Math.min(estimate, directoryTotal) : estimate;
+      }
       S.providerHasNext = !!data.has_next;
       S.providerLastData = data;
       renderProviderPage(data);
