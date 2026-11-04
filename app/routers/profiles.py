@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, column, func, lateral, literal, or_, select, table, text as sa_text, true, union_all
+from sqlalchemy import and_, column, func, lateral, literal, or_, select, table, text as sa_text, true, tuple_, union_all
 from sqlalchemy.orm import load_only, selectinload
 
 from ..config import settings
@@ -707,6 +707,7 @@ def _provider_conditions(
     max_experience=None, contact_available=None, resume_status=None,
     compact=None, licensed_state=None,
     worked_at=None, travel_experience=None, split_radius=False,
+    catalog_search=None,
 ) -> list:
     """Every Providers-directory filter EXCEPT the category selection, as a list
     of WHERE conditions — shared by the search and the faceted category counts,
@@ -760,7 +761,10 @@ def _provider_conditions(
             query = re.sub(r"\bregistered nurses?\b", " ", query,
                            flags=re.IGNORECASE)
         if query.strip():
-            conds.extend(profile_search_conditions(query))
+            if catalog_search is not None and providers_only:
+                conds.append(catalog_search)
+            else:
+                conds.extend(profile_search_conditions(query))
     if specialty:
         conds.append(Profile.specialty == specialty)
     if profession_type:
@@ -859,20 +863,52 @@ def _provider_conditions(
     return conds
 
 
-def _license_title_profile_ids(title: str):
-    """Return title matches through the existing B-tree indexes.
+def _provider_catalog_search_condition(db, query: str, category: str | None = None):
+    """Resolve a multiword provider search through the small specialty catalog.
+
+    This avoids a broad trigram scan for known specialties such as Emergency
+    Medicine, while still allowing an exact first-name + last-name match.
+    """
+    words = re.findall(r"\w+", query[:120].casefold())[:6]
+    if len(words) < 2 or any(len(word) < 3 for word in words):
+        return None
+    catalog = table("provider_specialty_catalog",
+                    column("specialty_value"), column("specialty_key"),
+                    column("job_category"))
+    catalog_filters = [catalog.c.specialty_key.like(f"%{word}%") for word in words]
+    category_is_exact = category in _PROVIDER_CATS and category != _UNCATEGORIZED
+    if category_is_exact:
+        catalog_filters.append(catalog.c.job_category == category)
+    terms = select(catalog.c.specialty_value, catalog.c.job_category).where(
+        *catalog_filters)
+    if not db.scalar(select(terms.exists())):
+        return None
+    full_name = func.lower(
+        func.coalesce(Profile.first_name, literal("")) + literal(" ")
+        + func.coalesce(Profile.last_name, literal("")))
+    name_match = full_name == " ".join(words)
+    if category:
+        name_match = and_(name_match, _provider_category_condition(category))
+    return or_(tuple_(Profile.specialty, Profile.job_category).in_(terms),
+               name_match)
+
+
+def _license_title_profile_ids(title: str, conditions=()):
+    """Return title matches through B-tree indexes, applying other filters early.
 
     Applying lower() inside the old OR predicate prevented PostgreSQL from
-    using the profession_type and license_type indexes, so it walked the whole
-    score-ordered provider index to find a page of matches.
+    using profession_type and license_type indexes. Separate indexed branches
+    also let state and specialty filters reduce each branch before the union.
     """
     title = title.strip()
     variants = {title, title.lower(), title.upper(), title.title()}
     profile_matches = select(Profile.profile_id.label("profile_id")).where(
-        Profile.profession_type.in_(variants)
+        *conditions, Profile.profession_type.in_(variants)
     )
-    license_matches = select(License.profile_id.label("profile_id")).where(
-        License.license_type.in_(variants)
+    license_matches = select(Profile.profile_id.label("profile_id")).join(
+        License, License.profile_id == Profile.profile_id
+    ).where(
+        *conditions, License.license_type.in_(variants)
     )
     return profile_matches.union(license_matches)
 
@@ -1095,6 +1131,10 @@ def _provider_category_condition(category: str):
     # Exact CSV categories always select just their own tab.
     if category in _LEGACY_CATEGORY_GROUPS:
         return _directory_category_expression().in_(_LEGACY_CATEGORY_GROUPS[category])
+    if category in _PROVIDER_CATS and category != _UNCATEGORIZED:
+        # Category values are normalized at import time. Keep this a plain
+        # equality so the provider_category_score index can serve the filter.
+        return Profile.job_category == category
     return _directory_category_expression() == category
 
 
@@ -1146,6 +1186,18 @@ def search_profiles(
         # search into an error after we have removed the browser-side deadline.
         db.execute(sa_text("SET LOCAL statement_timeout = 0"))
     geo_branches = _provider_radius_branches(db, zip, city, state_code, radius_mi)
+    catalog_search = (
+        _provider_catalog_search_condition(
+            db, q, category if not geo_branches else None)
+        if q and providers_only and db.get_bind().dialect.name == "postgresql"
+        else None
+    )
+    catalog_category_applied = bool(
+        catalog_search is not None
+        and category in _PROVIDER_CATS
+        and category != _UNCATEGORIZED
+        and not geo_branches
+    )
     search_filters = dict(
         specialty=specialty, license_title=license_title,
         profession_type=profession_type, state_code=state_code, city=city,
@@ -1155,19 +1207,34 @@ def search_profiles(
         resume_status=resume_status, compact=compact,
         licensed_state=licensed_state, worked_at=worked_at,
         travel_experience=travel_experience,
-        split_radius=geo_branches is not None)
+        split_radius=geo_branches is not None,
+        catalog_search=catalog_search)
     title_profile_ids = None
+    optimized_title_search = False
     if providers_only and license_title and db.get_bind().dialect.name == "postgresql":
-        title_profile_ids = _license_title_profile_ids(license_title)
-        # Use the union of indexed profile and license IDs instead of a lower()
-        # predicate plus correlated OR, which can scan millions of providers.
+        # Match titles through indexed branches. For radius searches retain the
+        # existing ID filter; otherwise push all filters into each branch before
+        # unioning so a combined title/state/specialty search stays selective.
         search_filters["license_title"] = None
     conds = _provider_conditions(db, q=q, providers_only=providers_only,
                                  **search_filters)
-    if title_profile_ids is not None:
-        conds.append(Profile.profile_id.in_(title_profile_ids))
-    stmt = select(Profile).where(*conds)
-    if category:
+    if providers_only and license_title and db.get_bind().dialect.name == "postgresql":
+        if geo_branches:
+            title_profile_ids = _license_title_profile_ids(license_title)
+            conds.append(Profile.profile_id.in_(title_profile_ids))
+        else:
+            candidate_conditions = [*conds]
+            if category and not catalog_category_applied:
+                candidate_conditions.append(_provider_category_condition(category))
+            title_profile_ids = _license_title_profile_ids(
+                license_title, candidate_conditions)
+            title_matches = title_profile_ids.subquery("title_matches")
+            stmt = select(Profile).join(
+                title_matches, title_matches.c.profile_id == Profile.profile_id)
+            optimized_title_search = True
+    if not optimized_title_search:
+        stmt = select(Profile).where(*conds)
+    if category and not optimized_title_search and not catalog_category_applied:
         stmt = stmt.where(_provider_category_condition(category))
 
     total = None
@@ -1189,11 +1256,18 @@ def search_profiles(
             .where(Profile.profile_id.in_(page_ids))).all()}
         rows = [by_id[pid] for pid in page_ids if pid in by_id]
     else:
-        if count:
+        # Exact counts for catalog-resolved specialty searches are bounded by
+        # indexed specialty/title candidates. Return that count in the same
+        # query as the first page instead of scanning the matches twice.
+        include_count = count or (catalog_search is not None)
+        windowed_count = include_count and catalog_search is not None
+        if include_count and not windowed_count:
             total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         # Fetch one extra row to know if there's a next page without a full COUNT.
         rows = None
-        if q and providers_only and db.get_bind().dialect.name == "postgresql":
+        if (q and providers_only and db.get_bind().dialect.name == "postgresql"
+                and not windowed_count
+                and not optimized_title_search):
             base_conditions = _provider_conditions(
                 db, q=None, providers_only=True, **search_filters)
             if title_profile_ids is not None:
@@ -1204,11 +1278,22 @@ def search_profiles(
                 rows = _single_word_page(db, q, base_conditions, category,
                                          limit, offset)
         if rows is None:
-            rows = db.scalars(
-                stmt.options(load_only(*_CARD_COLUMNS))
-                .order_by(Profile.completion_score.desc(), Profile.profile_id)
-                .limit(limit + 1).offset(offset)
-            ).all()
+            page_stmt = (stmt.options(load_only(*_CARD_COLUMNS))
+                         .order_by(Profile.completion_score.desc(), Profile.profile_id)
+                         .limit(limit + 1).offset(offset))
+            if windowed_count:
+                counted_rows = db.execute(
+                    page_stmt.add_columns(func.count().over().label("matched_total"))
+                ).all()
+                rows = [row[0] for row in counted_rows]
+                if counted_rows:
+                    total = int(counted_rows[0][1])
+                else:
+                    total = db.scalar(
+                        select(func.count()).select_from(stmt.subquery())
+                    ) or 0
+            else:
+                rows = db.scalars(page_stmt).all()
     has_next = len(rows) > limit
     page_rows = rows[:limit]
     # Identity is withheld unless this recruiter already released the profile
