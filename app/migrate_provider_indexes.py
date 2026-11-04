@@ -33,6 +33,17 @@ STATEMENTS = [
     "ON profiles (job_category, completion_score DESC, profile_id) "
     "WHERE is_listable IS TRUE AND merged_into IS NULL "
     "AND specialty IS NOT NULL",
+    # Common combined browse filters need a single selective B-tree path;
+    # bitmap-ANDing state/profession with the broad category index was reading
+    # millions of rows for a 60-row page.
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_provider_state_category_profession_score "
+    "ON profiles (state_code, job_category, profession_type, completion_score DESC, profile_id) "
+    "WHERE is_listable IS TRUE AND merged_into IS NULL "
+    "AND job_category IS NOT NULL AND specialty IS NOT NULL",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_provider_category_profession_score "
+    "ON profiles (job_category, profession_type, completion_score DESC, profile_id) "
+    "WHERE is_listable IS TRUE AND merged_into IS NULL "
+    "AND job_category IS NOT NULL AND specialty IS NOT NULL",
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_profiles_provider_no_resume_score "
     "ON profiles (completion_score DESC, profile_id) "
     "WHERE is_listable IS TRUE AND merged_into IS NULL "

@@ -6,7 +6,8 @@
       city:"", min_experience:"", max_experience:"", contact_available:"", resume_status:"",
       licensed_state:"", worked_at:""
     },
-    providerCache:new Map(), providerInflight:new Map(), providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
+    providerCache:new Map(), providerInflight:new Map(), providerCountCache:new Map(), providerCountInflight:new Map(),
+    providerCountKey:null, providerCountTimer:0, providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
     providerOffset:0, providerTotal:null, providerHasNext:false, facetCategories:{},
     providerLastData:null, facetsLoaded:false,
     // Messaging + talent pools
@@ -1295,7 +1296,10 @@
   }
   function hasNonCategoryFilters(){
     const s = S.provider;
-    return ["q","license_title","state_code","licensed_state","worked_at","city","min_experience","max_experience","contact_available","resume_status"].some(k => s[k]) || !!(s.radius_mi && (s.zip || s.city));
+    return Object.entries(s).some(([key, value]) => {
+      if (key === "category" || key === "radius_mi") return false;
+      return value !== "" && value != null;
+    }) || !!(s.radius_mi && (s.zip || s.city));
   }
   function facetTotalFor(category){
     const c = S.facetCategories;
@@ -1334,6 +1338,44 @@
     S.providerInflight.set(key, req);
     return req;
   }
+  async function fetchProviderCount(pageParams){
+    const params = new URLSearchParams(pageParams);
+    params.set("limit", "1");
+    params.set("offset", "0");
+    params.set("count", "1");
+    const key = params.toString();
+    S.providerCountKey = key;
+    if (S.providerCountCache.has(key)) {
+      S.providerTotal = S.providerCountCache.get(key);
+      if (S.providerCountKey === key) renderPager(S.providerLastData || {items:[]});
+      return;
+    }
+    let request = S.providerCountInflight.get(key);
+    if (!request) {
+      request = get("/api/profiles?" + key)
+        .then(data => {
+          if (data.total != null) {
+            S.providerCountCache.set(key, Number(data.total));
+            if (S.providerCountCache.size > 200) {
+              S.providerCountCache.delete(S.providerCountCache.keys().next().value);
+            }
+          }
+          return data.total == null ? null : Number(data.total);
+        })
+        .finally(() => S.providerCountInflight.delete(key));
+      S.providerCountInflight.set(key, request);
+    }
+    try {
+      const total = await request;
+      if (total != null && S.providerCountKey === key) {
+        S.providerTotal = total;
+        renderPager(S.providerLastData || {items:[]});
+      }
+    } catch(e) {
+      // The page remains usable with its truthful lower-bound count. A count
+      // failure must never replace already rendered search results.
+    }
+  }
   // The headline shows the whole directory's size and stays constant regardless of
   // the selected tab/filter. The current view's count lives on the tabs + the pager.
   function providerCountLabel(){
@@ -1364,7 +1406,9 @@
     const total = S.providerTotal;
     const label = !shown ? ""
       : total != null ? `${start.toLocaleString()}–${end.toLocaleString()} of ${total.toLocaleString()}`
-      : `Page ${Math.floor(S.providerOffset / PAGE_SIZE) + 1}`;
+      : S.providerHasNext
+        ? `${start.toLocaleString()}–${end.toLocaleString()}+ matches · counting total…`
+        : `${start.toLocaleString()}–${end.toLocaleString()} matches`;
     pager.innerHTML = shown ? `
       <button class="btn small" id="prov-prev" ${S.providerOffset <= 0 ? "disabled" : ""}><i class="fas fa-chevron-left"></i> Prev</button>
       <span class="pager-label">${label}</span>
@@ -1470,6 +1514,8 @@
   }
   async function loadProviders(){
     if (!isRecruiter()) return;
+    clearTimeout(S.providerCountTimer);
+    S.providerCountKey = null;
     const filtered = hasNonCategoryFilters();
     // Read only this page plus one row for Next; filtered totals require a full scan.
     if (filtered && S.providerOffset === 0) S.providerTotal = null;
@@ -1491,10 +1537,16 @@
       if (seq !== S.providerReq) return;   // a newer request superseded this one
       if (data.total != null) S.providerTotal = data.total;
       else if (!filtered) S.providerTotal = facetTotalFor(S.provider.category);
+      else if (!data.has_next) S.providerTotal = S.providerOffset + (data.items || []).length;
       S.providerHasNext = !!data.has_next;
       S.providerLastData = data;
       renderProviderPage(data);
       renderPager(data);
+      if (filtered && data.total == null && data.has_next) {
+        S.providerCountTimer = setTimeout(() => {
+          if (seq === S.providerReq) fetchProviderCount(params);
+        }, 250);
+      }
     } catch(e) {
       if (seq !== S.providerReq) return;
       if (S.providerLastData) {
