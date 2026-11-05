@@ -94,10 +94,14 @@ async def lifespan(app: FastAPI):
     ensure_admin()
     ensure_enterprise_organization_data()
     usage_task = None
+    contact_lookup_task = None
     nexus_task = None
     if settings.weekly_usage_emails_enabled:
         from .services.weekly_usage_reports import scheduler
         usage_task = asyncio.create_task(scheduler())
+    if settings.quick_sourcer_ready:
+        from .services.contact_lookup_queue import worker_loop
+        contact_lookup_task = asyncio.create_task(worker_loop())
     from .services.nexus_contact_delivery import scheduler as nexus_scheduler
     nexus_task = asyncio.create_task(nexus_scheduler())
     try:
@@ -111,6 +115,10 @@ async def lifespan(app: FastAPI):
             nexus_task.cancel()
             with suppress(asyncio.CancelledError):
                 await nexus_task
+        if contact_lookup_task:
+            contact_lookup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await contact_lookup_task
 
 
 app = FastAPI(

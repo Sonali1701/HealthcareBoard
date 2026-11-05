@@ -29,6 +29,7 @@ from ..services.profile_search import profile_search_conditions, role_search_ter
 from ..models import (
     AuditLog,
     Certification,
+    ContactLookupJob,
     License,
     OrganizationTeam,
     OrganizationTeamMember,
@@ -60,6 +61,10 @@ router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 class ProfileContactUpdate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
+
+
+class ContactLookupQueueRequest(BaseModel):
+    profile_ids: list[str]
 
 
 class BulkContactRelease(BaseModel):
@@ -2886,210 +2891,112 @@ def release_profile_contact(
 LOOKUP_ACTION = "provider_contact_lookup"
 
 
-def _last_lookup_candidate_id(db, profile_id: str) -> int | None:
-    """The Quick Sourcer candidate id we were given for this provider before.
+def _enqueue_contact_lookups(db, user, profile_ids: list[str]) -> list[ContactLookupJob]:
+    """Create or reuse this recruiter's pending lookup jobs."""
+    if not quick_sourcer.available():
+        raise HTTPException(status_code=503,
+                            detail="Contact lookup is not switched on for this deployment.")
+    ids = list(dict.fromkeys(profile_ids))
+    if not ids or len(ids) > 50:
+        raise HTTPException(status_code=422, detail="Select between 1 and 50 candidates.")
+    profiles = {p.profile_id: p for p in db.scalars(
+        select(Profile).where(Profile.profile_id.in_(ids))).all()}
+    if len(profiles) != len(ids):
+        raise HTTPException(status_code=404, detail="One or more profiles were not found.")
+    invalid = [pid for pid, p in profiles.items()
+               if not _display_name(p) or " " not in _display_name(p)]
+    if invalid:
+        raise HTTPException(status_code=400,
+                            detail="Every selected candidate needs a first and last name.")
 
-    Re-searching costs 30-90 seconds; re-reading a candidate id is instant. The
-    id lives in the audit row rather than a profiles column so this needs no
-    migration, and the audit trail is where the provenance belongs anyway.
-    """
-    row = db.scalar(
-        select(AuditLog)
-        .where(AuditLog.action == LOOKUP_ACTION,
-               AuditLog.entity_id == profile_id)
-        .order_by(AuditLog.created_at.desc())
-    )
-    cid = (row.meta or {}).get("candidate_id") if row else None
-    return cid if isinstance(cid, int) else None
+    jobs: list[ContactLookupJob] = []
+    for profile_id in ids:
+        pending = db.scalar(select(ContactLookupJob).where(
+            ContactLookupJob.requester_user_id == user.user_id,
+            ContactLookupJob.profile_id == profile_id,
+            ContactLookupJob.status.in_(("queued", "processing")),
+        ).order_by(ContactLookupJob.created_at.desc()).limit(1))
+        if pending:
+            jobs.append(pending)
+        else:
+            job = ContactLookupJob(requester_user_id=user.user_id,
+                                   profile_id=profile_id, status="queued")
+            db.add(job)
+            jobs.append(job)
+    db.commit()
+    for job in jobs:
+        db.refresh(job)
+    return jobs
+
+
+def _contact_lookup_job_payload(db, job: ContactLookupJob, user) -> dict:
+    result = {
+        "job_id": job.job_id, "profile_id": job.profile_id,
+        "status": job.status,
+        "found": bool(job.found) if job.found is not None else None,
+        "detail": job.detail, "source": job.source,
+        "credits_charged": job.credits_charged,
+        "credits_remaining": job.credits_remaining,
+    }
+    if job.status == "completed":
+        profile = db.get(Profile, job.profile_id)
+        release = db.scalar(select(AuditLog).where(
+            AuditLog.actor_user_id == user.user_id,
+            AuditLog.action == "provider_contact_released",
+            AuditLog.entity_id == job.profile_id,
+        ).order_by(AuditLog.created_at.desc()))
+        if profile and release:
+            result.update({
+                "first_name": profile.first_name, "last_name": profile.last_name,
+                "name": _display_name(profile), "email": profile.email,
+                "phone": profile.phone,
+                "contact_updated_by_email": profile.contact_updated_by_email,
+                "is_released": True, "released_at": release.created_at.isoformat(),
+                "released_by_email": user.email,
+            })
+    return result
+
+
+@router.post("/contact-lookup-queue")
+def enqueue_contact_lookup_batch(
+    body: ContactLookupQueueRequest, user: CurrentUser, db: DbSession,
+):
+    """Queue one or many slow contact searches; return immediately."""
+    _require_provider_directory_access(user)
+    jobs = _enqueue_contact_lookups(db, user, body.profile_ids)
+    return {"jobs": [_contact_lookup_job_payload(db, job, user) for job in jobs]}
+
+
+@router.get("/contact-lookup-queue/status")
+def get_contact_lookup_batch_status(job_ids: str, user: CurrentUser, db: DbSession):
+    _require_provider_directory_access(user)
+    ids = list(dict.fromkeys(part for part in job_ids.split(",") if part))
+    if not ids or len(ids) > 50:
+        raise HTTPException(status_code=422, detail="Request between 1 and 50 lookup jobs.")
+    jobs = db.scalars(select(ContactLookupJob).where(
+        ContactLookupJob.job_id.in_(ids),
+        ContactLookupJob.requester_user_id == user.user_id,
+    )).all()
+    by_id = {job.job_id: job for job in jobs}
+    return {"jobs": [_contact_lookup_job_payload(db, by_id[job_id], user)
+                      for job_id in ids if job_id in by_id]}
+
+
+@router.get("/contact-lookup-queue/{job_id}")
+def get_contact_lookup_job(job_id: str, user: CurrentUser, db: DbSession):
+    _require_provider_directory_access(user)
+    job = db.get(ContactLookupJob, job_id)
+    if not job or job.requester_user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Lookup job not found.")
+    return _contact_lookup_job_payload(db, job, user)
 
 
 @router.post("/{profile_id}/contact-lookup")
-async def lookup_profile_contact(
-    profile_id: str,
-    request: Request,
-    user: CurrentUser,
-    db: DbSession,
-):
-    """Find a provider's email and phone through the external lookup service.
-
-    Slow on purpose: the far side drives a real browser, so this takes 30-90
-    seconds. It is an `async def` for that reason — a sync endpoint would hold
-    one of the worker threads for the whole search.
-    """
+def lookup_profile_contact(profile_id: str, user: CurrentUser, db: DbSession):
+    """Backward-compatible single-candidate entry point; the search is queued."""
     _require_provider_directory_access(user)
-    if not quick_sourcer.available():
-        raise HTTPException(
-            status_code=503,
-            detail="Contact lookup is not switched on for this deployment.")
-
-    profile = db.get(Profile, profile_id)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    name = _display_name(profile)
-    if not name or " " not in name:
-        # A single token ("Unknown", a surname on its own) matches half a state.
-        raise HTTPException(
-            status_code=400,
-            detail="This provider needs a full first and last name before a "
-                   "contact lookup can find them.")
-    location = ", ".join(b for b in (profile.city, profile.state_code) if b) or None
-    already_released = bool(_released_profile_ids(db, user, [profile.profile_id]))
-    prior_candidate_id = _last_lookup_candidate_id(db, profile.profile_id)
-    team_id, dedicated_lookup = _quick_sourcer_team_settings(db, user)
-
-    # Everything above is read. End the transaction before the long call so a
-    # pooled DB connection is not held open for a minute and a half; the profile
-    # is re-fetched below for the write.
-    db.rollback()
-
-    lookup_started = time.perf_counter()
-    try:
-        if prior_candidate_id is not None:
-            try:
-                match = await quick_sourcer.fetch_candidate(prior_candidate_id)
-            except quick_sourcer.QuickSourcerError:
-                # The source may expire old candidate ids; retry by name rather
-                # than surfacing a transient Hub error to the recruiter.
-                match = await quick_sourcer.find(name, location, dedicated_ip=dedicated_lookup)
-            if not match.found:        # the Hub forgot the id — search again
-                match = await quick_sourcer.find(name, location, dedicated_ip=dedicated_lookup)
-        else:
-            match = await quick_sourcer.find(name, location, dedicated_ip=dedicated_lookup)
-    except quick_sourcer.QuickSourcerError as exc:
-        _record_quick_sourcer_request(
-            db, request, user, team_id,
-            (time.perf_counter() - lookup_started) * 1000,
-            dedicated_lookup, "failed",
-        )
-        db.commit()
-        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
-    lookup_response_ms = (time.perf_counter() - lookup_started) * 1000
-    _record_quick_sourcer_request(
-        db, request, user, team_id, lookup_response_ms,
-        dedicated_lookup, "completed",
-    )
-
-    profile = db.get(Profile, profile_id)
-    if not profile:                     # deleted while we were searching
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    if not match.found or not (match.email or match.phone):
-        db.add(AuditLog(
-            actor_user_id=user.user_id, action=LOOKUP_ACTION,
-            entity_type="profile", entity_id=profile.profile_id,
-            meta={"found": False, "searched": name, "location": location,
-                  "response_ms": round(lookup_response_ms, 1),
-                  "dedicated": dedicated_lookup},
-            ip_address=request.client.host if request.client else None,
-        ))
-        db.commit()
-        return {
-            "profile_id": profile.profile_id,
-            "found": False,
-            # A miss is regularly the source site blocking the search rather
-            # than an absence of data, so the UI must not say "no contact exists".
-            "detail": "No contact found this time. These searches sometimes come "
-                      "back empty when the source site is busy — worth retrying "
-                      "in a minute.",
-            "credits_charged": 0,
-        }
-
-    # Found something worth having: meter it, unless this recruiter already
-    # owns this provider (same key as a manual reveal, so never a second charge).
-    charge_result = {"charged": False, "cost": 0}
-    if settings.credits_enabled:
-        from ..models import COST_REVEAL_CONTACT
-        from ..services import credits as credit_service
-        try:
-            charge_result = credit_service.charge(
-                db, user.user_id, COST_REVEAL_CONTACT,
-                entity_type="profile", entity_id=profile.profile_id,
-                idempotency_key=f"reveal:{user.user_id}:{profile.profile_id}",
-                note="Contact lookup",
-            )
-        except credit_service.InsufficientCredits as exc:
-            raise HTTPException(
-                status_code=402,
-                detail=(f"You need {exc.needed} credit"
-                        f"{'' if exc.needed == 1 else 's'} to unlock this contact "
-                        f"and have {exc.balance}. Top up to continue."),
-            ) from exc
-
-    # Fill blanks only. A value a recruiter typed in, or one that came off the
-    # candidate's own résumé, is better evidence than a people-search hit — the
-    # alternatives come back in the response instead, for them to choose from.
-    filled: list[str] = []
-    if match.email and not profile.email:
-        profile.email = match.email
-        filled.append("email")
-    if match.phone and not profile.phone:
-        profile.phone = match.phone
-        filled.append("phone")
-    if filled:
-        profile.contact_updated_by_user_id = user.user_id
-        profile.contact_updated_by_email = user.email
-        profile.contact_updated_at = utcnow()
-        profile.rebuild_search_text()
-        profile.completion_score = _compute_completion(profile)
-
-    now = utcnow()
-    db.add(AuditLog(
-        actor_user_id=user.user_id, action=LOOKUP_ACTION,
-        entity_type="profile", entity_id=profile.profile_id,
-        meta={"found": True, "searched": name, "location": location,
-              "source": match.source, "candidate_id": match.candidate_id,
-              "filled": filled,
-              "response_ms": round(lookup_response_ms, 1),
-              "dedicated": dedicated_lookup,
-              "email_found": bool(match.email), "phone_found": bool(match.phone)},
-        ip_address=request.client.host if request.client else None,
-    ))
-    # The lookup unlocks the provider the same way a manual reveal does, so it
-    # writes the same release row — otherwise the recruiter would have paid and
-    # still be looking at a masked name.
-    if not already_released:
-        db.add(AuditLog(
-            actor_user_id=user.user_id, action=RELEASE_ACTION,
-            entity_type="profile", entity_id=profile.profile_id,
-            meta={"via": "quick_sourcer", "source": match.source,
-                  "email_available": bool(profile.email),
-                  "phone_available": bool(profile.phone)},
-            ip_address=request.client.host if request.client else None,
-        ))
-    from ..services import nexus_contact_delivery
-    nexus_contact_delivery.enqueue(db, user, profile)
-    db.commit()
-    db.refresh(profile)
-
-    # Same shape as /contact-release (the UI merges it into the directory row),
-    # plus what the lookup itself turned up.
-    return {
-        "profile_id": profile.profile_id,
-        "found": True,
-        "first_name": profile.first_name,
-        "last_name": profile.last_name,
-        "name": _display_name(profile),
-        "npi_number": _public_npi(profile),
-        "email": profile.email,
-        "phone": profile.phone,
-        "contact_updated_by_email": profile.contact_updated_by_email,
-        "is_released": True,
-        "released_at": now.isoformat(),
-        "released_by_email": user.email,
-        "filled": filled,
-        "lookup": {
-            "source": match.source,
-            "matched_name": match.name,
-            "address": match.address,
-            "emails": match.emails[:5],
-            "phones": match.phones[:5],
-            "addresses": match.addresses[:5],
-            "also_known_as": [n for n in match.names[:6] if n.lower() != (match.name or "").lower()],
-        },
-        "credits_charged": charge_result.get("cost", 0),
-        "credits_remaining": charge_result.get("balance"),
-    }
+    jobs = _enqueue_contact_lookups(db, user, [profile_id])
+    return _contact_lookup_job_payload(db, jobs[0], user)
 
 
 @router.get("/{profile_id}/resume")

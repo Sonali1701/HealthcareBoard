@@ -14,6 +14,7 @@ do with an answer, not about the Hub.
 """
 from __future__ import annotations
 
+import asyncio
 import unittest
 from unittest import mock
 
@@ -29,6 +30,7 @@ from app.main import app as api
 from app.models import AuditLog, Profile, User
 from app.models.enums import UserRole
 from app.services import credits as credit_service
+from app.services import contact_lookup_queue as lookup_queue
 from app.services import quick_sourcer as qs
 from app.routers.profiles import _profile_card
 
@@ -56,8 +58,7 @@ class ContactLookupTests(unittest.TestCase):
                          role=UserRole.recruiter)
         self.db.add(self.user)
         self.profile = Profile(first_name="Joseph", last_name="Antario",
-                               city="Nazareth", state_code="PA",
-                               npi_number="1234567890",
+                               city="Nazareth", state_code="PA", npi_number="1234567890",
                                resume_url="uploads/joseph.pdf",
                                resume_sections={"sections": {"Professional Summary": ["Clinician"]}})
         self.db.add(self.profile)
@@ -79,12 +80,23 @@ class ContactLookupTests(unittest.TestCase):
         self.engine.dispose()
 
     def _lookup(self, match=MATCH):
-        async def fake_find(name, location=None, *, dedicated_ip=False):
+        async def fake_find(name, location=None):
             self.last_search = (name, location)
             return match
 
-        with mock.patch.object(qs, "find", fake_find):
-            return self.client.post(f"/api/profiles/{self.pid}/contact-lookup")
+        async def fake_fetch(candidate_id):
+            return match
+
+        with (mock.patch.object(qs, "find", fake_find),
+              mock.patch.object(qs, "fetch_candidate", fake_fetch),
+              mock.patch.object(lookup_queue, "SessionLocal", self.Session)):
+            queued = self.client.post(f"/api/profiles/{self.pid}/contact-lookup")
+            if queued.status_code != 200:
+                return queued
+            job_id = queued.json()["job_id"]
+            self.assertEqual(lookup_queue._claim_one(), job_id)
+            asyncio.run(lookup_queue._run_one(job_id))
+            return self.client.get(f"/api/profiles/contact-lookup-queue/{job_id}")
 
     def _audit(self, action):
         return self.db.scalars(
@@ -98,7 +110,7 @@ class ContactLookupTests(unittest.TestCase):
         body = res.json()
         self.assertTrue(body["found"])
         self.assertEqual(body["email"], "joe@example.com")
-        self.assertEqual(sorted(body["filled"]), ["email", "phone"])
+        self.assertEqual(body["status"], "completed")
 
         self.db.expire_all()
         saved = self.db.get(Profile, self.pid)
@@ -135,33 +147,11 @@ class ContactLookupTests(unittest.TestCase):
         self.db.commit()
 
         body = self._lookup().json()
-        self.assertEqual(body["filled"], ["phone"])
+        self.assertTrue(body["found"])
         self.db.expire_all()
         self.assertEqual(self.db.get(Profile, self.pid).email, "known@example.com")
-        self.assertIn("joe@example.com", body["lookup"]["emails"])
+        self.assertEqual(body["email"], "known@example.com")
 
-    # --- billing ----------------------------------------------------------
-
-    def test_a_miss_is_free_and_unlocks_nothing(self):
-        """A miss is regularly the source site throttling us. Charging for our
-        own bad luck — and half-unlocking the row — would both be wrong."""
-        before = credit_service.balance(self.db, self.user.user_id)
-        body = self._lookup(qs.ContactMatch(found=False)).json()
-        self.assertFalse(body["found"])
-        self.assertEqual(body["credits_charged"], 0)
-        self.assertEqual(credit_service.balance(self.db, self.user.user_id), before)
-        self.assertEqual(self._audit("provider_contact_released"), [])
-
-    @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
-    def test_the_same_provider_is_only_ever_charged_once(self):
-        first = self._lookup().json()
-        self.assertEqual(first["credits_charged"], 1)
-        # Wipe what we saved so the second call takes the same path again.
-        self.profile.email = self.profile.phone = None
-        self.db.commit()
-        self.assertEqual(self._lookup().json()["credits_charged"], 0)
-
-    @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
     def test_bulk_reveal_charges_once_for_each_new_candidate(self):
         second = Profile(first_name="Taylor", last_name="Morgan",
                          city="Austin", state_code="TX", npi_number="0987654321")
@@ -187,7 +177,6 @@ class ContactLookupTests(unittest.TestCase):
         self.assertEqual(repeated["newly_released"], 0)
         self.assertEqual(repeated["credits_charged"], 0)
         self.assertEqual(credit_service.balance(self.db, self.user.user_id), before - 2)
-
     def test_resume_shows_npi_before_contact_is_revealed(self):
         visible = self.client.get(f"/api/profiles/{self.pid}/resume")
         self.assertEqual(visible.status_code, 200, visible.text)
@@ -197,7 +186,6 @@ class ContactLookupTests(unittest.TestCase):
         self.assertEqual(revealed.status_code, 200, revealed.text)
         still_visible = self.client.get(f"/api/profiles/{self.pid}/resume")
         self.assertEqual(still_visible.json()["npi_number"], "1234567890")
-
     def test_misfiled_npi_is_shown_at_top_not_as_work_authorization(self):
         self.profile.npi_number = None
         self.profile.work_authorization = "NPI: 1043204035"
@@ -210,7 +198,6 @@ class ContactLookupTests(unittest.TestCase):
             _profile_card(self.profile, released=False)["npi_number"],
             "1043204035",
         )
-
     def test_resume_removes_placeholder_only_education(self):
         self.profile.education = [
             {"institution": "—", "degree": "—", "field": None, "year": 1994},
@@ -225,6 +212,29 @@ class ContactLookupTests(unittest.TestCase):
         }])
 
     @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
+
+    # --- billing ----------------------------------------------------------
+
+    def test_a_miss_is_free_and_unlocks_nothing(self):
+        """A miss is regularly the source site throttling us. Charging for our
+        own bad luck — and half-unlocking the row — would both be wrong."""
+        before = credit_service.balance(self.db, self.user.user_id)
+        body = self._lookup(qs.ContactMatch(found=False)).json()
+        self.assertFalse(body["found"])
+        self.assertEqual(body["credits_charged"], 0)
+        self.assertEqual(credit_service.balance(self.db, self.user.user_id), before)
+        self.assertEqual(self._audit("provider_contact_released"), [])
+
+    @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
+    def test_the_same_provider_is_only_ever_charged_once(self):
+        first = self._lookup().json()
+        self.assertEqual(first["credits_charged"], 1)
+        # Wipe what we saved so the second call takes the same path again.
+        self.profile.email = self.profile.phone = None
+        self.db.commit()
+        self.assertEqual(self._lookup().json()["credits_charged"], 0)
+
+    @unittest.skipUnless(settings.credits_enabled, "credits are switched off")
     def test_an_empty_balance_stops_the_lookup_being_saved(self):
         credit_service.get_account(self.db, self.user.user_id)
         self.db.execute(
@@ -235,7 +245,8 @@ class ContactLookupTests(unittest.TestCase):
         self.db.commit()
 
         res = self._lookup()
-        self.assertEqual(res.status_code, 402)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["status"], "failed")
         self.db.expire_all()
         self.assertIsNone(self.db.get(Profile, self.pid).email)
 
@@ -258,6 +269,27 @@ class ContactLookupTests(unittest.TestCase):
         self.user.role = UserRole.job_seeker
         res = self._lookup()
         self.assertIn(res.status_code, (401, 403))
+
+    def test_bulk_request_is_queued_and_returns_without_waiting_for_lookup(self):
+        second = Profile(first_name="Maya", last_name="Patel", city="Dallas", state_code="TX")
+        self.db.add(second)
+        self.db.commit()
+        res = self.client.post("/api/profiles/contact-lookup-queue",
+                               json={"profile_ids": [self.pid, second.profile_id]})
+        self.assertEqual(res.status_code, 200, res.text)
+        body = res.json()
+        self.assertEqual(len(body["jobs"]), 2)
+        self.assertEqual({j["status"] for j in body["jobs"]}, {"queued"})
+
+    def test_queue_status_is_private_to_the_requesting_recruiter(self):
+        queued = self.client.post("/api/profiles/contact-lookup-queue",
+                                  json={"profile_ids": [self.pid]}).json()["jobs"][0]
+        other = User(email="other@test.local", password_hash="x", role=UserRole.recruiter)
+        self.db.add(other)
+        self.db.commit()
+        api.dependency_overrides[get_current_user] = lambda: other
+        res = self.client.get(f"/api/profiles/contact-lookup-queue/{queued['job_id']}")
+        self.assertEqual(res.status_code, 404)
 
 
 if __name__ == "__main__":

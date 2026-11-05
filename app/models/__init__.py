@@ -20,6 +20,7 @@ Table inventory (29):
   Analytics:  match_runs, match_results, pay_packages, audit_logs
 """
 from .analytics import AuditLog, MatchResult, MatchRun, PayPackage
+from .contact_lookup import ContactLookupJob
 from .auth import (
     EmailVerificationToken,
     OAuthAccount,
@@ -113,6 +114,7 @@ __all__ = [
     "ZoomOrganizationIntegration", "AtsOrganizationIntegration",
     "NexusContactDelivery",
     "ProfileContactBackfill",
+    "ContactLookupJob",
     # outreach
     "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",
     "MERGE_FIELDS", "SEND_STATUSES",

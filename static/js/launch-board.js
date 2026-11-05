@@ -1466,7 +1466,7 @@
   // button could only ever fail, so it is not drawn at all.
   function lookupBtn(id, label){
     if (!S.features.contact_lookup) return "";
-    return `<button class="reveal-btn lookup-btn" data-lookup="${id}" title="Search public records for an email and phone. Takes up to 90 seconds, and costs a credit only if it finds one.">`
+    return `<button class="reveal-btn lookup-btn" data-lookup="${id}" data-lookup-label="${esc(label)}" title="Search public records for an email and phone. Each found contact uses one reveal credit.">`
       + `<i class="fas fa-magnifying-glass"></i>${esc(label)}</button>`;
   }
   function providerContactCell(p){
@@ -1482,7 +1482,7 @@
       const gap = !released.email || !released.phone
         ? lookupBtn(p.profile_id, lines.length ? "Find more" : "Find contact") : "";
       return `<div class="contact-cell is-revealed">
-        ${lines.length ? `<div class="contact-lines">${lines.join("")}</div>` : `<span class="contact-none">No contact on file</span>`}
+        ${lines.length ? `<div class="contact-lines">${lines.join("")}</div>` : ""}
         ${gap}
         ${by}
       </div>`;
@@ -1492,8 +1492,7 @@
     if (!(p.has_email || p.has_phone)) {
       // Nothing to reveal, so nothing to pay for — but this is exactly the row
       // the external lookup exists for: a real person with no way to reach them.
-      return `<div class="contact-cell"><span class="contact-none"><i class="fas fa-minus"></i>No contact on file</span>`
-        + lookupBtn(p.profile_id, "Find contact") + `</div>`;
+      return `<div class="contact-cell">${lookupBtn(p.profile_id, "Find contact")}</div>`;
     }
     // Locked: one compact reveal action + a hint of which channels are on file.
     const avail = [
@@ -3382,45 +3381,75 @@
       return null;
     }
   }
-  // Search public records for a provider we have no way to reach. The far side
-  // drives a real browser, so this takes 30-90 seconds — the button says so and
-  // stays busy for the whole wait rather than looking like it did nothing.
-  async function lookupContact(id){
+  function setLookupButton(id, label, disabled=false){
     const btn = Array.from(document.querySelectorAll("[data-lookup]"))
       .find(el => el.dataset.lookup === id);
-    const original = btn ? btn.innerHTML : "";
-    if (btn){
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner sm"></span>Searching…';
-    }
-    toast("Checking public records. This can take up to 90 seconds — you can "
-          + "keep working while it runs.", {title:"Searching", kind:"info", ms:12000});
+    if (!btn) return;
+    btn.disabled = disabled;
+    btn.innerHTML = `<i class="fas fa-magnifying-glass"></i>${esc(label)}`;
+  }
+  async function lookupContact(id){ return queueContactLookups([id]); }
+  async function queueContactLookups(ids){
+    if (!ids || !ids.length) return;
+    ids.forEach(id => setLookupButton(id, "Queued?", true));
     try {
-      const r = await post(`/api/profiles/${id}/contact-lookup`, {});
-      if (!r.found){
-        // Deliberately not "no contact exists": a miss is regularly the source
-        // site throttling us, and retrying a minute later often works.
-        toast(r.detail || "Nothing came back this time.",
-              {title:"No match found", kind:"err", ms:7000});
-        return null;
+      const queued = await post("/api/profiles/contact-lookup-queue", {profile_ids:ids});
+      const jobs = queued.jobs || [];
+      if (!jobs.length) throw new Error("No contact searches were queued.");
+      jobs.forEach(job => setLookupButton(job.profile_id,
+        job.status === "processing" ? "Searching?" : "Queued?", true));
+      toast(`${jobs.length} contact search${jobs.length === 1 ? "" : "es"} added to the queue. You can keep working.`,
+            {title:"Contact search queued", kind:"info", ms:10000});
+      const remaining = new Set(jobs.map(j => j.job_id));
+      const byJob = new Map(jobs.map(j => [j.job_id, j]));
+      let found = 0, noMatch = 0, failed = 0;
+      while (remaining.size){
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        let latest;
+        try {
+          const qs = encodeURIComponent([...remaining].join(","));
+          latest = await get(`/api/profiles/contact-lookup-queue/status?job_ids=${qs}`);
+        } catch(e) {
+          // Polling is safe to retry; the durable job keeps running in Neon.
+          continue;
+        }
+        for (const job of (latest.jobs || [])){
+          byJob.set(job.job_id, job);
+          setLookupButton(job.profile_id,
+            job.status === "processing" ? "Searching?" : "Queued?", true);
+          if (job.status === "completed"){
+            found++;
+            applyRelease(job.profile_id, job);
+            remaining.delete(job.job_id);
+          } else if (job.status === "not_found"){
+            noMatch++;
+            setLookupButton(job.profile_id, "Try again", false);
+            remaining.delete(job.job_id);
+          } else if (job.status === "failed"){
+            failed++;
+            setLookupButton(job.profile_id, "Try again", false);
+            remaining.delete(job.job_id);
+          }
+        }
       }
-      applyRelease(id, r);
-      const got = [r.email ? "an email" : "", r.phone ? "a phone number" : ""]
-        .filter(Boolean).join(" and ");
-      toast(`Found ${got || "a match"}${r.lookup && r.lookup.source ? ` via ${r.lookup.source}` : ""}.`,
-            {title:"Contact found"});
-      return r;
-    } catch(e){
-      if (e.status === 402){
-        toast(e.message || "That did not work.", {title:"Out of credits", kind:"err"});
-        refreshCredits();
+      if (jobs.length === 1){
+        const job = byJob.get(jobs[0].job_id);
+        if (job && job.status === "completed") {
+          toast("Contact found and unlocked.", {title:"Contact found"});
+        } else {
+          const detail = job && job.detail;
+          toast(detail || "The lookup did not find a contact. You can try again.",
+                {title:job && job.status === "failed" ? "Lookup failed" : "No match found", kind:"err", ms:9000});
+        }
       } else {
-        toast(e.message || "The lookup did not complete.",
-              {title:"Lookup failed", kind:"err", ms:7000});
+        toast(`${found} found ? ${noMatch} no match ? ${failed} failed. Unsuccessful searches can be retried.`,
+              {title:"Contact searches finished", kind:failed ? "err" : "info", ms:12000});
       }
-      return null;
-    } finally {
-      if (btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = original; }
+    } catch(e){
+      ids.forEach(id => setLookupButton(id, "Try again", false));
+      if (e.status === 402) refreshCredits();
+      toast(e.message || "Could not queue the contact search. Try again.",
+            {title:"Lookup failed", kind:"err", ms:9000});
     }
   }
   // --- AI Search (full-page natural-language candidate search) ------------
@@ -4235,6 +4264,8 @@
     };
     const bulkPool = $("#bulk-to-pool");
     if (bulkPool) bulkPool.onclick = bulkAddToPool;
+    const bulkFind = $("#bulk-find-contact");
+    if (bulkFind) bulkFind.onclick = bulkLookupContacts;
     const bulkReveal = $("#bulk-reveal");
     if (bulkReveal) bulkReveal.onclick = bulkRevealContacts;
     const bulkClear = $("#bulk-clear");
@@ -5893,6 +5924,12 @@
     bar.classList.toggle("hidden", n === 0);
     const label = $("#bulk-count");
     if (label) label.textContent = `${n} selected`;
+    const find = $("#bulk-find-contact");
+    if (find) {
+      const eligible = eligibleLookupIds();
+      find.classList.toggle("hidden", !S.features.contact_lookup || !eligible.length);
+      find.innerHTML = `<i class="fas fa-magnifying-glass"></i>Find contacts${eligible.length ? ` (${eligible.length})` : ""}`;
+    }
     // "select all" reflects only the rows currently on screen.
     const boxes = $$("#providers-grid .row-check");
     const all = $("#bulk-all");
@@ -5916,6 +5953,24 @@
     await addMatchesToPool(ids);      // same pool picker the sourcing page uses
     clearSelection();
   }
+  function eligibleLookupIds(){
+    return [...S.selected].filter(id => {
+      const p = S.providerCards.get(id);
+      return p && !(p.has_email || p.has_phone || p.email || p.phone);
+    });
+  }
+  async function bulkLookupContacts(){
+    const ids = eligibleLookupIds();
+    if (!ids.length) return toast("Select candidates with no contact details.", {kind:"err"});
+    if (ids.length > 50) return toast("Find contacts supports up to 50 candidates at a time.", {kind:"err"});
+    const ok = await confirmDialog({
+      title:`Find contacts for ${ids.length} candidates?`,
+      body:`The searches will run in a queue. Each successful match uses one reveal credit; searches that find nothing are free. They may take several minutes if the queue is busy.`,
+      confirm:"Queue searches",
+    });
+    if (ok) queueContactLookups(ids);
+  }
+
   async function bulkRevealContacts(){
     const ids = [...S.selected];
     if (!ids.length) return;
