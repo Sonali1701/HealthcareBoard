@@ -289,16 +289,27 @@
     </header>
 
     <section id="page-dashboard" class="page active">
-      <div class="hero-band">
-        <div><h1>Dashboard</h1><p id="dash-sub">Loading your workspace...</p></div>
-        <button class="btn primary" id="dash-cta" data-page="jobs"><i class="fas fa-briefcase"></i>Find Jobs</button>
+      <div class="dash-hero">
+        <div class="dash-hero-copy">
+          <span class="dash-eyebrow"><i class="fas fa-sparkles" aria-hidden="true"></i> Your workspace</span>
+          <h1 id="dash-title">Welcome to MedHunt</h1>
+          <p id="dash-sub">Loading your workspace...</p>
+          <button class="btn dash-primary-action" id="dash-cta" data-page="jobs"><i class="fas fa-briefcase" aria-hidden="true"></i>Find jobs<i class="fas fa-arrow-right" aria-hidden="true"></i></button>
+        </div>
+        <div class="dash-hero-art" aria-hidden="true">
+          <div class="dash-art-orbit orbit-one"></div><div class="dash-art-orbit orbit-two"></div>
+          <div class="dash-art-icon"><i class="fas fa-heart-pulse"></i></div>
+          <span class="dash-art-pulse pulse-one"></span><span class="dash-art-pulse pulse-two"></span>
+        </div>
       </div>
       <!-- Tiles are written by loadDashboard(): a recruiter and a professional
            measure completely different things, so the same four boxes cannot
            serve both. -->
       <div class="metrics" id="dash-metrics"></div>
-      <div class="section-head"><div><h2 id="rec-title">Recommended Jobs</h2><p id="rec-sub">Live roles from the job board</p></div></div>
-      <div class="table-wrap">
+      <div class="dash-section-head"><div><span class="dash-section-kicker">Start here</span><h2>Quick actions</h2><p>Jump into the work that matters next.</p></div></div>
+      <div class="dash-actions" id="dash-actions" aria-label="Quick actions"></div>
+      <div class="dash-section-head dash-jobs-head"><div><span class="dash-section-kicker">Opportunities</span><h2 id="rec-title">Recommended jobs</h2><p id="rec-sub">Live roles from the job board</p></div><button class="dash-view-all" id="dash-view-all" data-page="jobs">View all jobs <i class="fas fa-arrow-right" aria-hidden="true"></i></button></div>
+      <div class="table-wrap dash-jobs-table">
         <table class="table">
           <thead><tr><th>Role</th><th>Type</th><th>Specialty</th><th>Pay</th><th class="th-actions"></th></tr></thead>
           <tbody id="dashboard-jobs"></tbody>

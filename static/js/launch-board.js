@@ -1133,26 +1133,58 @@
     </tr>`;
   }
 
-  // One tile. `to` makes the whole tile a link to the page that explains it,
-  // because a number you cannot act on is decoration.
-  function metricTile(value, label, to){
-    return `<div class="metric${to ? " is-link" : ""}"${to ? ` data-page="${to}"` : ""}>
-      <span>${esc(String(value))}</span><small>${esc(label)}</small></div>`;
+  // Keep dashboard numbers actionable and keyboard accessible.
+  function metricTile(value, label, to, icon){
+    const body = `<span class="metric-top"><i class="fas ${icon}" aria-hidden="true"></i><i class="fas fa-arrow-up-right-from-square metric-arrow" aria-hidden="true"></i></span>
+      <span class="metric-value">${esc(String(value))}</span><span class="metric-label">${esc(label)}</span>`;
+    return to ? `<button type="button" class="metric is-link" data-page="${to}" aria-label="${esc(label)}: ${esc(String(value))}. Open ${esc(label)}">${body}</button>`
+      : `<div class="metric">${body}</div>`;
+  }
+
+  function dashboardActions(recruiter){
+    const actions = recruiter ? [
+      ["providers", "fa-user-doctor", "Find providers", "Search the clinician directory"],
+      ["ai", "fa-wand-magic-sparkles", "AI search", "Describe the candidate you need"],
+      ["pools", "fa-layer-group", "Talent pools", "Review your shortlisted people"],
+    ] : [
+      ["jobs", "fa-magnifying-glass", "Explore jobs", "Find a role that fits your goals"],
+      ["profile", "fa-id-card", "Update profile", "Help employers find the right match"],
+      ["applications", "fa-list-check", "Track applications", "See where each application stands"],
+    ];
+    return actions.map(([page, icon, title, detail]) => `<button type="button" class="dash-action" data-page="${page}">
+      <span class="dash-action-icon"><i class="fas ${icon}" aria-hidden="true"></i></span>
+      <span class="dash-action-copy"><strong>${title}</strong><small>${detail}</small></span>
+      <i class="fas fa-arrow-right dash-action-arrow" aria-hidden="true"></i>
+    </button>`).join("");
   }
 
   async function loadDashboard(){
     const rec = isRecruiter();
     $("#dashboard-jobs").innerHTML = loadingRow(JOB_COLS, "Loading jobs...");
     $("#dash-metrics").innerHTML = "";
+    $("#dash-actions").innerHTML = dashboardActions(rec);
+    $("#dash-title").textContent = S.profile && S.profile.first_name
+      ? `Welcome back, ${S.profile.first_name}`
+      : (rec ? "Your recruiting workspace" : "Your healthcare workspace");
+    const sourcingPromise = rec ? get("/api/analytics/sourcing?days=30").catch(() => null) : null;
+    const seekerCountsPromise = !rec && S.profile ? Promise.all([
+      get("/api/jobs?limit=1").then(r => (r.total || 0).toLocaleString()).catch(() => "—"),
+      get("/api/applications/mine").then(r => r.length).catch(() => "—"),
+      get("/api/applications/saved").then(r => r.length).catch(() => "—"),
+    ]) : null;
 
     // The header and call to action belong to whoever is looking. A recruiter
     // being told to "Find Jobs" is the wrong job entirely.
     const cta = $("#dash-cta");
     if (cta){
-      cta.innerHTML = rec ? '<i class="fas fa-user-doctor"></i>Search providers'
-                          : '<i class="fas fa-briefcase"></i>Find Jobs';
+      cta.innerHTML = rec ? '<i class="fas fa-user-doctor" aria-hidden="true"></i>Search providers<i class="fas fa-arrow-right" aria-hidden="true"></i>'
+                          : '<i class="fas fa-briefcase" aria-hidden="true"></i>Find jobs<i class="fas fa-arrow-right" aria-hidden="true"></i>';
       cta.dataset.page = rec ? "providers" : "jobs";
     }
+    const viewAll = $("#dash-view-all");
+    viewAll.dataset.page = rec ? "employer" : "jobs";
+    viewAll.innerHTML = rec ? 'View job orders <i class="fas fa-arrow-right" aria-hidden="true"></i>'
+      : 'View all jobs <i class="fas fa-arrow-right" aria-hidden="true"></i>';
     const title = $("#rec-title");
     if (title) title.textContent = rec ? "Live roles" : "Recommended Jobs";
 
@@ -1173,43 +1205,40 @@
                "New roles appear here as they are posted.", "fa-briefcase");
     } catch(e) { $("#dashboard-jobs").innerHTML = errorRow(JOB_COLS, "Could not load jobs"); }
 
-    $("#dash-sub").textContent = S.profile
-      ? `Welcome back, ${S.profile.first_name}.`
-      : (rec ? "Recruiter workspace" : "Complete your profile to get matched.");
+    $("#dash-sub").textContent = rec
+      ? "Find clinicians, manage your pipeline, and keep every placement moving."
+      : "Discover roles that fit your experience and keep your next move on track.";
 
     if (rec) {
       // Everything a recruiter is measured on comes back in one call.
       $("#dash-metrics").innerHTML =
-        metricTile(total.toLocaleString(), "Open roles", "providers")
-        + metricTile("—", "Contacts revealed", "credits")
-        + metricTile("—", "Shortlisted", "pools")
-        + metricTile("—", "Conversations", "messages");
+        metricTile(total.toLocaleString(), "Open roles", "employer", "fa-briefcase")
+        + metricTile("—", "Contacts revealed", "credits", "fa-unlock")
+        + metricTile("—", "Shortlisted", "pools", "fa-layer-group")
+        + metricTile("—", "Conversations", "messages", "fa-comments");
       try {
-        const a = await get("/api/analytics/sourcing?days=30");
+        const a = await sourcingPromise;
+        if (!a) return;
         $("#dash-metrics").innerHTML =
-          metricTile(total.toLocaleString(), "Open roles", "providers")
-          + metricTile(a.contacts.released_total, "Contacts revealed", "credits")
-          + metricTile(a.pools.shortlisted, "Shortlisted", "pools")
-          + metricTile(a.messaging.threads, "Conversations", "messages");
+          metricTile(total.toLocaleString(), "Open roles", "employer", "fa-briefcase")
+          + metricTile(a.contacts.released_total, "Contacts revealed", "credits", "fa-unlock")
+          + metricTile(a.pools.shortlisted, "Shortlisted", "pools", "fa-layer-group")
+          + metricTile(a.messaging.threads, "Conversations", "messages", "fa-comments");
       } catch(e) { /* the tiles keep their placeholders */ }
       return;
     }
 
     const pct = `${(S.profile && S.profile.completion_score) || 0}%`;
     const seekerTiles = (open, apps, saved) =>
-      metricTile(open, "Open roles", "jobs")
-      + metricTile(apps, "Applications", "applications")
-      + metricTile(saved, "Saved jobs", "applications")
-      + metricTile(pct, "Profile", "profile");
+      metricTile(open, "Open roles", "jobs", "fa-briefcase")
+      + metricTile(apps, "Applications", "applications", "fa-paper-plane")
+      + metricTile(saved, "Saved jobs", "jobs", "fa-bookmark")
+      + metricTile(pct, "Profile complete", "profile", "fa-user-check");
     $("#dash-metrics").innerHTML = seekerTiles("—", "—", "—");
     if (!S.profile) return;
     // /api/jobs/recommended reports total = the page it returned, so the real
     // board count has to come from the unfiltered list.
-    const [open, apps, saved] = await Promise.all([
-      get("/api/jobs?limit=1").then(r => (r.total || 0).toLocaleString()).catch(() => "—"),
-      get("/api/applications/mine").then(r => r.length).catch(() => "—"),
-      get("/api/applications/saved").then(r => r.length).catch(() => "—"),
-    ]);
+    const [open, apps, saved] = await seekerCountsPromise;
     $("#dash-metrics").innerHTML = seekerTiles(open, apps, saved);
   }
 
@@ -4069,12 +4098,14 @@
     const pwt = $("#auth-pw-toggle");
     if (pwt) pwt.onclick = () => { const i = $("#auth-password"); const show = i.type === "password"; i.type = show ? "text" : "password"; pwt.innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>'; };
     $$(".nav-item,.top-user,.top-actions .icon-btn,.credit-chip,.hero-band .btn,.logo").forEach(el => el.addEventListener("click", e => { const page = el.dataset.page; if (page) { e.preventDefault(); showPage(page); } }));
-    // The dashboard tiles are rewritten per role after this runs, so they are
-    // delegated rather than bound directly.
-    const metrics = $("#dash-metrics");
-    if (metrics) metrics.addEventListener("click", e => {
-      const tile = e.target.closest(".metric[data-page]");
-      if (tile) showPage(tile.dataset.page);
+    // Dashboard controls are rewritten per role; delegate all their navigation.
+    const dashboard = $("#page-dashboard");
+    if (dashboard) dashboard.addEventListener("click", e => {
+      const target = e.target.closest("[data-page]");
+      if (target && dashboard.contains(target)) {
+        e.preventDefault();
+        showPage(target.dataset.page);
+      }
     });
     $("#logout-btn").onclick = async () => {
       // Revoke the server-side refresh session as well as clearing this browser.
