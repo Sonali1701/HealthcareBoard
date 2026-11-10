@@ -1559,7 +1559,7 @@
     const specialty = providerSubtitle(p);
     return `<tr data-row="${p.profile_id}"${S.selected.has(p.profile_id) ? ' class="is-selected"' : ""}>
       <td class="td-check"><input type="checkbox" class="row-check" data-pick="${p.profile_id}"${S.selected.has(p.profile_id) ? " checked" : ""}></td>
-      <td>
+      <td class="td-provider-name">
         <div class="cell-user">
           <span class="avatar">${esc(p.initials || initials(p.first_name, p.last_name))}</span>
           <div class="cell-id">
@@ -1568,16 +1568,16 @@
           </div>
         </div>
       </td>
-      <td><span class="badge accent"><i class="fas fa-circle-check"></i>${esc(profession)}</span></td>
-      <td><span class="badge">${esc(p.job_category || p.provider_category || "Others")}</span></td>
-      <td>${p.years_experience ? `${esc(p.years_experience)} yrs` : `<span class="cell-none">—</span>`}</td>
-      <td>${loc ? esc(loc) : `<span class="cell-none">—</span>`}</td>
+      <td class="td-provider-role"><span class="badge accent"><i class="fas fa-circle-check"></i>${esc(profession)}</span></td>
+      <td class="td-provider-category"><span class="badge">${esc(p.job_category || p.provider_category || "Others")}</span></td>
+      <td class="td-provider-experience">${p.years_experience ? `${esc(p.years_experience)} yrs` : `<span class="cell-none">—</span>`}</td>
+      <td class="td-provider-location">${loc ? esc(loc) : `<span class="cell-none">—</span>`}</td>
       <td class="td-contact">${providerContactCell(p)}</td>
       <td class="td-actions">
         ${p.has_resume_file
           ? `<button class="btn small" data-resume="${p.profile_id}" title="View resume"><i class="fas fa-file-lines"></i>Resume</button>`
           : `<button class="btn small" disabled title="No resume on file"><i class="fas fa-file-lines"></i>No resume</button>`}
-        <button class="btn small" data-message="${p.profile_id}" title="Message this candidate"><i class="fas fa-comment-dots"></i></button>
+        <button class="btn small" data-message="${p.profile_id}" title="Message this candidate" aria-label="Message ${esc(displayName(p))}"><i class="fas fa-comment-dots"></i></button>
         <button class="btn small${S.poolMembership.get(p.profile_id) ? " saved" : ""}" data-pool-save="${p.profile_id}" title="Save to a talent pool"><i class="fas fa-layer-group"></i>${S.poolMembership.get(p.profile_id) ? "Saved" : "Save"}</button>
       </td>
     </tr>`;
