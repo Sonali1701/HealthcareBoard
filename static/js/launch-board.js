@@ -332,10 +332,12 @@
     if ((id === "providers" || id === "ai" || id === "extension" || id === "pools"
          || id === "matching" || id === "outreach" || id === "credits" || id === "submissions"
          || id === "applicants" || id === "calculator" || id === "clients" || id === "orgadmin"
-         || id === "placements" || id === "medhuntreplies") && !isRecruiter()) id = "dashboard";
+         || id === "placements" || id === "medhuntreplies" || id === "employer"
+         || id === "analytics") && !isRecruiter()) id = "dashboard";
     // Seeker-only pages: a staffing agency sources candidates, it doesn't find
     // jobs, apply, or keep a resume.
-    if ((id === "resume" || id === "applications" || id === "jobs") && isRecruiter()) id = "dashboard";
+    if ((id === "resume" || id === "applications" || id === "jobs"
+         || id === "jobai" || id === "credentials") && isRecruiter()) id = "dashboard";
     // The admin console is for platform admins only.
     if (id === "admin" && !isAdmin()) id = "dashboard";
     if (id !== "messages") stopMessagePolling();
@@ -344,7 +346,7 @@
     $$(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.page === id));
     if (id === "dashboard") loadDashboard();
     if (id === "jobs") loadJobs();
-    if (id === "providers") { initProviderFilterOptions(); if (!S.facetsLoaded) loadProviderFacets(); loadProviders(); loadSavedSearches(); }
+    if (id === "providers") { initProviderFilterOptions(); syncProviderFilterToggle(); if (!S.facetsLoaded) loadProviderFacets(); loadProviders(); loadSavedSearches(); }
     if (id === "ai") setTimeout(() => { const el = $("#ai-input"); if (el) el.focus(); }, 60);
     if (id === "jobai") setTimeout(() => { const el = $("#jai-input"); if (el) el.focus(); }, 60);
     if (id === "extension") loadExtensionPage();
@@ -1472,7 +1474,19 @@
     S.providerTotal = null;
     S.providerEstimate = null;
     S.providerLowerBound = null;
+    syncProviderFilterToggle();
     loadProviders();
+  }
+  function syncProviderFilterToggle(){
+    const badge = $("#provider-filter-count");
+    const toggle = $("#provider-filter-toggle");
+    if (!badge || !toggle) return;
+    const s = S.provider;
+    const count = [s.license_title, s.state_code, s.min_experience || s.max_experience,
+      s.contact_available, s.resume_status, s.zip].filter(Boolean).length;
+    badge.hidden = !count;
+    badge.textContent = String(count);
+    toggle.setAttribute("aria-label", count ? `Filters, ${count} active` : "Filters");
   }
   function setExperienceFilter(value){
     S.provider.min_experience = "";
@@ -1838,7 +1852,11 @@
         ${c.missing.length ? `<p class="pc-note">Recruiters search by licence, specialty, experience and location —
           without them your profile will not appear in their results.</p>` : ""}
       </div>`;
-    } catch(e) { box.innerHTML = ""; }
+    } catch(e) {
+      box.innerHTML = `<div class="inline-feedback" role="alert"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+        Profile completion could not load. <button type="button">Retry</button></div>`;
+      box.querySelector("button").onclick = loadCompletion;
+    }
   }
   // --- Credentials (the professional's own licences) -----------------------
   async function loadCredentials(){
@@ -1875,7 +1893,11 @@
         try { await del(`/api/profiles/me/licenses/${b.dataset.credDel}`); loadCredentials(); }
         catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
-    } catch(e) { box.innerHTML = ""; }
+    } catch(e) {
+      box.innerHTML = `<div class="inline-feedback" role="alert"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+        Credentials could not load. <button type="button">Retry</button></div>`;
+      box.querySelector("button").onclick = loadCredentials;
+    }
   }
   async function addCredential(){
     const v = await formDialog({
@@ -2190,6 +2212,13 @@
     box.setAttribute("aria-busy", "true");
     if (!box.childElementCount) box.innerHTML = loading("Loading your organization…");
     try {
+      // Returning visitors already know their organization, so load its team
+      // alongside the overview instead of waiting for an extra round trip.
+      const knownOrgId = S.employer && S.employer.employer_id;
+      const knownTeamPromise = knownOrgId ? Promise.all([
+        get(`/api/employers/${knownOrgId}/members`),
+        get(`/api/employers/${knownOrgId}/teams`),
+      ]).catch(() => null) : null;
       let kpis = {};
       try {
         const dash = await get(employerDashboardPath());
@@ -2205,10 +2234,11 @@
         box.dataset.loaded = "true";
         return;
       }
-      const [mem, teamData] = await Promise.all([
-        get(`/api/employers/${emp.employer_id}/members`),
-        get(`/api/employers/${emp.employer_id}/teams`),
-      ]);
+      const [mem, teamData] = (knownOrgId === emp.employer_id && await knownTeamPromise)
+        || await Promise.all([
+          get(`/api/employers/${emp.employer_id}/members`),
+          get(`/api/employers/${emp.employer_id}/teams`),
+        ]);
       const orgTeams = teamData.items || [];
       S.orgTeams = orgTeams;
       S.managedTeamIds = new Set(teamData.managed_team_ids || []);
@@ -4143,6 +4173,11 @@
     const vSignout = $("#verify-signout");
     if (vSignout) vSignout.onclick = () => { setToken(""); setRefresh(""); location.reload(); };
     ["job-q","job-type","job-state"].forEach(id => { const el = $("#" + id); el.addEventListener(id === "job-q" ? "input" : "change", debounce(loadJobs, 250)); });
+    $("#provider-filter-toggle").onclick = () => {
+      const filters = $("#provider-filters");
+      const expanded = filters.classList.toggle("is-collapsed") === false;
+      $("#provider-filter-toggle").setAttribute("aria-expanded", String(expanded));
+    };
     $("#provider-q").addEventListener("input", debounce(() => { S.provider.q = $("#provider-q").value.trim(); providerFilterChanged(); }, 300));
     $("#provider-license-title").onchange = () => { S.provider.license_title = $("#provider-license-title").value; providerFilterChanged(); };
     const radiusEl = $("#provider-radius");
@@ -4873,7 +4908,11 @@
         try { await del(`/api/jobs/${b.dataset.unsave}/save`); loadSavedJobs(); loadDashboard(); }
         catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
-    } catch(e) { box.innerHTML = ""; }
+    } catch(e) {
+      box.innerHTML = `<div class="inline-feedback" role="alert"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+        Saved jobs could not load. <button type="button">Retry</button></div>`;
+      box.querySelector("button").onclick = loadSavedJobs;
+    }
   }
 
   // --- Job alerts (professional saved searches) ----------------------------
@@ -4892,7 +4931,11 @@
         try { await del(`/api/saved-searches/${b.dataset.alertDel}`); loadJobAlerts(); }
         catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
       });
-    } catch(e) { box.innerHTML = ""; }
+    } catch(e) {
+      box.innerHTML = `<div class="inline-feedback" role="alert"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+        Job alerts could not load. <button type="button">Retry</button></div>`;
+      box.querySelector("button").onclick = loadJobAlerts;
+    }
   }
   async function newJobAlert(){
     const v = await formDialog({
@@ -5701,7 +5744,54 @@
       ${pageCount > 1 ? `<div class="extension-pages"><button class="btn small" data-extension-page="${ext.activity_page - 1}"${ext.activity_page <= 1 ? " disabled" : ""}>Previous</button><span>Page ${ext.activity_page} of ${pageCount}</span><button class="btn small" data-extension-page="${ext.activity_page + 1}"${ext.activity_page >= pageCount ? " disabled" : ""}>Next</button></div>` : ""}
     </div>`;
   }
+  let _analyticsReq = 0;
+  let _extensionAnalyticsReq = 0;
+  function extensionAnalyticsRequest(activeOrgId){
+    const params = new URLSearchParams({
+      days:String(extensionAnalyticsFilters.days),
+      member_id:extensionAnalyticsFilters.member_id,
+      platform:extensionAnalyticsFilters.platform,
+      provider:extensionAnalyticsFilters.provider,
+      outcome:extensionAnalyticsFilters.outcome,
+      page:String(extensionAnalyticsFilters.page),
+    });
+    if (activeOrgId) params.set("employer_id", activeOrgId);
+    if (extensionAnalyticsFilters.date_from) params.set("date_from", extensionAnalyticsFilters.date_from);
+    if (extensionAnalyticsFilters.date_to) params.set("date_to", extensionAnalyticsFilters.date_to);
+    return get(`/api/analytics/medhunt?${params}`).catch(e => ({
+      error:e.message, scope:activeOrgId ? "organization" : "personal",
+    }));
+  }
+  function renderAnalyticsConversations(convo){
+    const rows = (convo && convo.conversations || []);
+    return rows.length ? `<div class="an-section"><h2>Conversations</h2>
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Contact</th><th>Stage</th><th>Sent</th><th>Received</th><th>Reply rate</th><th>Last activity</th></tr></thead>
+        <tbody>${rows.slice(0, 25).map(c => `<tr>
+          <td><div class="cell-name">${esc(c.candidate || "—")}</div></td>
+          <td>${c.ats_stage ? `<span class="badge">${esc(c.ats_stage)}</span>` : `<span class="cell-none">—</span>`}</td>
+          <td>${c.messages_sent}</td><td>${c.messages_received}</td>
+          <td>${Math.round((c.response_rate || 0) * 100)}%</td>
+          <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "—"}</td>
+        </tr>`).join("")}</tbody></table></div></div>` : "";
+  }
+  async function loadExtensionAnalyticsOnly(){
+    const target = $("#analytics-extension");
+    if (!target) return;
+    const seq = ++_extensionAnalyticsReq;
+    target.classList.add("is-updating");
+    target.setAttribute("aria-busy", "true");
+    const activeOrgId = S.employer && S.employer.employer_id || "";
+    const ext = await extensionAnalyticsRequest(activeOrgId);
+    if (seq === _extensionAnalyticsReq && $("#page-analytics").classList.contains("active")) {
+      target.innerHTML = renderExtensionAnalytics(ext);
+      target.classList.remove("is-updating");
+      target.removeAttribute("aria-busy");
+    }
+  }
   async function loadAnalytics(){
+    const seq = ++_analyticsReq;
+    const extensionSeq = ++_extensionAnalyticsReq;
     const box = $("#analytics-panel");
     box.innerHTML = loading("Loading your activity...");
     try {
@@ -5717,23 +5807,13 @@
       // Market = real supply/demand (impressive, populated); sourcing = this
       // recruiter's own activity. The application funnel is intentionally not
       // shown — with no submissions/applications yet it would be all zeros.
-      const extensionParams = new URLSearchParams({
-        days:String(extensionAnalyticsFilters.days),
-        member_id:extensionAnalyticsFilters.member_id,
-        platform:extensionAnalyticsFilters.platform,
-        provider:extensionAnalyticsFilters.provider,
-        outcome:extensionAnalyticsFilters.outcome,
-        page:String(extensionAnalyticsFilters.page),
-      });
-      if (activeOrgId) extensionParams.set("employer_id", activeOrgId);
-      if (extensionAnalyticsFilters.date_from) extensionParams.set("date_from", extensionAnalyticsFilters.date_from);
-      if (extensionAnalyticsFilters.date_to) extensionParams.set("date_to", extensionAnalyticsFilters.date_to);
-      const [mk, d, convo, ext] = await Promise.all([
+      const convoPromise = get("/api/analytics/conversations").catch(() => null);
+      const extPromise = extensionAnalyticsRequest(activeOrgId);
+      const [mk, d] = await Promise.all([
         get("/api/analytics/market"),
         get("/api/analytics/sourcing?days=30&include_directory=false"),
-        get("/api/analytics/conversations").catch(() => null),
-        get(`/api/analytics/medhunt?${extensionParams}`).catch(e => ({error:e.message, scope:activeOrgId ? "organization" : "personal"})),
       ]);
+      if (seq !== _analyticsReq || !$("#page-analytics").classList.contains("active")) return;
       const P = mk.providers, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
       const medhunt = d.medhunt || {enriched_total:0, enriched_recent:0, attempts_recent:0};
       const stages = pools.by_stage || {};
@@ -5804,44 +5884,41 @@
           ${stat(pools.worked_pct + "%", "Shortlist worked", `${pools.worked} past sourced`)}
         </div>`;
 
-      const convoRows = (convo && convo.conversations || []);
-      const convoSection = convoRows.length
-        ? `<div class="an-section"><h2>Conversations</h2>
-            <div class="table-wrap"><table class="table">
-              <thead><tr><th>Contact</th><th>Stage</th><th>Sent</th><th>Received</th><th>Reply rate</th><th>Last activity</th></tr></thead>
-              <tbody>${convoRows.slice(0, 25).map(c => `<tr>
-                <td><div class="cell-name">${esc(c.candidate || "—")}</div></td>
-                <td>${c.ats_stage ? `<span class="badge">${esc(c.ats_stage)}</span>` : `<span class="cell-none">—</span>`}</td>
-                <td>${c.messages_sent}</td>
-                <td>${c.messages_received}</td>
-                <td>${Math.round((c.response_rate || 0) * 100)}%</td>
-                <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "—"}</td>
-              </tr>`).join("")}</tbody></table></div></div>` : "";
-
-      // Extension audit: organization managers see the whole team; individual
-      // members get the same detail scoped to their own use.
-      const extensionSection = renderExtensionAnalytics(ext);
-
       box.innerHTML = glance
-        + extensionSection
+        + `<div id="analytics-extension">${loading("Loading extension activity...")}</div>`
         + `<div class="an-section"><h2>Talent market</h2>${marketGrid}</div>`
         + `<div class="an-section"><h2>Your sourcing</h2>${sourceGrid}</div>`
-        + convoSection;
+        + `<div id="analytics-conversations"></div>`;
+      extPromise.then(ext => {
+        if (seq === _analyticsReq && extensionSeq === _extensionAnalyticsReq
+            && $("#page-analytics").classList.contains("active")) {
+          $("#analytics-extension").innerHTML = renderExtensionAnalytics(ext);
+        }
+      });
+      convoPromise.then(convo => {
+        if (seq === _analyticsReq && $("#page-analytics").classList.contains("active")) {
+          $("#analytics-conversations").innerHTML = renderAnalyticsConversations(convo);
+        }
+      });
       $("#analytics-sub").textContent = `${cn(P.listable)} providers · ${mk.jobs_active} open roles · last ${d.window_days} days`;
       box.onchange = event => {
         const field = event.target.dataset.extensionFilter;
         if (!field) return;
         extensionAnalyticsFilters[field] = field === "days" ? Number(event.target.value) : event.target.value;
         extensionAnalyticsFilters.page = 1;
-        loadAnalytics();
+        loadExtensionAnalyticsOnly();
       };
       box.onclick = event => {
         const button = event.target.closest("[data-extension-page]");
         if (!button || button.disabled) return;
         extensionAnalyticsFilters.page = Number(button.dataset.extensionPage);
-        loadAnalytics();
+        loadExtensionAnalyticsOnly();
       };
-    } catch(e) { box.innerHTML = errorState("Could not load analytics"); }
+    } catch(e) {
+      if (seq === _analyticsReq && $("#page-analytics").classList.contains("active")) {
+        box.innerHTML = errorState("Could not load analytics");
+      }
+    }
   }
 
   // --- Saved searches ------------------------------------------------------

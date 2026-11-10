@@ -274,7 +274,7 @@
     <div class="user-mini">
       <div id="mini-avatar" class="avatar">H</div>
       <div><strong id="mini-name">MedHunt</strong><small id="mini-role">Signed in</small></div>
-      <button id="logout-btn" class="icon-btn" title="Sign out"><i class="fas fa-right-from-bracket"></i></button>
+      <button id="logout-btn" class="icon-btn" title="Sign out" aria-label="Sign out"><i class="fas fa-right-from-bracket"></i></button>
     </div>
   </aside>
 
@@ -282,8 +282,8 @@
     <header class="topbar">
       <div class="top-actions">
         <button class="credit-chip" id="credit-chip" data-page="credits" title="Credits remaining"><i class="fas fa-coins"></i><b id="credit-balance">--</b></button>
-        <button class="icon-btn" data-page="messages"><i class="fas fa-comment-dots"></i></button>
-        <button class="icon-btn" data-page="notifications"><i class="fas fa-bell"></i></button>
+        <button class="icon-btn" data-page="messages" aria-label="Messages"><i class="fas fa-comment-dots"></i></button>
+        <button class="icon-btn" data-page="notifications" aria-label="Notifications"><i class="fas fa-bell"></i></button>
         <button class="top-user" data-page="profile"><span id="top-avatar" class="avatar">H</span><span id="top-name">Account</span></button>
       </div>
     </header>
@@ -380,10 +380,11 @@
 
     <section id="page-providers" class="page">
       <div class="section-head"><div><h1>Providers</h1><p id="providers-count">Loading providers...</p></div>
+        <button type="button" class="provider-filter-toggle" id="provider-filter-toggle" aria-controls="provider-filters" aria-expanded="false"><i class="fas fa-sliders" aria-hidden="true"></i>Filters<span class="provider-filter-count" id="provider-filter-count" hidden></span><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
         <div id="providers-update-status" class="provider-update-status" role="status" aria-live="polite" hidden></div>
       </div>
-      <div class="filter-row provider-filters">
-        <input id="provider-q" class="input" placeholder="Search name, specialty, category (3+ letters)">
+      <div class="filter-row provider-filters is-collapsed" id="provider-filters">
+        <input id="provider-q" class="input" aria-label="Search providers by name, specialty, or category" placeholder="Search name, specialty, category (3+ letters)">
         <select id="provider-license-title" class="input"><option value="">Any license/title</option></select>
         <select id="provider-state" class="input"><option value="">Any state</option></select>
         <select id="provider-experience" class="input"><option value="">Years experience</option><option value="0-2">0-2 years</option><option value="3-5">3-5 years</option><option value="6-10">6-10 years</option><option value="10+">10+ years</option></select>
