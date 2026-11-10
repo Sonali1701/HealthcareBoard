@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Integer, Numeric, String, Text
+from sqlalchemy import JSON, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base, created_col, uuid_fk, uuid_pk
@@ -65,6 +65,9 @@ class PayPackage(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_actor_action_created", "actor_user_id", "action", "created_at"),
+    )
 
     log_id: Mapped[str] = uuid_pk()
     actor_user_id: Mapped[Optional[str]] = uuid_fk("users.user_id", nullable=True, ondelete="SET NULL")

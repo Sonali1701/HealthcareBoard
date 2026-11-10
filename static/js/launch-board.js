@@ -2221,7 +2221,8 @@
       ]).catch(() => null) : null;
       let kpis = {};
       try {
-        const dash = await get(employerDashboardPath());
+        const dash = await get(employerDashboardPath()
+          + (S.employer && S.employer.employer_id ? "&" : "?") + "summary_only=true");
         S.employer = dash.employer || S.employer;
         kpis = dash.kpis || {};
       } catch(_){}
@@ -5793,7 +5794,9 @@
     const seq = ++_analyticsReq;
     const extensionSeq = ++_extensionAnalyticsReq;
     const box = $("#analytics-panel");
-    box.innerHTML = loading("Loading your activity...");
+    const hadContent = !!box.querySelector(".an-section");
+    box.setAttribute("aria-busy", "true");
+    if (!hadContent) box.innerHTML = loading("Loading your activity...");
     try {
       const activeOrgId = S.employer && S.employer.employer_id || "";
       if (extensionAnalyticsFilters.orgId !== activeOrgId) {
@@ -5809,10 +5812,27 @@
       // shown — with no submissions/applications yet it would be all zeros.
       const convoPromise = get("/api/analytics/conversations").catch(() => null);
       const extPromise = extensionAnalyticsRequest(activeOrgId);
-      const [mk, d] = await Promise.all([
-        get("/api/analytics/market"),
-        get("/api/analytics/sourcing?days=30&include_directory=false"),
-      ]);
+      let partialMarket = null, partialSourcing = null;
+      const showPartial = () => {
+        if (hadContent || seq !== _analyticsReq || !$("#page-analytics").classList.contains("active")) return;
+        const cards = [];
+        if (partialMarket) {
+          cards.push(stat(compactNum(partialMarket.providers.listable), "Providers", "screened & listable"));
+          cards.push(stat(partialMarket.jobs_active.toLocaleString(), "Open roles"));
+          cards.push(stat(partialMarket.providers.states, "States covered"));
+        }
+        if (partialSourcing) {
+          cards.push(stat(partialSourcing.contacts.released_total, "Contacts revealed"));
+          cards.push(stat(partialSourcing.pools.shortlisted, "Shortlisted"));
+          cards.push(stat(partialSourcing.sourcing_runs.runs, "Sourcing runs"));
+        }
+        if (cards.length) box.innerHTML = `<div class="an-section"><h2>At a glance</h2><div class="an-grid">${cards.join("")}</div><p class="team-note">Loading the rest of your analytics…</p></div>`;
+      };
+      const marketPromise = get("/api/analytics/market");
+      const sourcingPromise = get("/api/analytics/sourcing?days=30&include_directory=false");
+      marketPromise.then(value => { partialMarket = value; showPartial(); }).catch(() => {});
+      sourcingPromise.then(value => { partialSourcing = value; showPartial(); }).catch(() => {});
+      const [mk, d] = await Promise.all([marketPromise, sourcingPromise]);
       if (seq !== _analyticsReq || !$("#page-analytics").classList.contains("active")) return;
       const P = mk.providers, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
       const medhunt = d.medhunt || {enriched_total:0, enriched_recent:0, attempts_recent:0};
@@ -5916,8 +5936,11 @@
       };
     } catch(e) {
       if (seq === _analyticsReq && $("#page-analytics").classList.contains("active")) {
-        box.innerHTML = errorState("Could not load analytics");
+        if (!hadContent) box.innerHTML = errorState("Could not load analytics");
+        else toast("Could not refresh analytics.", {kind:"err"});
       }
+    } finally {
+      if (seq === _analyticsReq) box.removeAttribute("aria-busy");
     }
   }
 

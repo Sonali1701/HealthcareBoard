@@ -67,7 +67,8 @@ def _guard_role_assignment(actor_role: str, target_role: str) -> None:
 
 @router.get("/me/dashboard")
 def my_employer_dashboard(user: CurrentUser, db: DbSession,
-                          employer_id: str | None = None):
+                          employer_id: str | None = None,
+                          summary_only: bool = False):
     """Everything the Employer Portal needs: org, KPIs, jobs, recent applicants."""
     if employer_id:
         emp = db.get(Employer, employer_id)
@@ -81,6 +82,30 @@ def my_employer_dashboard(user: CurrentUser, db: DbSession,
             emp = db.get(Employer, member.employer_id) if member else None
     if not emp:
         return {"employer": None, "kpis": {}, "jobs": [], "applicants": []}
+
+    employer_data = {"employer_id": emp.employer_id, "org_name": emp.org_name,
+                     "org_type": emp.org_type, "city": emp.city,
+                     "state_code": emp.state_code, "website_url": emp.website_url,
+                     "description": emp.description, "is_verified": emp.is_verified,
+                     "rating_avg": float(emp.rating_avg or 0),
+                     "quick_sourcer_per_user_limit": int(emp.quick_sourcer_per_user_limit or 10)}
+    if summary_only:
+        # Organization settings needs counts, not every job and applicant row.
+        # Keep those large collections out of its first response.
+        job_count = db.scalar(select(func.count()).select_from(JobPosting).where(
+            JobPosting.employer_id == emp.employer_id)) or 0
+        application_counts = dict(db.execute(
+            select(Application.status, func.count())
+            .join(JobPosting, Application.job_id == JobPosting.job_id)
+            .where(JobPosting.employer_id == emp.employer_id)
+            .group_by(Application.status)
+        ).all())
+        return {"employer": employer_data, "jobs": [], "applicants": [],
+                "kpis": {"jobs": job_count,
+                         "applications": sum(application_counts.values()),
+                         "interviews": application_counts.get(ApplicationStatus.interview, 0),
+                         "offers": application_counts.get(ApplicationStatus.offer, 0),
+                         "hired": application_counts.get(ApplicationStatus.hired, 0)}}
 
     jobs = db.scalars(select(JobPosting).where(JobPosting.employer_id == emp.employer_id)
                       .order_by(JobPosting.created_at.desc())).all()
@@ -111,12 +136,7 @@ def my_employer_dashboard(user: CurrentUser, db: DbSession,
             "status": a.status.value,
         })
     return {
-        "employer": {"employer_id": emp.employer_id, "org_name": emp.org_name,
-                     "org_type": emp.org_type, "city": emp.city,
-                     "state_code": emp.state_code, "website_url": emp.website_url,
-                     "description": emp.description, "is_verified": emp.is_verified,
-                     "rating_avg": float(emp.rating_avg or 0),
-                     "quick_sourcer_per_user_limit": int(emp.quick_sourcer_per_user_limit or 10)},
+        "employer": employer_data,
         "kpis": {"jobs": len(jobs),
                  "applications": (db.scalar(select(func.count()).select_from(Application)
                                   .where(Application.job_id.in_(job_ids))) or 0) if job_ids else 0,
@@ -504,6 +524,17 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
     visible_ids = (team_access.manageable_member_ids(db, employer, user)
                    if perms.get("manage_members")
                    else team_access.scoped_member_ids(db, employer, user))
+    # Resolve messaging entitlements once for the visible team. Looking these up
+    # inside the row loop adds two queries per member to every Organization load.
+    permissions_by_user = {uid: state for uid, state in db.execute(
+        select(MedhuntMessagingPermission.user_id, MedhuntMessagingPermission.status)
+        .where(MedhuntMessagingPermission.employer_id == employer_id,
+               MedhuntMessagingPermission.user_id.in_(visible_ids))
+    )} if visible_ids else {}
+    sender_ids = set(db.scalars(select(MedhuntSmsSender.user_id).where(
+        MedhuntSmsSender.employer_id == employer_id,
+        MedhuntSmsSender.user_id.in_(visible_ids),
+    )).all()) if visible_ids else set()
     visible_team_ids = team_access.accessible_team_ids(db, employer, user)
     team_memberships = db.execute(
         select(OrganizationTeamMember, OrganizationTeam)
@@ -538,8 +569,14 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
             "ats_destination": "ceipal" if u and u.medhunt_ceipal_enabled else "nexus",
             "quick_sourcer_limit_override": m.quick_sourcer_limit_override,
             "teams": sorted(teams_by_user.get(m.user_id, []), key=lambda item: item["team_name"].lower()),
-            "messaging_status": team_access.messaging_status(db, employer, m.user_id),
-            "can_manage_member": team_access.can_manage_member(db, employer, user, m.user_id),
+            "messaging_status": permissions_by_user.get(
+                m.user_id, "enabled" if m.user_id in sender_ids else "disabled"),
+            "can_manage_member": (
+                my_role == "owner"
+                or (my_role == "admin" and not is_owner)
+                or (my_role == "manager" and m.user_id not in
+                    {user.user_id, employer.owner_user_id} and role == "recruiter")
+            ),
         })
     items.sort(key=lambda x: (-org_roles.rank(x["member_role"]),
                               (x["name"] or x["email"] or "").lower()))

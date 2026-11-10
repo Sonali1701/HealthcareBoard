@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     Enum,
     Float,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
@@ -101,6 +102,7 @@ class TeamInvite(Base):
 
 class JobPosting(Base):
     __tablename__ = "job_postings"
+    __table_args__ = (Index("ix_job_postings_employer_id", "employer_id"),)
 
     job_id: Mapped[str] = uuid_pk()
     employer_id: Mapped[str] = uuid_fk("employers.employer_id")
