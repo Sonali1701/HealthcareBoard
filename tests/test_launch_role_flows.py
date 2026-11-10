@@ -37,17 +37,17 @@ class LaunchRoleFlowTests(unittest.TestCase):
 
         with self.sessions() as db:
             self.recruiter = User(
-                email="launch-recruiter@example.test", password_hash=hash_password("TestPass123!"),
+                email="launch-recruiter@example.org", password_hash=hash_password("TestPass123!"),
                 role=UserRole.recruiter, status=UserStatus.active,
                 email_verified_at=utcnow(),
             )
             self.outsider = User(
-                email="launch-outsider@example.test", password_hash="x",
+                email="launch-outsider@example.org", password_hash="x",
                 role=UserRole.recruiter, status=UserStatus.active,
                 email_verified_at=utcnow(),
             )
             self.admin = User(
-                email="launch-admin@example.test", password_hash="x",
+                email="launch-admin@example.org", password_hash="x",
                 role=UserRole.admin, status=UserStatus.active,
                 email_verified_at=utcnow(),
             )
@@ -88,6 +88,14 @@ class LaunchRoleFlowTests(unittest.TestCase):
     @staticmethod
     def _headers(user_id: str, role: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {create_access_token(user_id, role)}"}
+
+    def test_recruiter_and_admin_sessions_load(self):
+        for role, headers in (("recruiter", self.recruiter_headers),
+                              ("admin", self.admin_headers)):
+            with self.subTest(role=role):
+                response = self.client.get("/api/auth/me", headers=headers)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["role"], role)
 
     def test_recruiter_directory_saved_search_pool_outreach_and_credits(self):
         directory = self.client.get(
