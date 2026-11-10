@@ -16,7 +16,8 @@ from app.models import (
     Notification, OrganizationTeam, OrganizationTeamMember,
     User, UserRole, UserStatus,
 )
-from app.routers import analytics, extension
+from app.routers import analytics, auth, extension
+from app.schemas.auth import RegisterRequest
 
 
 def request() -> Request:
@@ -89,6 +90,59 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
         self.assertIn("If this email", result["detail"])
         self.assertTrue(result["challenge"])
         send.assert_not_called()
+
+    @patch("app.routers.extension.send_medhunt_login_code", return_value=True)
+    def test_case_variant_extension_login_uses_org_account_and_its_limit(self, send):
+        self.user.email = "Recruiter@example.com"
+        duplicate = User(
+            email="recruiter@example.com", password_hash="x",
+            role=UserRole.recruiter, status=UserStatus.active,
+        )
+        owner = User(
+            email="owner@example.com", password_hash="x",
+            role=UserRole.recruiter, status=UserStatus.active,
+        )
+        self.db.add_all([duplicate, owner])
+        self.db.flush()
+        employer = Employer(owner_user_id=owner.user_id, org_name="Example Staffing",
+                            quick_sourcer_per_user_limit=10)
+        self.db.add(employer)
+        self.db.flush()
+        self.db.add(EmployerMember(
+            employer_id=employer.employer_id, user_id=self.user.user_id,
+            quick_sourcer_limit_override=20,
+        ))
+        self.db.commit()
+
+        started = extension.request_medhunt_code(
+            extension.MedhuntCodeRequest(email="recruiter@example.com"),
+            request(), self.db, None,
+        )
+        code = send.call_args.args[1]
+        verified = extension.verify_medhunt_code(
+            extension.MedhuntCodeVerify(
+                email="recruiter@example.com", code=code,
+                challenge=started["challenge"],
+            ), request(), self.db, None,
+        )
+        self.assertEqual(verified["user"]["user_id"], self.user.user_id)
+        with patch.object(extension.settings, "medhunt_service_token", "test-service-token"):
+            result = extension.medhunt_contact_lookup_limit(
+                extension.MedhuntLookupLimitRequest(user_id=self.user.user_id),
+                medhunt_service_request(), self.db,
+            )
+        self.assertEqual(result["per_user_limit"], 20)
+
+    def test_registration_rejects_case_variant_of_existing_email(self):
+        self.user.email = "Recruiter@example.com"
+        self.db.commit()
+        with self.assertRaises(HTTPException) as rejected:
+            auth.register(
+                RegisterRequest(email="recruiter@example.com",
+                                password="safe-password-123", role=UserRole.recruiter),
+                self.db, request(), None,
+            )
+        self.assertEqual(rejected.exception.status_code, 409)
 
     def test_enrichment_activity_is_idempotent_and_attributed(self):
         body = extension.MedhuntEnrichmentEvent(

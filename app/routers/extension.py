@@ -20,7 +20,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import or_, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 
 from ..config import settings
@@ -1015,16 +1015,34 @@ def _login_challenge(email: str, user_id: str, code: str) -> tuple[str, str]:
 
 
 def _medhunt_user(db, email: str) -> User | None:
-    user = db.scalar(select(User).where(User.email == email))
-    if (
-        not user
-        or user.deleted_at is not None
-        or user.status not in {UserStatus.active, UserStatus.pending_verify}
-    ):
+    # Email-code sign-in lowercases the address. Older website accounts kept
+    # the local part's case, so an exact lookup can pick a newer, unassigned
+    # duplicate instead of the recruiter's organization account.
+    candidates = db.scalars(select(User).where(
+        func.lower(User.email) == email.strip().lower(),
+        User.deleted_at.is_(None),
+        User.status.in_((UserStatus.active, UserStatus.pending_verify)),
+        User.role.in_((UserRole.recruiter, UserRole.admin)),
+    )).all()
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
         return None
-    if user.role not in {UserRole.recruiter, UserRole.admin}:
+    ids = [candidate.user_id for candidate in candidates]
+    linked_ids = set(db.scalars(select(EmployerMember.user_id).where(
+        EmployerMember.user_id.in_(ids),
+    )).all())
+    linked_ids.update(db.scalars(select(Employer.owner_user_id).where(
+        Employer.owner_user_id.in_(ids),
+    )).all())
+    linked = [candidate for candidate in candidates if candidate.user_id in linked_ids]
+    if len(linked) == 1:
+        return linked[0]
+    # Never guess between two organization accounts with the same address.
+    if linked:
         return None
-    return user
+    exact = [candidate for candidate in candidates if candidate.email == email]
+    return exact[0] if len(exact) == 1 else None
 
 
 @router.post("/auth/request-code")

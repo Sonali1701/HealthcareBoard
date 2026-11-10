@@ -7,7 +7,7 @@ from datetime import timedelta
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..config import settings
 from ..database import new_uuid, utcnow
@@ -97,7 +97,9 @@ def register(body: RegisterRequest, db: DbSession, request: Request,
              _rl: None = Depends(auth_rate_limit)):
     if settings.email_enabled and not settings.sendgrid_api_key.strip():
         raise HTTPException(status_code=503, detail="Email verification is temporarily unavailable")
-    existing = db.scalar(select(User).where(User.email == body.email))
+    existing = db.scalar(select(User).where(
+        func.lower(User.email) == str(body.email).lower()
+    ))
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
