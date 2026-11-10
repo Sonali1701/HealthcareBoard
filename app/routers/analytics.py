@@ -627,6 +627,11 @@ def _market_uncached(db: DbSession):
         .group_by(JobPosting.state_code)
         .order_by(func.count().desc()).limit(8)).all())
 
+    # The Providers tab uses these exact directory rules for its category tabs.
+    # Preparing the counts here avoids a new 13M-row group-by on a user's visit.
+    from .profiles import _directory_category_counts
+    provider_categories = _directory_category_counts(db)
+
     return {
         "providers": {
             "listable": listable,
@@ -638,6 +643,7 @@ def _market_uncached(db: DbSession):
         "supply": supply,
         "demand_specialty": demand_specialty,
         "demand_state": demand_state,
+        "provider_categories": provider_categories,
     }
 
 
@@ -689,6 +695,11 @@ def _schedule_market_refresh() -> None:
                      name="analytics-market-refresh").start()
 
 
+def schedule_market_refresh_if_stale(snapshot: AnalyticsMarketSnapshot) -> None:
+    if utcnow() - snapshot.refreshed_at >= _MARKET_SNAPSHOT_TTL:
+        _schedule_market_refresh()
+
+
 @router.get("/market")
 def market(user: CurrentUser, db: DbSession):
     """Read prepared global aggregates; attach the current recruiter's balance."""
@@ -698,8 +709,8 @@ def market(user: CurrentUser, db: DbSession):
         # The production snapshot is normally primed before the new web build.
         refresh_market_snapshot(db, blocking=True)
         snapshot = db.get(AnalyticsMarketSnapshot, 1)
-    elif utcnow() - snapshot.refreshed_at >= _MARKET_SNAPSHOT_TTL:
-        _schedule_market_refresh()
+    else:
+        schedule_market_refresh_if_stale(snapshot)
     shared = snapshot.payload
     acct = db.scalar(select(CreditAccount).where(CreditAccount.user_id == user.user_id))
     return {**shared, "credits": {

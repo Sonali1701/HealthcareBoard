@@ -4184,7 +4184,13 @@
       const expanded = filters.classList.toggle("is-collapsed") === false;
       $("#provider-filter-toggle").setAttribute("aria-expanded", String(expanded));
     };
-    $("#provider-q").addEventListener("input", debounce(() => { S.provider.q = $("#provider-q").value.trim(); providerFilterChanged(); }, 300));
+    const applyProviderQuery = debounce(providerFilterChanged, 300);
+    $("#provider-q").addEventListener("input", () => {
+      // Keep the typed value in state immediately. Facets can finish loading
+      // during the debounce window and syncProviderControls() reads this state.
+      S.provider.q = $("#provider-q").value.trim();
+      applyProviderQuery();
+    });
     $("#provider-license-title").onchange = () => { S.provider.license_title = $("#provider-license-title").value; providerFilterChanged(); };
     const radiusEl = $("#provider-radius");
     const radiusControl = radiusEl.closest(".radius-control");

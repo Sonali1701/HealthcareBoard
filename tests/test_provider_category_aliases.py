@@ -7,8 +7,8 @@ from types import SimpleNamespace
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
-from app.models import Profile
+from app.database import Base, utcnow
+from app.models import AnalyticsMarketSnapshot, Profile
 from app.schemas.profile import ProfileCardOut
 from app.routers.profiles import (
     _directory_category,
@@ -26,6 +26,24 @@ from app.routers.saved_searches import _clean, _count_matches
 
 
 class ProviderCategoryAliasTests(unittest.TestCase):
+    def test_provider_tab_counts_use_persisted_snapshot(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        try:
+            db.add(AnalyticsMarketSnapshot(
+                snapshot_id=1,
+                payload={"provider_categories": {"Nursing": 37, "Physician": 12}},
+                refreshed_at=utcnow(),
+            ))
+            db.commit()
+            user = SimpleNamespace(role=SimpleNamespace(value="recruiter"))
+            self.assertEqual(profile_facets(user, db, counts_only=True)["categories"],
+                             {"Nursing": 37, "Physician": 12})
+        finally:
+            db.close()
+            engine.dispose()
+
     def test_provider_tabs_are_built_from_facets(self):
         html = (Path(__file__).resolve().parents[1] / "templates" / "launch" /
                 "board.html").read_text(encoding="utf-8")

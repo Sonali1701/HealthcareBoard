@@ -1052,7 +1052,7 @@ tr.is-selected{background:var(--accent-soft)}
 .an-section{margin-bottom:22px}
 .an-section h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);
   margin:0 0 10px;font-weight:600}
-.an-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
+.an-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px}
 .an-stat{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);
   padding:16px 18px;box-shadow:var(--shadow);transition:transform .18s var(--ease),box-shadow .18s var(--ease)}
 .an-stat:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}

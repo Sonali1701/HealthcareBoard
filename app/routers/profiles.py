@@ -27,6 +27,7 @@ from ..services import quick_sourcer, storage
 from ..services.provider_geo import radius_branches
 from ..services.profile_search import profile_search_conditions, role_search_terms
 from ..models import (
+    AnalyticsMarketSnapshot,
     AuditLog,
     Certification,
     ContactLookupJob,
@@ -1206,6 +1207,27 @@ def _fold_provider_category_counts(rows) -> dict[str, int]:
     return counts
 
 
+def _directory_category_counts(db: DbSession) -> dict[str, int]:
+    category = _directory_category_expression()
+    rows = db.execute(
+        select(category, func.count())
+        .where(*_provider_conditions(db, providers_only=True))
+        .group_by(category)
+    ).all()
+    return _fold_provider_category_counts(rows)
+
+
+def _snapshot_category_counts(db: DbSession) -> dict[str, int] | None:
+    snapshot = db.get(AnalyticsMarketSnapshot, 1)
+    categories = (snapshot.payload or {}).get("provider_categories") if snapshot else None
+    if not isinstance(categories, dict):
+        return None
+    # Reads stay fast even after expiry; one worker updates the shared row.
+    from .analytics import schedule_market_refresh_if_stale
+    schedule_market_refresh_if_stale(snapshot)
+    return categories
+
+
 def _planned_row_estimate(db, statement) -> int | None:
     """Read PostgreSQL's planner estimate without scanning matching profiles."""
     if db.get_bind().dialect.name != "postgresql":
@@ -2224,17 +2246,14 @@ def profile_facets(user: CurrentUser, db: DbSession, basic: bool = False,
     """
     _require_provider_directory_access(user)
     if counts_only:
+        categories = _snapshot_category_counts(db)
+        if categories is not None:
+            return {"categories": categories}
         now = time.monotonic()
         if (_CATEGORY_COUNTS_CACHE["data"] is not None
                 and now - _CATEGORY_COUNTS_CACHE["at"] < _FACETS_TTL):
             return _CATEGORY_COUNTS_CACHE["data"]
-        directory_category = _directory_category_expression()
-        cat_rows = db.execute(
-            select(directory_category, func.count())
-            .where(*_provider_conditions(db, providers_only=True))
-            .group_by(directory_category)
-        ).all()
-        data = {"categories": _fold_provider_category_counts(cat_rows)}
+        data = {"categories": _directory_category_counts(db)}
         _CATEGORY_COUNTS_CACHE["data"] = data
         _CATEGORY_COUNTS_CACHE["at"] = now
         return data
@@ -2261,14 +2280,10 @@ def profile_facets(user: CurrentUser, db: DbSession, basic: bool = False,
         *distinct(License.license_type),
     })
 
-    directory_category = _directory_category_expression()
-    cat_rows = db.execute(
-        select(directory_category, func.count())
-        .where(*_provider_conditions(db, providers_only=True))
-        .group_by(directory_category)
-    ).all()
     # All directory rows have a tab, including blank and legacy categories.
-    categories = _fold_provider_category_counts(cat_rows)
+    categories = _snapshot_category_counts(db)
+    if categories is None:
+        categories = _directory_category_counts(db)
     data = {
         "categories": categories,
         "license_titles": license_titles,
