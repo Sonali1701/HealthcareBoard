@@ -288,6 +288,7 @@
     $("#auth-subtitle").textContent = mode === "signup" ? "Join MedHunt in seconds." : "Sign in to access your workspace.";
     $("#auth-submit").textContent = mode === "signup" ? "Create account" : "Sign in";
     $("#auth-hint").classList.toggle("show", mode === "signup");
+    $("#auth-forgot").classList.toggle("hidden", mode === "signup");
     $("#signup-agree-row").classList.toggle("show", mode === "signup");
     $("#auth-password").setAttribute("autocomplete", mode === "signup" ? "new-password" : "current-password");
     $("#auth-error").textContent = "";
@@ -295,14 +296,17 @@
 
   async function submitAuth(){
     const err = $("#auth-error");
-    const email = $("#auth-email").value.trim();
+    const emailInput = $("#auth-email");
+    const email = emailInput.value.trim();
     const password = $("#auth-password").value;
     err.textContent = "";
     if (!email || !password) { err.textContent = "Email and password are required."; return; }
-    const btn = $("#auth-submit"); const label = btn.textContent;
+    if (!emailInput.checkValidity()) { err.textContent = "Enter a valid email address."; emailInput.focus(); return; }
+    const mode = S.authMode;
+    const btn = $("#auth-submit");
     btn.disabled = true; btn.textContent = "Please wait…";
     try {
-      if (S.authMode === "signup") {
+      if (mode === "signup") {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
         if (!$("#auth-agree").checked)
           throw new Error("Please agree to the Terms of Service and Privacy Policy to continue.");
@@ -317,8 +321,9 @@
       }
       await startApp();
     } catch(e) {
-      btn.disabled = false; btn.textContent = label;
-      err.textContent = e.message || "Authentication failed.";
+      btn.disabled = false;
+      btn.textContent = S.authMode === "signup" ? "Create account" : "Sign in";
+      if (S.authMode === mode) err.textContent = e.message || "Authentication failed.";
     }
   }
 
@@ -5776,6 +5781,34 @@
           <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "—"}</td>
         </tr>`).join("")}</tbody></table></div></div>` : "";
   }
+  function renderSourcingAnalytics(d){
+    const pools = d.pools, runs = d.sourcing_runs;
+    const msg = d.messaging, medhunt = d.medhunt || {attempts_recent:0};
+    const stages = pools.by_stage || {};
+    const poolSegs = POOL_STAGE_ORDER.map(s => ({
+      label:s.charAt(0).toUpperCase() + s.slice(1), value:stages[s] || 0, color:STAGE_COLORS[s]}));
+    const totalStaged = poolSegs.reduce((a, s) => a + s.value, 0);
+    const donutBody = totalStaged
+      ? `<div class="viz-donut-wrap">${svgDonut(poolSegs, {centerValue:totalStaged, centerLabel:"shortlisted"})}${vizLegend(poolSegs)}</div>`
+      : emptyState("No candidates shortlisted yet", "Add candidates to a talent pool to see your pipeline.", "fa-layer-group");
+    const outBody = (msg.sent || msg.received || msg.threads)
+      ? hbars([
+          {label:"Messages sent", value:msg.sent, color:VIZ_CAT[0]},
+          {label:"Messages received", value:msg.received, color:VIZ_CAT[1]},
+          {label:"Conversations", value:msg.threads, color:VIZ_CAT[2]}])
+      : emptyState("No outreach yet", "Message revealed candidates to start conversations.", "fa-paper-plane");
+    const respRate = msg.sent ? Math.round(100 * msg.received / msg.sent) : 0;
+    return `<div class="an-section"><h2>Your sourcing</h2><div class="viz-grid">
+        ${vizCard("Your talent-pool pipeline", donutBody, "where your shortlist sits")}
+        ${vizCard("Your outreach", outBody, msg.sent ? `${respRate}% reply rate` : "")}
+      </div><div class="an-grid" style="margin-top:14px">
+        ${stat(runs.runs, "Sourcing runs")}
+        ${stat(medhunt.attempts_recent, "MedHunt checks", `last ${d.window_days} days`)}
+        ${stat(runs.candidates_ranked.toLocaleString(), "Candidates ranked", `avg score ${runs.avg_match_score}`)}
+        ${stat(d.saved_searches, "Saved searches")}
+        ${stat(pools.worked_pct + "%", "Shortlist worked", `${pools.worked} past sourced`)}
+      </div></div>`;
+  }
   async function loadExtensionAnalyticsOnly(){
     const target = $("#analytics-extension");
     if (!target) return;
@@ -5826,7 +5859,10 @@
           cards.push(stat(partialSourcing.pools.shortlisted, "Shortlisted"));
           cards.push(stat(partialSourcing.sourcing_runs.runs, "Sourcing runs"));
         }
-        if (cards.length) box.innerHTML = `<div class="an-section"><h2>At a glance</h2><div class="an-grid">${cards.join("")}</div><p class="team-note">Loading the rest of your analytics…</p></div>`;
+        if (!cards.length) return;
+        box.innerHTML = `<div class="an-section"><h2>At a glance</h2><div class="an-grid">${cards.join("")}</div></div>`
+          + (partialSourcing ? renderSourcingAnalytics(partialSourcing) : "")
+          + `<div class="an-section"><h2>Talent market</h2>${loading("Loading market figures…")}</div>`;
       };
       const marketPromise = get("/api/analytics/market");
       const sourcingPromise = get("/api/analytics/sourcing?days=30&include_directory=false");
@@ -5836,10 +5872,6 @@
       if (seq !== _analyticsReq || !$("#page-analytics").classList.contains("active")) return;
       const P = mk.providers, pools = d.pools, runs = d.sourcing_runs, msg = d.messaging, con = d.contacts;
       const medhunt = d.medhunt || {enriched_total:0, enriched_recent:0, attempts_recent:0};
-      const stages = pools.by_stage || {};
-      const poolSegs = POOL_STAGE_ORDER.map(s => ({
-        label: s.charAt(0).toUpperCase() + s.slice(1), value: stages[s] || 0, color: STAGE_COLORS[s]}));
-      const totalStaged = poolSegs.reduce((a, s) => a + s.value, 0);
       const cn = compactNum;
 
       const glance = `<div class="an-section"><h2>At a glance</h2><div class="an-grid">
@@ -5881,33 +5913,10 @@
         ${vizCard("Open roles by state", stateBody, "top locations hiring")}
       </div>`;
 
-      // --- Your sourcing (personal activity) ---
-      const donutBody = totalStaged
-        ? `<div class="viz-donut-wrap">${svgDonut(poolSegs, {centerValue: totalStaged, centerLabel: "shortlisted"})}${vizLegend(poolSegs)}</div>`
-        : emptyState("No candidates shortlisted yet", "Add candidates to a talent pool to see your pipeline.", "fa-layer-group");
-      const outBody = (msg.sent || msg.received || msg.threads)
-        ? hbars([
-            {label: "Messages sent", value: msg.sent, color: VIZ_CAT[0]},
-            {label: "Messages received", value: msg.received, color: VIZ_CAT[1]},
-            {label: "Conversations", value: msg.threads, color: VIZ_CAT[2]}])
-        : emptyState("No outreach yet", "Message revealed candidates to start conversations.", "fa-paper-plane");
-      const respRate = msg.sent ? Math.round(100 * msg.received / msg.sent) : 0;
-      const sourceGrid = `<div class="viz-grid">
-          ${vizCard("Your talent-pool pipeline", donutBody, "where your shortlist sits")}
-          ${vizCard("Your outreach", outBody, msg.sent ? `${respRate}% reply rate` : "")}
-        </div>
-        <div class="an-grid" style="margin-top:14px">
-          ${stat(runs.runs, "Sourcing runs")}
-          ${stat(medhunt.attempts_recent, "MedHunt checks", `last ${d.window_days} days`)}
-          ${stat(runs.candidates_ranked.toLocaleString(), "Candidates ranked", `avg score ${runs.avg_match_score}`)}
-          ${stat(d.saved_searches, "Saved searches")}
-          ${stat(pools.worked_pct + "%", "Shortlist worked", `${pools.worked} past sourced`)}
-        </div>`;
-
       box.innerHTML = glance
         + `<div id="analytics-extension">${loading("Loading extension activity...")}</div>`
-        + `<div class="an-section"><h2>Talent market</h2>${marketGrid}</div>`
-        + `<div class="an-section"><h2>Your sourcing</h2>${sourceGrid}</div>`
+        + `<div class="an-section"><h2>Talent market</h2>${marketGrid}<p class="team-note">Market totals updated ${esc(new Date(mk.market_refreshed_at).toLocaleString())}.</p></div>`
+        + renderSourcingAnalytics(d)
         + `<div id="analytics-conversations"></div>`;
       extPromise.then(ext => {
         if (seq === _analyticsReq && extensionSeq === _extensionAnalyticsReq

@@ -8,7 +8,17 @@ from typing import Optional
 from sqlalchemy import JSON, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ..database import Base, created_col, uuid_fk, uuid_pk
+from ..database import Base, TZDateTime, created_col, uuid_fk, uuid_pk
+
+
+class AnalyticsMarketSnapshot(Base):
+    """One durable copy of the expensive platform-wide market aggregates."""
+
+    __tablename__ = "analytics_market_snapshot"
+
+    snapshot_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    refreshed_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)
 
 
 class MatchRun(Base):

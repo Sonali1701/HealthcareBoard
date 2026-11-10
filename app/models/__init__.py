@@ -19,7 +19,7 @@ Table inventory (29):
               outreach_suppressions
   Analytics:  match_runs, match_results, pay_packages, audit_logs
 """
-from .analytics import AuditLog, MatchResult, MatchRun, PayPackage
+from .analytics import AnalyticsMarketSnapshot, AuditLog, MatchResult, MatchRun, PayPackage
 from .contact_lookup import ContactLookupJob
 from .auth import (
     EmailVerificationToken,
@@ -89,6 +89,7 @@ from .social import Connection, Post, PostComment, PostLike
 __all__ = [
     # auth
     "User", "OAuthAccount", "Session", "PasswordResetToken", "EmailVerificationToken",
+    "AnalyticsMarketSnapshot",
     # profiles
     "Profile", "License", "WorkHistory", "Certification", "ProfileSkill",
     # jobs

@@ -8,14 +8,15 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 import threading
 import time
-import weakref
+import logging
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 
 from ..deps import CurrentUser, DbSession
 from ..models import (
     Application,
+    AnalyticsMarketSnapshot,
     AuditLog,
     CreditAccount,
     Employer,
@@ -28,13 +29,14 @@ from ..models import (
     User,
 )
 from ..models.enums import ApplicationStatus, JobStatus, OfferStatus
-from ..database import utcnow
+from ..database import SessionLocal, utcnow
 from ..services import org_roles, team_access
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
-_MARKET_CACHE = {"bind_ref": None, "at": 0.0, "data": None}
-_MARKET_CACHE_LOCK = threading.Lock()
-_MARKET_CACHE_TTL = 300.0
+_MARKET_SNAPSHOT_TTL = timedelta(hours=1)
+_MARKET_REFRESH_LOCK = threading.Lock()
+_MARKET_REFRESH_RETRY_AT = 0.0
+logger = logging.getLogger(__name__)
 
 
 def _employer_ids_for(db: DbSession, user: CurrentUser) -> list[str]:
@@ -563,27 +565,57 @@ def _market_uncached(db: DbSession):
     def top(rows):
         return [{"label": str(k), "count": int(c)} for k, c in rows if k]
 
-    listable = db.scalar(select(func.count()).select_from(Profile)
-                         .where(Profile.is_listable.is_(True))) or 0
-    reachable = db.scalar(select(func.count()).select_from(Profile).where(
-        Profile.is_listable.is_(True),
-        # trim() (not btrim) so this also works on SQLite in dev.
-        or_((Profile.email.isnot(None)) & (func.length(func.trim(Profile.email)) > 0),
-            (Profile.phone.isnot(None)) & (func.length(func.trim(Profile.phone)) > 0)))) or 0
-    states = db.scalar(
-        select(func.count(func.distinct(func.upper(Profile.state_code))))
-        .where(Profile.is_listable.is_(True),
-               func.upper(Profile.state_code).in_(_US_STATES))) or 0
+    if db.get_bind().dialect.name == "postgresql":
+        # Combine listable, reachable, states and profession supply into one
+        # pass over the 13M-row directory instead of four full table scans.
+        rows = db.execute(text("""
+            SELECT profession_type, upper(state_code) AS state_code,
+                   count(*) AS row_count,
+                   count(*) FILTER (WHERE
+                       (email IS NOT NULL AND length(trim(email)) > 0) OR
+                       (phone IS NOT NULL AND length(trim(phone)) > 0)
+                   ) AS reachable_count,
+                   GROUPING(profession_type) AS profession_rollup,
+                   GROUPING(upper(state_code)) AS state_rollup
+            FROM profiles
+            WHERE is_listable IS TRUE
+            GROUP BY GROUPING SETS ((profession_type), (upper(state_code)), ())
+        """)).mappings().all()
+        total = next(row for row in rows
+                     if row["profession_rollup"] == 1 and row["state_rollup"] == 1)
+        listable = int(total["row_count"])
+        reachable = int(total["reachable_count"])
+        states = sum(1 for row in rows if row["profession_rollup"] == 1
+                     and row["state_rollup"] == 0 and row["state_code"] in _US_STATES)
+        supply_rows = sorted(
+            ((row["profession_type"], row["row_count"]) for row in rows
+             if row["profession_rollup"] == 0 and row["profession_type"]
+             and row["profession_type"].strip()),
+            key=lambda item: (-item[1], item[0]),
+        )[:7]
+    else:
+        listable = db.scalar(select(func.count()).select_from(Profile)
+                             .where(Profile.is_listable.is_(True))) or 0
+        reachable = db.scalar(select(func.count()).select_from(Profile).where(
+            Profile.is_listable.is_(True),
+            # trim() (not btrim) so this also works on SQLite in dev.
+            or_((Profile.email.isnot(None)) & (func.length(func.trim(Profile.email)) > 0),
+                (Profile.phone.isnot(None)) & (func.length(func.trim(Profile.phone)) > 0)))) or 0
+        states = db.scalar(
+            select(func.count(func.distinct(func.upper(Profile.state_code))))
+            .where(Profile.is_listable.is_(True),
+                   func.upper(Profile.state_code).in_(_US_STATES))) or 0
+        supply_rows = db.execute(
+            select(Profile.profession_type, func.count())
+            .where(Profile.is_listable.is_(True),
+                   Profile.profession_type.isnot(None),
+                   func.length(func.trim(Profile.profession_type)) > 0)
+            .group_by(Profile.profession_type)
+            .order_by(func.count().desc()).limit(7)).all()
     jobs_active = db.scalar(select(func.count()).select_from(JobPosting)
                             .where(JobPosting.status == JobStatus.active)) or 0
 
-    supply = top(db.execute(
-        select(Profile.profession_type, func.count())
-        .where(Profile.is_listable.is_(True),
-               Profile.profession_type.isnot(None),
-               func.length(func.trim(Profile.profession_type)) > 0)
-        .group_by(Profile.profession_type)
-        .order_by(func.count().desc()).limit(7)).all())
+    supply = top(supply_rows)
     demand_specialty = top(db.execute(
         select(JobPosting.specialty, func.count())
         .where(JobPosting.status == JobStatus.active, JobPosting.specialty.isnot(None))
@@ -609,23 +641,68 @@ def _market_uncached(db: DbSession):
     }
 
 
+def refresh_market_snapshot(db: DbSession, *, force: bool = False,
+                            blocking: bool = False) -> bool:
+    """Refresh once across all Render workers; keep the previous snapshot readable."""
+    if db.get_bind().dialect.name == "postgresql":
+        lock = ("pg_advisory_xact_lock" if blocking else "pg_try_advisory_xact_lock")
+        acquired = db.execute(text(
+            f"SELECT {lock}(hashtext('medhunt-analytics-market-snapshot'))"
+        )).scalar()
+        if acquired is False:
+            db.rollback()
+            return False
+    snapshot = db.get(AnalyticsMarketSnapshot, 1)
+    if (not force and snapshot is not None
+            and utcnow() - snapshot.refreshed_at < _MARKET_SNAPSHOT_TTL):
+        db.rollback()
+        return False
+    payload = _market_uncached(db)
+    if snapshot is None:
+        snapshot = AnalyticsMarketSnapshot(snapshot_id=1, payload=payload,
+                                           refreshed_at=utcnow())
+        db.add(snapshot)
+    else:
+        snapshot.payload = payload
+        snapshot.refreshed_at = utcnow()
+    db.commit()
+    return True
+
+
+def _refresh_market_background() -> None:
+    try:
+        with SessionLocal() as db:
+            refresh_market_snapshot(db)
+    except Exception:
+        logger.exception("Could not refresh Analytics market snapshot")
+    finally:
+        _MARKET_REFRESH_LOCK.release()
+
+
+def _schedule_market_refresh() -> None:
+    global _MARKET_REFRESH_RETRY_AT
+    now = time.monotonic()
+    if now < _MARKET_REFRESH_RETRY_AT or not _MARKET_REFRESH_LOCK.acquire(False):
+        return
+    _MARKET_REFRESH_RETRY_AT = now + 60
+    threading.Thread(target=_refresh_market_background, daemon=True,
+                     name="analytics-market-refresh").start()
+
+
 @router.get("/market")
 def market(user: CurrentUser, db: DbSession):
-    """Cache platform-wide scans, then attach this recruiter's live balance."""
-    bind = db.get_bind()
-    now = time.monotonic()
-    with _MARKET_CACHE_LOCK:
-        if (_MARKET_CACHE["bind_ref"] is not None
-                and _MARKET_CACHE["bind_ref"]() is bind
-                and _MARKET_CACHE["data"] is not None
-                and now - _MARKET_CACHE["at"] < _MARKET_CACHE_TTL):
-            shared = _MARKET_CACHE["data"]
-        else:
-            shared = _market_uncached(db)
-            _MARKET_CACHE.update(bind_ref=weakref.ref(bind),
-                                 at=time.monotonic(), data=shared)
+    """Read prepared global aggregates; attach the current recruiter's balance."""
+    snapshot = db.get(AnalyticsMarketSnapshot, 1)
+    if snapshot is None:
+        # Only the first request after the migration pays for the initial scan.
+        # The production snapshot is normally primed before the new web build.
+        refresh_market_snapshot(db, blocking=True)
+        snapshot = db.get(AnalyticsMarketSnapshot, 1)
+    elif utcnow() - snapshot.refreshed_at >= _MARKET_SNAPSHOT_TTL:
+        _schedule_market_refresh()
+    shared = snapshot.payload
     acct = db.scalar(select(CreditAccount).where(CreditAccount.user_id == user.user_id))
     return {**shared, "credits": {
         "balance": acct.balance if acct else 0,
         "spent": acct.lifetime_spent if acct else 0,
-    }}
+    }, "market_refreshed_at": snapshot.refreshed_at.isoformat()}

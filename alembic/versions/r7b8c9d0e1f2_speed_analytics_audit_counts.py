@@ -1,5 +1,6 @@
 """Speed organization dashboards and analytics counts."""
 from alembic import op
+import sqlalchemy as sa
 
 
 revision = "r7b8c9d0e1f2"
@@ -24,8 +25,11 @@ def upgrade() -> None:
                 "ON job_postings (employer_id)"
             )
     else:
-        op.create_index(INDEX_NAME, "audit_logs", ["actor_user_id", "action", "created_at"])
-        op.create_index(JOB_INDEX_NAME, "job_postings", ["employer_id"])
+        inspector = sa.inspect(op.get_bind())
+        if not inspector.has_index("audit_logs", INDEX_NAME):
+            op.create_index(INDEX_NAME, "audit_logs", ["actor_user_id", "action", "created_at"])
+        if not inspector.has_index("job_postings", JOB_INDEX_NAME):
+            op.create_index(JOB_INDEX_NAME, "job_postings", ["employer_id"])
 
 
 def downgrade() -> None:
