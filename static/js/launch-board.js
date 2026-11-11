@@ -650,14 +650,15 @@
       ]);
       const q = data.lookup_provider;
       const nf = n => Number(n || 0).toLocaleString();
-      box.innerHTML = (q ? statGroup("Quick Sourcer provider load · live", [
-        statCard("Requests running at provider", nf(q.active), q.concurrency_limit ? `${nf(q.active)} of ${nf(q.concurrency_limit)} provider slots in use` : (q.oldest_active_seconds ? `oldest running ${Math.round(Number(q.oldest_active_seconds))}s` : "provider reports no active requests")),
-        statCard("Requests waiting at provider", nf(q.queued), q.processing ? `${nf(q.processing)} processing${q.current_request_id ? ` · ${q.current_request_id}` : ""}` : "provider-side queue only"),
+      box.innerHTML = (q ? statGroup("Quick Sourcer lookups · live", [
+        statCard("Requests sent now", nf(q.active), "Medhunt1 requests to Quick Sourcer"),
+        statCard("Waiting in Medhunt1", nf(q.queued), q.processing ? `${nf(q.processing)} extension lookups processing` : "extension lookups waiting"),
+        statCard("Medhunt1 worker limit", nf(q.concurrency_limit), "Not Quick Sourcer's available slots"),
         statCard("Started in 5 minutes", nf(q.started_5m), q.search_pool ? `${q.search_pool} search pool` : ""),
         statCard("Completed in 5 minutes", nf(q.completed_5m)),
         statCard("Failed in 5 minutes", nf(q.failed_5m), q.configured ? "provider configured" : "provider not configured"),
       ]) : errorState("Quick Sourcer provider metrics unavailable.", data.provider_error || ""))
-      + `<p class="muted small">Provider metrics refresh about every 5 seconds. These numbers show only the requests reported by Quick Sourcer.</p>`
+      + `<p class="muted small">Refreshes about every 5 seconds. These counts come from Medhunt1; Quick Sourcer's own capacity and queue are not available here. A free Medhunt1 worker does not guarantee a free slot at Quick Sourcer.</p>`
       + (backfill.error ? errorState("Neon contact enrichment metrics unavailable.", backfill.error) : statGroup("Neon contact enrichment", [
         statCard("Contactless eligible", nf(backfill.eligible_contactless), backfill.schedule || ""),
         statCard("Waiting", nf(backfill.queued), `${nf(backfill.processing)} processing`),
@@ -5760,23 +5761,80 @@
   }
   let _analyticsReq = 0;
   let _extensionAnalyticsReq = 0;
+  function quickSourcerResponseSummary(data){
+    const raw = data.api_response || {};
+    const httpStatus = Number(raw.http_status || 0);
+    const exception = String(raw.exception || "");
+    const detail = String(raw.body && raw.body.detail || "");
+    if (/QueuePool limit/i.test(detail)) return {
+      title:"Quick Sourcer ran out of database connections",
+      explanation:"Quick Sourcer returned a server error while waiting for a free database connection.",
+      action:"Try again later. If this repeats, an administrator should check Quick Sourcer's database capacity and how many lookups Medhunt1 sends at once.",
+    };
+    if (/Timeout/i.test(exception)) return {
+      title:"Quick Sourcer did not answer in time",
+      explanation:"Medhunt1 waited for Quick Sourcer, but no reply arrived before the time limit.",
+      action:"Try the lookup again. If this happens often, check Quick Sourcer's response times and Medhunt1's connection logs.",
+    };
+    if (httpStatus === 429) return {
+      title:"Quick Sourcer is limiting requests",
+      explanation:"Quick Sourcer asked Medhunt1 to slow down.",
+      action:"Try again later. An administrator can review the lookup rate.",
+    };
+    if (httpStatus >= 500) return {
+      title:"Quick Sourcer returned a server error",
+      explanation:`Quick Sourcer replied with HTTP ${httpStatus}, so this lookup could not finish.`,
+      action:"Try again later. If this repeats, an administrator should check Quick Sourcer's server logs.",
+    };
+    if (httpStatus >= 400) return {
+      title:"Quick Sourcer rejected the request",
+      explanation:`Quick Sourcer replied with HTTP ${httpStatus}.`,
+      action:"An administrator should check the request and Quick Sourcer connection settings.",
+    };
+    if (data.lookup_status === "found") return {
+      title:"Quick Sourcer found a record",
+      explanation:"The search completed successfully.", action:"",
+    };
+    if (data.lookup_status === "not_found") return {
+      title:"Quick Sourcer found no record",
+      explanation:"The search completed, but no matching record was returned.", action:"",
+    };
+    return {
+      title:"The lookup did not finish",
+      explanation:"The saved details below show the error returned for this lookup.",
+      action:"Try again later. If this repeats, ask an administrator to check the service logs.",
+    };
+  }
   async function openExtensionApiResponse(eventId){
-    adminModal("Quick Sourcer API response", loading("Loading response..."));
+    adminModal("Quick Sourcer lookup details", loading("Loading response..."));
     const orgId = S.employer && S.employer.employer_id || "";
     const params = orgId ? `?employer_id=${encodeURIComponent(orgId)}` : "";
     try {
       const data = await get(`/api/analytics/medhunt/events/${encodeURIComponent(eventId)}/response${params}`);
       if (!data.available){
-        adminModal("Quick Sourcer API response", emptyState("No response saved for this event", data.error || data.message || ""));
+        adminModal("Quick Sourcer lookup details", emptyState("No response saved for this event", data.error || data.message || ""));
         return;
       }
+      const summary = quickSourcerResponseSummary(data);
+      const raw = data.api_response || {};
       const body = data.api_response == null ? "No HTTP response body" :
         typeof data.api_response === "string" ? data.api_response : JSON.stringify(data.api_response, null, 2);
-      adminModal("Quick Sourcer API response", `<p>Lookup outcome: ${esc(data.lookup_status || "Unknown")}</p>
-        ${data.error ? `<p>${esc(data.error)}</p>` : ""}
-        <pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto">${esc(body)}</pre>`);
+      const technicalStatus = raw.http_status ? `HTTP ${esc(raw.http_status)}` : raw.exception ? esc(raw.exception) : "Saved response";
+      adminModal("Quick Sourcer lookup details", `<div class="lookup-response">
+        <div class="lookup-response-summary" role="status">
+          <span class="lookup-response-eyebrow">${esc(data.lookup_status || "Lookup")} · ${technicalStatus}</span>
+          <h3>${esc(summary.title)}</h3>
+          <p>${esc(summary.explanation)}</p>
+          ${summary.action ? `<p class="lookup-response-action">${esc(summary.action)}</p>` : ""}
+        </div>
+        <details class="lookup-response-raw"${data.lookup_status === "failed" ? " open" : ""}>
+          <summary>Raw response and technical details</summary>
+          ${data.error ? `<p>Stored error: ${esc(data.error)}</p>` : ""}
+          <pre>${esc(body)}</pre>
+        </details>
+      </div>`);
     } catch(e){
-      adminModal("Quick Sourcer API response", errorState("Could not load API response", e.message || ""));
+      adminModal("Quick Sourcer lookup details", errorState("Could not load API response", e.message || ""));
     }
   }
   function extensionAnalyticsRequest(activeOrgId){
