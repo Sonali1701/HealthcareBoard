@@ -1671,6 +1671,25 @@ tr.is-selected{background:var(--accent-soft)}
   .admin-tabs-hint{display:block}
   .table-scroll-hint{display:block}
 }
+@media(max-width:640px){
+  #page-dashboard .table-scroll-hint,#page-jobs .table-scroll-hint{display:none}
+  #page-dashboard .dash-jobs-table,#page-jobs .table-wrap{overflow:visible;border:0;background:transparent;box-shadow:none}
+  #page-dashboard .dash-jobs-table .table,#page-jobs .table{display:block;min-width:0}
+  #page-dashboard .dash-jobs-table thead,#page-jobs .table thead{display:none}
+  #page-dashboard .dash-jobs-table tbody,#page-jobs .table tbody{display:grid;gap:12px}
+  #page-dashboard .dash-jobs-table tbody tr,#page-jobs .table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--white);box-shadow:var(--shadow-sm)}
+  #page-dashboard .dash-jobs-table tbody td,#page-jobs .table tbody td{display:block;min-width:0;padding:0;border:0;font-size:13px}
+  #page-dashboard .dash-jobs-table tbody td:first-child,#page-jobs .table tbody td:first-child{grid-column:1/-1}
+  #page-dashboard .dash-jobs-table tbody td:first-child .cell-name,#page-jobs .table tbody td:first-child .cell-name{font-size:15px;line-height:1.4}
+  #page-dashboard .dash-jobs-table tbody td:nth-child(2)::before,#page-jobs .table tbody td:nth-child(2)::before{content:"Type"}
+  #page-dashboard .dash-jobs-table tbody td:nth-child(3)::before,#page-jobs .table tbody td:nth-child(3)::before{content:"Specialty"}
+  #page-dashboard .dash-jobs-table tbody td:nth-child(4)::before,#page-jobs .table tbody td:nth-child(4)::before{content:"Pay"}
+  #page-dashboard .dash-jobs-table tbody td:nth-child(2)::before,#page-dashboard .dash-jobs-table tbody td:nth-child(3)::before,#page-dashboard .dash-jobs-table tbody td:nth-child(4)::before,#page-jobs .table tbody td:nth-child(2)::before,#page-jobs .table tbody td:nth-child(3)::before,#page-jobs .table tbody td:nth-child(4)::before{display:block;margin-bottom:5px;color:var(--faint);font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+  #page-dashboard .dash-jobs-table tbody td:nth-child(4),#page-jobs .table tbody td:nth-child(4){grid-column:1/-1}
+  #page-dashboard .dash-jobs-table tbody .td-actions,#page-jobs .table tbody .td-actions{grid-column:1/-1;display:flex;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+  #page-dashboard .dash-jobs-table tbody .td-actions .btn,#page-jobs .table tbody .td-actions .btn{min-height:40px;flex:1;justify-content:center}
+  #page-dashboard .dash-jobs-table tbody tr:has(td[colspan]),#page-jobs .table tbody tr:has(td[colspan]){display:block}
+}
 @media(max-width:520px){
   .page{padding:18px 14px}
   .metrics,.provider-filters{grid-template-columns:1fr}
