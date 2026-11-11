@@ -646,23 +646,32 @@
     try {
       const [data, backfill] = await Promise.all([
         get("/api/extension/medhunt/api-monitor"),
-        get("/api/admin/contact-backfill"),
+        get("/api/admin/contact-backfill").catch(e => ({error:e.message})),
       ]);
-      const q = data.lookup_provider || {};
+      const q = data.lookup_provider;
+      const haloQueue = data.halo_lookup_queue;
+      const haloSampledAt = haloQueue && haloQueue.sampled_at
+        ? new Date(haloQueue.sampled_at).toLocaleTimeString() : "";
       const nf = n => Number(n || 0).toLocaleString();
-      box.innerHTML = statGroup("Extension API load · live", [
-        statCard("Requests running now", nf(q.active), q.concurrency_limit ? `${nf(q.active)} of ${nf(q.concurrency_limit)} Quick Sourcer slots in use` : (q.oldest_active_seconds ? `oldest running ${Math.round(Number(q.oldest_active_seconds))}s` : "no requests waiting")),
-        statCard("Candidates in queue", nf(q.queued), q.processing ? `${nf(q.processing)} processing${q.current_request_id ? ` · ${q.current_request_id}` : ""}` : "worker ready"),
+      box.innerHTML = (q ? statGroup("Quick Sourcer provider load · live", [
+        statCard("Requests running at provider", nf(q.active), q.concurrency_limit ? `${nf(q.active)} of ${nf(q.concurrency_limit)} provider slots in use` : (q.oldest_active_seconds ? `oldest running ${Math.round(Number(q.oldest_active_seconds))}s` : "provider reports no active requests")),
+        statCard("Requests waiting at provider", nf(q.queued), q.processing ? `${nf(q.processing)} processing${q.current_request_id ? ` · ${q.current_request_id}` : ""}` : "provider-side queue only"),
         statCard("Started in 5 minutes", nf(q.started_5m), q.search_pool ? `${q.search_pool} search pool` : ""),
         statCard("Completed in 5 minutes", nf(q.completed_5m)),
         statCard("Failed in 5 minutes", nf(q.failed_5m), q.configured ? "provider configured" : "provider not configured"),
-      ]) + statGroup("Neon contact enrichment", [
+      ]) : errorState("Quick Sourcer provider metrics unavailable.", data.provider_error || ""))
+      + (haloQueue ? statGroup("Halo contact lookup queue · live", [
+        statCard("Candidates waiting in Halo", nf(haloQueue.queued), haloQueue.oldest_queued_seconds != null ? `oldest wait ${nf(haloQueue.oldest_queued_seconds)}s` : "local queue"),
+        statCard("Halo lookups processing", nf(haloQueue.processing), haloQueue.oldest_processing_seconds != null ? `oldest running ${nf(haloQueue.oldest_processing_seconds)}s` : "one lookup per app worker"),
+      ]) : `<p class="muted">Halo queue metrics are unavailable from this server.</p>`)
+      + `<p class="muted small">${haloSampledAt ? `Halo sampled at ${esc(haloSampledAt)}. ` : ""}Refreshed about every 5 seconds. Halo processes one contact lookup at a time per app worker; provider slots are a separate limit.</p>`
+      + (backfill.error ? errorState("Neon contact enrichment metrics unavailable.", backfill.error) : statGroup("Neon contact enrichment", [
         statCard("Contactless eligible", nf(backfill.eligible_contactless), backfill.schedule || ""),
         statCard("Waiting", nf(backfill.queued), `${nf(backfill.processing)} processing`),
         statCard("Enriched", nf(backfill.enriched), `${nf(backfill.enriched_24h)} today · ${nf(backfill.enriched_7d)}/7d`),
         statCard("Not found", nf(backfill.not_found), "eligible for retry after cooldown"),
         statCard("Failed", nf(backfill.failed), "temporary failures retry automatically"),
-      ]);
+      ]));
     } catch(e) {
       box.innerHTML = errorState("Could not load extension API activity.", e.message || "");
     } finally {

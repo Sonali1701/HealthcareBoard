@@ -30,7 +30,7 @@ from ..models import (
     AuditLog, EmailVerificationToken, Employer, EmployerMember, Notification,
     NotificationType, User, UserRole, UserStatus,
     MedhuntCreditAccount, MedhuntCreditTransaction, MedhuntMessagingPermission,
-    MedhuntSmsSender, Profile, ProfileContactBackfill,
+    MedhuntSmsSender, Profile, ProfileContactBackfill, ContactLookupJob,
 )
 from ..ratelimit import auth_rate_limit
 from ..security import sha256
@@ -297,10 +297,37 @@ def list_medhunt_devices(user: CurrentUser, db: DbSession, employer_id: str = ""
 
 
 @router.get("/medhunt/api-monitor")
-def medhunt_api_monitor(user: CurrentUser):
+def medhunt_api_monitor(user: CurrentUser, db: DbSession):
     if user.role != UserRole.admin:
         raise HTTPException(403, "Platform admin access is required")
-    return _medhunt_request("/internal/halo/api-monitor", {})
+    try:
+        report = _medhunt_request("/internal/halo/api-monitor", {})
+    except HTTPException as exc:
+        # Halo's own queue remains useful when the provider monitor is down.
+        report = {"lookup_provider": None, "provider_error": str(exc.detail)}
+    now = utcnow()
+    local_statuses = dict(db.execute(
+        select(ContactLookupJob.status, func.count())
+        .where(ContactLookupJob.status.in_(("queued", "processing")))
+        .group_by(ContactLookupJob.status)
+    ).all())
+    oldest_queued = db.scalar(select(func.min(ContactLookupJob.created_at)).where(
+        ContactLookupJob.status == "queued",
+    ))
+    oldest_processing = db.scalar(select(func.min(ContactLookupJob.updated_at)).where(
+        ContactLookupJob.status == "processing",
+    ))
+    def seconds_since(value):
+        return max(0, int((now - value).total_seconds())) if value else None
+
+    report["halo_lookup_queue"] = {
+        "queued": int(local_statuses.get("queued", 0)),
+        "processing": int(local_statuses.get("processing", 0)),
+        "oldest_queued_seconds": seconds_since(oldest_queued),
+        "oldest_processing_seconds": seconds_since(oldest_processing),
+        "sampled_at": now.isoformat(),
+    }
+    return report
 
 
 @router.post("/medhunt/contact-backfill-result")
