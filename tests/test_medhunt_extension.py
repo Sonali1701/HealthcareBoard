@@ -400,6 +400,35 @@ class MedhuntExtensionAuthTests(unittest.TestCase):
         self.assertEqual(detail["summary"]["checks"], 1)
         self.assertEqual(detail["provider_options"], ["quick_sourcer"])
 
+    def test_raw_response_is_fetched_only_when_own_event_is_opened(self):
+        other = User(email="other@example.com", password_hash="x",
+                     role=UserRole.recruiter, status=UserStatus.active)
+        self.db.add(other)
+        self.db.commit()
+        for status in ("found", "not_found", "failed"):
+            event_id = f"raw_{status}_12345678"
+            extension.record_medhunt_enrichment(
+                extension.MedhuntEnrichmentEvent(
+                    event_id=event_id, candidate_id="42", status=status,
+                    provider="quick_sourcer", source="indeed",
+                    run_id="run-12345",
+                ), self.user, self.db, request(),
+            )
+            raw = {"available": True, "api_response": {"body": {"status": status}}}
+            with patch.object(extension, "_medhunt_request", return_value=raw) as upstream:
+                self.assertEqual(analytics.medhunt_event_api_response(
+                    event_id, self.user, self.db,
+                ), raw)
+                upstream.assert_called_once_with("/internal/halo/lookup-response", {
+                    "user_id": self.user.user_id,
+                    "run_id": "run-12345",
+                    "candidate_id": 42,
+                })
+                with self.assertRaises(HTTPException) as forbidden:
+                    analytics.medhunt_event_api_response(event_id, other, self.db)
+                self.assertEqual(forbidden.exception.status_code, 404)
+                upstream.assert_called_once()
+
     def test_org_device_scope_rejects_regular_recruiter(self):
         owner = User(email="owner@example.com", role=UserRole.recruiter,
                      status=UserStatus.active)

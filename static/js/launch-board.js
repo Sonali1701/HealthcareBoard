@@ -5753,13 +5753,32 @@
         ${vizCard("User activity", members.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Checks</th><th>Enrichments</th><th>Unique candidates</th><th>Last used</th></tr></thead><tbody>${members.map(m => `<tr><td><div class="cell-name">${esc(m.name || m.email || "Team member")}</div><div class="cell-sub">${esc(m.email || "")}</div></td><td>${Number(m.checks).toLocaleString()}</td><td>${Number(m.enriched).toLocaleString()}</td><td>${Number(m.candidates_enriched).toLocaleString()}</td><td>${m.last_used_at ? esc(shortTime(m.last_used_at)) : "—"}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No extension use yet", "User activity will appear here.", "fa-users"), "who used MedHunt and when")}
       </div>
       <div class="team-head extension-detail-head"><h3>Extension event log</h3><span class="team-note">${Number(ext.activity_total || 0).toLocaleString()} events</span></div>
-      ${activity.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Platform</th><th>Provider</th><th>Outcome</th><th>Run ID</th><th>Event ID</th><th>Date &amp; time</th></tr></thead><tbody>${activity.map(a => `<tr><td><div class="cell-name">${esc(a.user_name || "Team member")}</div><div class="cell-sub">${esc(a.user_email || "")}</div></td><td>${a.candidate_name ? `<div class="cell-name">${esc(a.candidate_name)}</div>` : ""}<div class="cell-sub">${esc(a.candidate_id || "—")}</div></td><td>${esc(a.platform || a.source || "Unknown")}</td><td>${esc(a.provider || "—")}</td><td><span class="badge${a.enriched ? " accent" : ""}">${esc(a.status || (a.enriched ? "Enriched" : "Attempted"))}</span></td><td>${esc(a.run_id || "—")}</td><td>${esc(a.event_id || "—")}</td><td>${a.used_at ? esc(new Date(a.used_at).toLocaleString()) : "—"}</td></tr>`).join("")}</tbody></table></div>`
+      ${activity.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Platform</th><th>Provider</th><th>Outcome</th><th>API response</th><th>Run ID</th><th>Event ID</th><th>Date &amp; time</th></tr></thead><tbody>${activity.map(a => `<tr><td><div class="cell-name">${esc(a.user_name || "Team member")}</div><div class="cell-sub">${esc(a.user_email || "")}</div></td><td>${a.candidate_name ? `<div class="cell-name">${esc(a.candidate_name)}</div>` : ""}<div class="cell-sub">${esc(a.candidate_id || "—")}</div></td><td>${esc(a.platform || a.source || "Unknown")}</td><td>${esc(a.provider || "—")}</td><td><span class="badge${a.enriched ? " accent" : ""}">${esc(a.status || (a.enriched ? "Enriched" : "Attempted"))}</span></td><td>${a.provider === "quick_sourcer" ? `<button class="btn small" data-extension-response="${esc(a.event_id)}">View response</button>` : "—"}</td><td>${esc(a.run_id || "—")}</td><td>${esc(a.event_id || "—")}</td><td>${a.used_at ? esc(new Date(a.used_at).toLocaleString()) : "—"}</td></tr>`).join("")}</tbody></table></div>`
         : emptyState("No events match these filters", "Try a different period or filter.", "fa-list")}
       ${pageCount > 1 ? `<div class="extension-pages"><button class="btn small" data-extension-page="${ext.activity_page - 1}"${ext.activity_page <= 1 ? " disabled" : ""}>Previous</button><span>Page ${ext.activity_page} of ${pageCount}</span><button class="btn small" data-extension-page="${ext.activity_page + 1}"${ext.activity_page >= pageCount ? " disabled" : ""}>Next</button></div>` : ""}
     </div>`;
   }
   let _analyticsReq = 0;
   let _extensionAnalyticsReq = 0;
+  async function openExtensionApiResponse(eventId){
+    adminModal("Quick Sourcer API response", loading("Loading response..."));
+    const orgId = S.employer && S.employer.employer_id || "";
+    const params = orgId ? `?employer_id=${encodeURIComponent(orgId)}` : "";
+    try {
+      const data = await get(`/api/analytics/medhunt/events/${encodeURIComponent(eventId)}/response${params}`);
+      if (!data.available){
+        adminModal("Quick Sourcer API response", emptyState("No response saved for this event", data.error || data.message || ""));
+        return;
+      }
+      const body = data.api_response == null ? "No HTTP response body" :
+        typeof data.api_response === "string" ? data.api_response : JSON.stringify(data.api_response, null, 2);
+      adminModal("Quick Sourcer API response", `<p>Lookup outcome: ${esc(data.lookup_status || "Unknown")}</p>
+        ${data.error ? `<p>${esc(data.error)}</p>` : ""}
+        <pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto">${esc(body)}</pre>`);
+    } catch(e){
+      adminModal("Quick Sourcer API response", errorState("Could not load API response", e.message || ""));
+    }
+  }
   function extensionAnalyticsRequest(activeOrgId){
     const params = new URLSearchParams({
       days:String(extensionAnalyticsFilters.days),
@@ -5946,6 +5965,8 @@
         loadExtensionAnalyticsOnly();
       };
       box.onclick = event => {
+        const responseButton = event.target.closest("[data-extension-response]");
+        if (responseButton){ openExtensionApiResponse(responseButton.dataset.extensionResponse); return; }
         const button = event.target.closest("[data-extension-page]");
         if (!button || button.disabled) return;
         extensionAnalyticsFilters.page = Number(button.dataset.extensionPage);

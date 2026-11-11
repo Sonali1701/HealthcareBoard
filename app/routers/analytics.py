@@ -39,6 +39,26 @@ _MARKET_REFRESH_RETRY_AT = 0.0
 logger = logging.getLogger(__name__)
 
 
+def _medhunt_visible_members(user, db, employer_id=None):
+    member_ids = [user.user_id]
+    scope = "personal"
+    employer = None
+    if employer_id:
+        employer = db.get(Employer, employer_id)
+        if not employer or org_roles.role_of(db, employer, user) is None:
+            raise HTTPException(status_code=403, detail="Not a member of this organisation")
+    else:
+        employer_ids = _employer_ids_for(db, user)
+        if employer_ids:
+            employer = db.get(Employer, employer_ids[0])
+    if employer:
+        role = org_roles.role_of(db, employer, user)
+        if org_roles.can(role, "analytics"):
+            member_ids = sorted(team_access.scoped_member_ids(db, employer, user))
+            scope = "team" if role == "manager" else "organization"
+    return member_ids, scope, employer
+
+
 def _employer_ids_for(db: DbSession, user: CurrentUser) -> list[str]:
     owned = db.scalars(
         select(Employer.employer_id).where(Employer.owner_user_id == user.user_id)
@@ -73,23 +93,7 @@ def medhunt_extension_activity(
     """
     from .extension import MEDHUNT_ATTEMPT_ACTION, MEDHUNT_ENRICHED_ACTION
 
-    member_ids = [user.user_id]
-    scope = "personal"
-    employer = None
-    if employer_id:
-        employer = db.get(Employer, employer_id)
-        if not employer or org_roles.role_of(db, employer, user) is None:
-            raise HTTPException(status_code=403, detail="Not a member of this organisation")
-    else:
-        employer_ids = _employer_ids_for(db, user)
-        if employer_ids:
-            employer = db.get(Employer, employer_ids[0])
-
-    if employer:
-        role = org_roles.role_of(db, employer, user)
-        if org_roles.can(role, "analytics"):
-            member_ids = sorted(team_access.scoped_member_ids(db, employer, user))
-            scope = "team" if role == "manager" else "organization"
+    member_ids, scope, employer = _medhunt_visible_members(user, db, employer_id)
 
     since = (datetime.combine(date_from, datetime.min.time(), timezone.utc)
              if date_from else
@@ -299,6 +303,38 @@ def medhunt_extension_activity(
             "used_at": event.created_at,
         } for event in sms_events[:100]],
     }
+
+
+@router.get("/medhunt/events/{event_id}/response")
+def medhunt_event_api_response(event_id: str, user: CurrentUser, db: DbSession,
+                               employer_id: str | None = None):
+    """Fetch one saved Quick Sourcer response when a viewer opens an event."""
+    from .extension import (MEDHUNT_ATTEMPT_ACTION, MEDHUNT_ENRICHED_ACTION,
+                            _medhunt_request)
+
+    member_ids, _, _ = _medhunt_visible_members(user, db, employer_id)
+    event = db.scalar(select(AuditLog).where(
+        AuditLog.entity_id == event_id,
+        AuditLog.actor_user_id.in_(member_ids),
+        AuditLog.action.in_((MEDHUNT_ENRICHED_ACTION, MEDHUNT_ATTEMPT_ACTION)),
+    ))
+    if not event:
+        raise HTTPException(404, "Extension event not found")
+    meta = event.meta or {}
+    if str(meta.get("provider") or "").casefold() != "quick_sourcer":
+        return {"available": False, "message": "This event did not use Quick Sourcer."}
+    run_id = str(meta.get("run_id") or "")
+    try:
+        candidate_id = int(meta.get("candidate_id"))
+    except (TypeError, ValueError):
+        candidate_id = 0
+    if not run_id or candidate_id <= 0:
+        return {"available": False, "message": "This event has no saved lookup reference."}
+    return _medhunt_request("/internal/halo/lookup-response", {
+        "user_id": event.actor_user_id,
+        "run_id": run_id,
+        "candidate_id": candidate_id,
+    })
 
 
 @router.get("/funnel")
