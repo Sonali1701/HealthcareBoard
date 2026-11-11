@@ -240,7 +240,10 @@
     <a class="logo" href="#" data-page="dashboard">
       <img class="product-logo app-logo" src="/assets/medhunt-logo.jpg?v={{ asset_version }}" alt="MedHunt">
     </a>
-    <nav class="nav">
+    <button class="mobile-menu-toggle" id="mobile-menu-toggle" type="button" aria-controls="primary-nav" aria-expanded="false" aria-label="Open navigation">
+      <i class="fas fa-bars" aria-hidden="true"></i><span>Menu</span>
+    </button>
+    <nav class="nav" id="primary-nav" aria-label="Main navigation">
       <div class="nav-label">Main</div>
       <button class="nav-item active" data-page="dashboard"><i class="fas fa-table-cells-large"></i>Dashboard</button>
       <button class="nav-item seeker-only" data-page="jobs"><i class="fas fa-search"></i>Find Jobs</button>
@@ -309,6 +312,7 @@
       <div class="dash-section-head"><div><span class="dash-section-kicker">Start here</span><h2>Quick actions</h2><p>Jump into the work that matters next.</p></div></div>
       <div class="dash-actions" id="dash-actions" aria-label="Quick actions"></div>
       <div class="dash-section-head dash-jobs-head"><div><span class="dash-section-kicker">Opportunities</span><h2 id="rec-title">Recommended jobs</h2><p id="rec-sub">Live roles from the job board</p></div><button class="dash-view-all" id="dash-view-all" data-page="jobs">View all jobs <i class="fas fa-arrow-right" aria-hidden="true"></i></button></div>
+      <p class="table-scroll-hint">Scroll sideways to see pay and job actions.</p>
       <div class="table-wrap dash-jobs-table">
         <table class="table">
           <thead><tr><th>Role</th><th>Type</th><th>Specialty</th><th>Pay</th><th class="th-actions"></th></tr></thead>
@@ -324,6 +328,7 @@
         <select id="job-type" class="input"><option value="">All types</option><option value="travel">Travel</option><option value="staff">Staff</option><option value="per_diem">Per diem</option><option value="contract">Contract</option></select>
         <input id="job-state" class="input short" maxlength="2" placeholder="State">
       </div>
+      <p class="table-scroll-hint">Scroll sideways to see pay and job actions.</p>
       <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Role</th><th>Type</th><th>Specialty</th><th>Pay</th><th class="th-actions"></th></tr></thead>
@@ -553,6 +558,7 @@
           </div>
           <div class="msg-convo hidden" id="msg-convo-inner">
             <header class="msg-convo-head">
+              <button class="msg-back" id="msg-back" type="button"><i class="fas fa-arrow-left" aria-hidden="true"></i> Conversations</button>
               <div class="msg-avatar" id="msg-head-avatar">?</div>
               <div class="msg-head-meta">
                 <strong id="msg-head-name">—</strong>
@@ -801,6 +807,7 @@
       <div class="section-head">
         <div><h1>Admin Console</h1><p>Platform overview, users and organizations — visible only to platform admins.</p></div>
       </div>
+      <p class="admin-tabs-hint">Scroll the tabs sideways to see every section.</p>
       <div class="admin-tabs">
         <button class="admin-tab active" data-atab="overview"><i class="fas fa-gauge-high"></i>Overview</button>
         <button class="admin-tab" data-atab="users"><i class="fas fa-users"></i>Users</button>

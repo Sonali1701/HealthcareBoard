@@ -327,7 +327,18 @@
     }
   }
 
+  function setMobileMenu(open){
+    const sidebar = $(".app-shell .sidebar");
+    const toggle = $("#mobile-menu-toggle");
+    if (!sidebar || !toggle) return;
+    sidebar.classList.toggle("nav-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+    toggle.querySelector("i").className = open ? "fas fa-xmark" : "fas fa-bars";
+  }
+
   function showPage(id){
+    setMobileMenu(false);
     // Community Feed is hidden pre-launch (read-only, seeded demo content). The
     // page, social.py API and loadFeed() are kept — remove this line and restore
     // the nav button in board.html to bring it back.
@@ -4137,6 +4148,18 @@
     const pwt = $("#auth-pw-toggle");
     if (pwt) pwt.onclick = () => { const i = $("#auth-password"); const show = i.type === "password"; i.type = show ? "text" : "password"; pwt.innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>'; };
     $$(".nav-item,.top-user,.top-actions .icon-btn,.credit-chip,.hero-band .btn,.logo").forEach(el => el.addEventListener("click", e => { const page = el.dataset.page; if (page) { e.preventDefault(); showPage(page); } }));
+    const mobileMenu = $("#mobile-menu-toggle");
+    if (mobileMenu) mobileMenu.onclick = () => setMobileMenu(mobileMenu.getAttribute("aria-expanded") !== "true");
+    document.addEventListener("click", e => {
+      const sidebar = $(".app-shell .sidebar");
+      if (sidebar && sidebar.classList.contains("nav-open") && !sidebar.contains(e.target)) setMobileMenu(false);
+    });
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && $(".app-shell .sidebar")?.classList.contains("nav-open")) {
+        setMobileMenu(false);
+        mobileMenu?.focus();
+      }
+    });
     // Dashboard controls are rewritten per role; delegate all their navigation.
     const dashboard = $("#page-dashboard");
     if (dashboard) dashboard.addEventListener("click", e => {
@@ -4757,6 +4780,7 @@
 
   async function openThread(id, {quiet=false} = {}){
     S.activeThread = id;
+    if (!quiet) $(".msg-layout").classList.add("show-conversation");
     $("#msg-placeholder").classList.add("hidden");
     $("#msg-convo-inner").classList.remove("hidden");
     if (!quiet) $("#msg-bubbles").innerHTML = loading("Loading messages...");
@@ -4828,6 +4852,13 @@
   function wireMessages(){
     const form = $("#msg-composer");
     if (!form) return;
+    const back = $("#msg-back");
+    if (back) back.onclick = () => {
+      S.activeThread = null;
+      ++S.threadReq;
+      $(".msg-layout").classList.remove("show-conversation");
+      renderThreads();
+    };
     form.addEventListener("submit", e => { e.preventDefault(); sendMessage(); });
     const input = $("#msg-input");
     input.addEventListener("keydown", e => {
