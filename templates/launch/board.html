@@ -406,11 +406,19 @@
         <button class="btn ghost small" id="search-reset"><i class="fas fa-rotate-left"></i>Reset filters</button>
         <span class="muted">NPI Registry data · specialty and taxonomy shown as supplied by source</span>
       </div>
+      <div id="provider-loading-status" class="provider-loading-status hidden" role="status" aria-live="polite">
+        <span class="spinner sm"></span><strong>Updating providers…</strong><span>New results will appear here.</span>
+      </div>
+      <div class="provider-directory-bulk">
+        <span id="provider-bulk-count" class="muted"></span>
+        <button class="btn small hidden" id="provider-bulk-find-contact"><i class="fas fa-magnifying-glass"></i>Find contacts</button>
+        <button class="btn ghost small hidden" id="provider-bulk-clear">Clear selection</button>
+      </div>
       <div class="table-wrap" id="providers-table-wrap">
         <table class="table">
           <thead><tr>
             <th>Provider / organization</th><th>Credential</th><th>Specialty</th>
-            <th>Taxonomy code</th><th>Location</th><th>NPI status</th>
+            <th>Taxonomy code</th><th>Location</th><th>NPI status</th><th>Contact</th>
           </tr></thead>
           <tbody id="providers-grid"></tbody>
         </table>

@@ -245,6 +245,11 @@ def main() -> int:
             cur.execute("CREATE INDEX IF NOT EXISTS provider_directory_location_idx ON provider_directory (lat, lng) WHERE lat IS NOT NULL AND lng IS NOT NULL")
             cur.execute("CREATE INDEX IF NOT EXISTS provider_directory_name_idx ON provider_directory (lower(last_name), lower(first_name), npi)")
             cur.execute("CREATE INDEX IF NOT EXISTS provider_directory_city_idx ON provider_directory (lower(city), state_code)")
+            cur.execute("CREATE INDEX IF NOT EXISTS provider_directory_first_name_prefix_idx ON provider_directory (lower(first_name) text_pattern_ops)")
+            cur.execute("CREATE INDEX IF NOT EXISTS provider_directory_middle_name_prefix_idx ON provider_directory (lower(middle_name) text_pattern_ops)")
+            cur.execute("CREATE INDEX IF NOT EXISTS provider_directory_last_name_prefix_idx ON provider_directory (lower(last_name) text_pattern_ops)")
+            cur.execute("CREATE INDEX IF NOT EXISTS provider_directory_city_prefix_idx ON provider_directory (lower(city) text_pattern_ops)")
+            cur.execute("CREATE INDEX IF NOT EXISTS provider_directory_state_specialty_name_idx ON provider_directory (state_code, specialty, lower(last_name), lower(first_name), npi)")
             cur.execute("ANALYZE provider_directory")
         target.commit()
 

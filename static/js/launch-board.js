@@ -3,7 +3,7 @@
     user:null, profile:null, authMode:"login",
     provider:{q:"", specialty:"", zip:"", radius_mi:"25", state_code:""},
     providerCache:new Map(), providerInflight:new Map(),
-    providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
+    providerCards:new Map(), releasedContacts:new Map(), directoryContacts:new Map(), providerReq:0,
     providerOffset:0, providerTotal:null, providerEstimate:null, providerEstimateIsLowerBound:false, directoryEstimate:null,
     providerHasNext:false, facetCategories:{},
     providerLastData:null, facetsLoaded:false, activeCounts:null,
@@ -67,7 +67,7 @@
     stateBlock("fa-triangle-exclamation", text, hint, "is-error");
   // Same state blocks, but legal inside a <tbody>. Column counts must match the
   // <thead> in board.html so the state spans the full table width.
-  const JOB_COLS = 5, PROVIDER_COLS = 6;   // NPI directory fields
+  const JOB_COLS = 5, PROVIDER_COLS = 8;   // NPI directory fields + selection/contact
   const stateRow = (cols, html) => `<tr class="row-state"><td colspan="${cols}">${html}</td></tr>`;
   const loadingRow = (cols, text) => stateRow(cols, loading(text));
   const emptyRow = (cols, text, hint, icon) => stateRow(cols, emptyState(text, hint, icon));
@@ -1334,6 +1334,10 @@
     $("#providers-count").textContent = providerCountLabel();
     $("#providers-grid").innerHTML = items.length ? items.map(providerRow).join("") : emptyRow(PROVIDER_COLS, "No providers match these filters",
       "Try another specialty, state, ZIP code, or a wider radius.", "fa-user-doctor");
+    $$("#providers-grid .row-check").forEach(box => { box.checked = S.selected.has(box.dataset.pick); });
+    const all = $("#provider-select-all");
+    if (all) all.checked = items.length > 0 && items.every(p => S.selected.has(p.npi));
+    renderProviderBulkActions();
   }
   function renderPager(data){
     const pager = $("#providers-pager"); if (!pager) return;
@@ -1404,11 +1408,24 @@
       <span class="contact-avail">${avail}</span>
     </div>`;
   }
+  const NAME_CREDENTIALS = /(?:,?\s+)(?:MD|M\.D\.|DO|D\.O\.|MBBS|MBCHB|DMD|DDS|DPM|DPT|PHARMD|PSYD|PHD|MPH|MSC|MS|MBA|MHA|RN|BSN|MSN|NP|FNP|DNP|PA-C|PA|FACP|FAAP|FACS|FACC|FAAD|LPN|LVN|CNA)\.?$/i;
+  function formatProviderNamePart(value){
+    let part = clean(value);
+    if (!part) return "";
+    while (NAME_CREDENTIALS.test(part)) part = part.replace(NAME_CREDENTIALS, "").trim();
+    part = part.replace(/^[\s'’\"]+|[\s,;]+$/g, "");
+    if (/^[A-Z\s.'’()-]+$/.test(part)) {
+      part = part.toLowerCase().replace(/(^|[\s'’(-])([a-z])/g, (_m, lead, letter) => lead + letter.toUpperCase());
+    }
+    return part;
+  }
   function providerRow(p,i){
     S.providerCards.set(p.npi, p);
-    const loc = [p.city, p.state_code, p.zip_code].filter(Boolean).join(", ");
-    const name = [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ");
+    const loc = [formatProviderNamePart(p.city), p.state_code, p.zip_code].filter(Boolean).join(", ");
+    const name = [p.first_name, p.middle_name, p.last_name].filter(Boolean).map(formatProviderNamePart).filter(Boolean).join(" ");
+    const avatarInitials = `${formatProviderNamePart(p.first_name).slice(0,1)}${formatProviderNamePart(p.last_name).slice(0,1)}`.toUpperCase();
     return '<tr data-row="' + esc(p.npi) + '">' +
+      '<td><input type="checkbox" class="row-check" data-pick="' + esc(p.npi) + '" aria-label="Select ' + esc(name) + '"></td>' +
       '<td><div class="cell-user"><span class="avatar">' +
       esc(p.initials || initials(p.first_name, p.last_name)) +
       '</span><div class="cell-id"><div class="cell-name">' + esc(name) +
@@ -1418,7 +1435,20 @@
       '<td>' + esc(p.specialty) + '</td>' +
       '<td><span class="badge">' + esc(p.taxonomy_code) + '</span></td>' +
       '<td>' + (loc ? esc(loc) : '<span class="cell-none">—</span>') + '</td>' +
-      '<td><span class="badge">' + esc(p.status) + '</span></td></tr>';
+      '<td><span class="badge">' + esc(p.status) + '</span></td>' +
+      '<td>' + directoryContactCell(p) + '</td></tr>';
+  }
+  function directoryContactCell(p){
+    const contact = S.directoryContacts.get(p.npi);
+    if (contact && contact.status === "completed") return `<div class="contact-cell is-revealed">
+      ${contact.email ? `<a href="mailto:${esc(contact.email)}"><i class="fas fa-envelope"></i><span>${esc(contact.email)}</span></a>` : ""}
+      ${contact.phone ? `<a href="tel:${esc(contact.phone)}"><i class="fas fa-phone"></i><span>${esc(contact.phone)}</span></a>` : ""}
+      <span class="contact-meta">${esc(contact.source || "Contact found")}</span></div>`;
+    const pending = contact && ["queued","processing"].includes(contact.status);
+    const label = pending ? "Searching…" : contact && ["failed","not_found"].includes(contact.status) ? "Try again" : "Find contact";
+    const icon = pending ? "fa-spinner fa-spin" : "fa-magnifying-glass";
+    return `<div class="contact-cell"><button class="reveal-btn lookup-btn" data-directory-lookup="${esc(p.npi)}" ${!S.features.contact_lookup || pending ? "disabled" : ""} title="Search for an email or phone; successful matches use a reveal credit."><i class="fas ${icon}"></i>${label}</button>
+      ${contact && contact.detail ? `<span class="contact-meta">${esc(contact.detail)}</span>` : ""}</div>`;
   }
   async function loadProviders(){
     if (!isRecruiter()) return;
@@ -1428,7 +1458,11 @@
     const wantCount = false;
     const params = providerParams(S.provider, {offset:S.providerOffset, count:wantCount});
     const seq = ++S.providerReq;
-    if (!S.providerCache.has(params.toString())) {
+    const needsNetwork = !S.providerCache.has(params.toString());
+    if (needsNetwork) {
+      const status = $("#provider-loading-status");
+      status.classList.remove("hidden", "is-error");
+      status.innerHTML = '<span class="spinner sm"></span><strong>Updating providers…</strong><span>New results will appear here.</span>';
       if (S.providerLastData) {
         $("#providers-grid").setAttribute("aria-busy", "true");
         $("#providers-count").textContent = "Updating results…";
@@ -1446,13 +1480,19 @@
       S.providerHasNext = !!data.has_next;
       S.providerLastData = data;
       $("#providers-grid").removeAttribute("aria-busy");
+      $("#provider-loading-status").classList.add("hidden");
       renderProviderPage(data);
       renderPager(data);
+      renderProviderBulkActions();
       // Load dropdown choices after the visible page so facet queries do not
       // compete with the first provider result request.
       if (!S.facetsLoaded) loadProviderFacets();
     } catch(e) {
       $("#providers-grid").removeAttribute("aria-busy");
+      const status = $("#provider-loading-status");
+      status.classList.remove("hidden");
+      status.classList.add("is-error");
+      status.innerHTML = '<i class="fas fa-triangle-exclamation"></i><strong>Provider search failed.</strong><span>' + esc(e.message || "Please retry the search.") + '</span>';
       $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, e.status === 403 ? "Recruiter access required." : "Could not load providers.");
       $("#providers-pager").innerHTML = "";
       if (!S.providerLastData) {
@@ -4034,6 +4074,7 @@
       const dl = e.target.closest("[data-download-resume]"); if (dl) downloadResume(dl.dataset.downloadResume, dl.dataset.resumeName, dl);
       const release = e.target.closest("[data-release]"); if (release) releaseContact(release.dataset.release);
       const lookup = e.target.closest("[data-lookup]"); if (lookup) lookupContact(lookup.dataset.lookup);
+      const directoryLookup = e.target.closest("[data-directory-lookup]"); if (directoryLookup) lookupDirectoryContact(directoryLookup.dataset.directoryLookup);
       const sub = e.target.closest("[data-submit]"); if (sub) submitCandidate(sub.dataset.submit);
       const message = e.target.closest("[data-message]"); if (message) messageCandidate(message.dataset.message);
       const pick = e.target.closest("[data-pick]");
@@ -4129,6 +4170,16 @@
     const bulkReveal = $("#bulk-reveal");
     if (bulkReveal) bulkReveal.onclick = bulkRevealContacts;
     const bulkClear = $("#bulk-clear");
+    const providerSelectAll = $("#provider-select-all");
+    if (providerSelectAll) providerSelectAll.onchange = () => {
+      const on = providerSelectAll.checked;
+      $$("#providers-grid .row-check").forEach(box => { box.checked = on; togglePick(box.dataset.pick, on); });
+      providerSelectAll.checked = on;
+    };
+    const directoryBulkFind = $("#provider-bulk-find-contact");
+    if (directoryBulkFind) directoryBulkFind.onclick = bulkLookupDirectoryContacts;
+    const directoryBulkClear = $("#provider-bulk-clear");
+    if (directoryBulkClear) directoryBulkClear.onclick = clearSelection;
     if (bulkClear) bulkClear.onclick = clearSelection;
     const pfEdit = $("#profile-edit");
     if (pfEdit) pfEdit.onclick = openProfileForm;
@@ -5956,12 +6007,97 @@
     const row = document.querySelector(`tr[data-row="${id}"]`);
     if (row) row.classList.toggle("is-selected", on);
     renderBulkBar();
+    renderProviderBulkActions();
+  }
+  function eligibleDirectoryLookupNpis(){
+    return [...S.selected].filter(id => {
+      const p = S.providerCards.get(id);
+      const status = S.directoryContacts.get(id)?.status;
+      return p && p.npi === id && status !== "completed" && !["queued","processing"].includes(status);
+    });
+  }
+  function renderProviderBulkActions(){
+    const label = $("#provider-bulk-count"), button = $("#provider-bulk-find-contact"), clear = $("#provider-bulk-clear");
+    if (!label || !button || !clear) return;
+    const selected = [...S.selected].filter(id => { const p = S.providerCards.get(id); return p && p.npi === id; });
+    const eligible = eligibleDirectoryLookupNpis();
+    label.textContent = selected.length ? `${selected.length} selected` : "";
+    button.classList.toggle("hidden", !S.features.contact_lookup || !eligible.length);
+    button.innerHTML = `<i class="fas fa-magnifying-glass"></i>Find contacts${eligible.length ? ` (${eligible.length})` : ""}`;
+    clear.classList.toggle("hidden", !selected.length);
+  }
+  async function lookupDirectoryContact(npi){ return queueDirectoryContactLookups([npi]); }
+  async function queueDirectoryContactLookups(npis){
+    npis = [...new Set(npis || [])];
+    if (!npis.length || npis.length > 50) return toast("Select between 1 and 50 providers.", {kind:"err"});
+    npis.forEach(npi => {
+      S.directoryContacts.set(npi, {status:"queued"});
+      const row = S.providerLastData && S.providerLastData.items.find(p => p.npi === npi);
+      if (row) renderProviderPage(S.providerLastData);
+    });
+    try {
+      const queued = await post("/api/provider-directory/contacts/lookup", {npis});
+      const jobs = queued.jobs || [];
+      if (!jobs.length) throw new Error("No contact searches were queued.");
+      jobs.forEach(job => S.directoryContacts.set(job.npi, job));
+      if (S.providerLastData) renderProviderPage(S.providerLastData);
+      toast(`${jobs.length} contact search${jobs.length === 1 ? "" : "es"} added to the queue. You can keep working.`,
+        {title:"Contact search queued", kind:"info", ms:10000});
+      const remaining = new Set(jobs.filter(j => ["queued","processing"].includes(j.status)).map(j => j.job_id));
+      let hasCompleted = jobs.some(j => j.status === "completed");
+      while (remaining.size){
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        let latest;
+        try {
+          latest = await get(`/api/provider-directory/contacts/lookup/status?job_ids=${encodeURIComponent([...remaining].join(","))}`);
+        } catch(e) { continue; }
+        for (const job of latest.jobs || []){
+          S.directoryContacts.set(job.npi, job);
+          if (job.status === "completed") hasCompleted = true;
+          if (!["queued","processing"].includes(job.status)) remaining.delete(job.job_id);
+        }
+        if (S.providerLastData) renderProviderPage(S.providerLastData);
+      }
+      if (jobs.length === 1){
+        const done = S.directoryContacts.get(npis[0]);
+        if (done && done.status === "completed") {
+          toast("Contact found and unlocked.", {title:"Contact found"});
+        } else {
+          toast((done && done.detail) || "No contact found. Select Try again to repeat the lookup.",
+            {title:"Lookup did not complete", kind:"err", ms:9000});
+        }
+      } else {
+        const finished = jobs.map(job => S.directoryContacts.get(job.npi));
+        const foundCount = finished.filter(job => job && job.status === "completed").length;
+        const retryCount = finished.filter(job => job && ["failed","not_found"].includes(job.status)).length;
+        toast(`${foundCount} contacts found; ${retryCount} need another try.`,
+          {title:"Contact searches finished", kind:retryCount ? "info" : "success", ms:10000});
+      }
+      if (hasCompleted) refreshCredits();
+    } catch(e){
+      npis.forEach(npi => S.directoryContacts.set(npi, {status:"failed", detail:e.message || "Lookup failed. Try again."}));
+      if (S.providerLastData) renderProviderPage(S.providerLastData);
+      toast(e.message || "Could not queue contact searches. Try again.", {title:"Lookup failed", kind:"err"});
+    }
+  }
+  async function bulkLookupDirectoryContacts(){
+    const npis = eligibleDirectoryLookupNpis();
+    if (!npis.length) return toast("Select providers that do not have a completed contact lookup.", {kind:"err"});
+    if (npis.length > 50) return toast("Find contacts supports up to 50 providers at a time.", {kind:"err"});
+    const ok = await confirmDialog({
+      title:`Find contacts for ${npis.length} providers?`,
+      body:"Searches run in a queue. Each successful match uses one reveal credit; searches that find nothing are free.",
+      confirm:"Queue searches",
+    });
+    if (ok) queueDirectoryContactLookups(npis);
   }
   function clearSelection(){
     S.selected.clear();
     $$(".row-check").forEach(b => { b.checked = false; });
     $$("tr.is-selected").forEach(r => r.classList.remove("is-selected"));
     renderBulkBar();
+    const all = $("#provider-select-all"); if (all) all.checked = false;
+    renderProviderBulkActions();
   }
   async function bulkAddToPool(){
     const ids = [...S.selected];

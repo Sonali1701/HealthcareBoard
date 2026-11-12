@@ -21,6 +21,7 @@ Table inventory (29):
 """
 from .analytics import AnalyticsMarketSnapshot, AuditLog, MatchResult, MatchRun, PayPackage
 from .contact_lookup import ContactLookupJob
+from .provider_directory_contact_lookup import ProviderDirectoryContactLookupJob
 from .auth import (
     EmailVerificationToken,
     OAuthAccount,
@@ -116,6 +117,7 @@ __all__ = [
     "NexusContactDelivery",
     "ProfileContactBackfill",
     "ContactLookupJob",
+    "ProviderDirectoryContactLookupJob",
     # outreach
     "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",
     "MERGE_FIELDS", "SEND_STATUSES",

@@ -1729,3 +1729,13 @@ tr.is-selected{background:var(--accent-soft)}
   #provider-filters #provider-q{grid-column:1/-1}
   #provider-filters.is-collapsed>*:not(#provider-q){display:none}
 }
+/* NPI provider loading, name display, and contact lookup. */
+.provider-loading-status{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;margin:12px 0;padding:12px 16px;border:1px solid var(--accent);border-radius:12px;background:var(--surface,#fff);color:var(--ink);box-shadow:0 4px 16px #102a4b18}
+.provider-loading-status.hidden{display:none}
+.provider-loading-status>span:last-child{color:var(--dim)}
+.provider-loading-status.is-error{border-color:var(--warning,#df8a14);background:var(--warning-soft,#fff8ed)}
+.provider-loading-status.is-error .spinner{display:none}
+.provider-directory-bulk{display:flex;align-items:center;gap:10px;min-height:0;margin:0 0 8px}
+.provider-directory-bulk:has(#provider-bulk-find-contact:not(.hidden)){min-height:38px}
+.directory-provider-name{display:block;max-width:min(34vw,420px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.contact-cell .contact-meta{max-width:210px;overflow-wrap:anywhere}

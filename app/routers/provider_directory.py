@@ -6,16 +6,36 @@ import math
 import re
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import create_engine, text
+from pydantic import BaseModel, Field
+from sqlalchemy import bindparam, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..config import settings
-from ..deps import CurrentUser
+from ..deps import CurrentUser, DbSession
+from ..models import ProviderDirectoryContactLookupJob
+from ..services import quick_sourcer
 
 router = APIRouter(prefix="/api/provider-directory", tags=["provider-directory"])
 _ZIP = re.compile(r"^\d{5}$")
 _STATE = re.compile(r"^[A-Z]{2}$")
+
+
+class DirectoryContactLookupRequest(BaseModel):
+    npis: list[str] = Field(min_length=1, max_length=50)
+
+
+def _contact_lookup_payload(job: ProviderDirectoryContactLookupJob) -> dict:
+    payload = {
+        "job_id": job.job_id, "npi": job.npi, "status": job.status,
+        "found": job.found, "detail": job.detail, "source": job.source,
+        "credits_charged": job.credits_charged,
+        "credits_remaining": job.credits_remaining,
+    }
+    # Contact values are only returned on a completed job and only to its owner.
+    if job.status == "completed":
+        payload.update({"email": job.email, "phone": job.phone})
+    return payload
 
 
 def _normalized_database_url(raw: str):
@@ -203,3 +223,76 @@ def provider_directory_facets(user: CurrentUser):
                 "states": states, "source": "NPI Registry"}
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="Provider directory is temporarily unavailable") from exc
+
+
+@router.post("/contacts/lookup")
+def enqueue_directory_contact_lookups(
+    body: DirectoryContactLookupRequest, user: CurrentUser, db: DbSession,
+):
+    """Queue up to 50 contact searches using server-verified NPI directory data."""
+    _authorize(user)
+    if not quick_sourcer.available():
+        raise HTTPException(status_code=503, detail="Contact lookup is not switched on for this deployment.")
+    npis = list(dict.fromkeys(str(npi).strip() for npi in body.npis))
+    if any(not re.fullmatch(r"\d{10}", npi) for npi in npis):
+        raise HTTPException(status_code=422, detail="Each NPI must contain 10 digits.")
+    engine = _engine_or_503()
+    try:
+        with engine.connect() as conn:
+            query = text("""
+                SELECT npi, first_name, middle_name, last_name, city, state_code
+                FROM provider_directory
+                WHERE npi IN :npis AND status = 'ACTIVE'
+            """).bindparams(bindparam("npis", expanding=True))
+            rows = conn.execute(query, {"npis": npis}).mappings().all()
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="Provider directory is temporarily unavailable") from exc
+    provider_by_npi = {r["npi"]: r for r in rows}
+    if len(provider_by_npi) != len(npis):
+        raise HTTPException(status_code=404, detail="One or more selected providers are unavailable.")
+
+    jobs: list[ProviderDirectoryContactLookupJob] = []
+    prior_jobs = db.scalars(select(ProviderDirectoryContactLookupJob).where(
+        ProviderDirectoryContactLookupJob.requester_user_id == user.user_id,
+        ProviderDirectoryContactLookupJob.npi.in_(npis),
+        ProviderDirectoryContactLookupJob.status.in_(("queued", "processing", "completed")),
+    ).order_by(ProviderDirectoryContactLookupJob.created_at.desc())).all()
+    prior_by_npi = {}
+    for prior_job in prior_jobs:
+        prior_by_npi.setdefault(prior_job.npi, prior_job)
+    for npi in npis:
+        prior = prior_by_npi.get(npi)
+        if prior:
+            jobs.append(prior)
+            continue
+        p = provider_by_npi[npi]
+        name = " ".join(str(v).strip() for v in (
+            p["first_name"], p["middle_name"], p["last_name"]
+        ) if v and str(v).strip())
+        if len(name.split()) < 2:
+            raise HTTPException(status_code=400, detail=f"Provider {npi} needs a first and last name for lookup.")
+        location = ", ".join(str(v).strip() for v in (p["city"], p["state_code"]) if v and str(v).strip())
+        job = ProviderDirectoryContactLookupJob(
+            requester_user_id=user.user_id, npi=npi, lookup_name=name,
+            lookup_location=location or None, status="queued",
+        )
+        db.add(job)
+        jobs.append(job)
+    db.commit()
+    for job in jobs:
+        db.refresh(job)
+    return {"jobs": [_contact_lookup_payload(job) for job in jobs]}
+
+
+@router.get("/contacts/lookup/status")
+def directory_contact_lookup_status(job_ids: str, user: CurrentUser, db: DbSession):
+    _authorize(user)
+    ids = list(dict.fromkeys(part for part in job_ids.split(",") if part))
+    if not ids or len(ids) > 50:
+        raise HTTPException(status_code=422, detail="Request between 1 and 50 lookup jobs.")
+    found = db.scalars(select(ProviderDirectoryContactLookupJob).where(
+        ProviderDirectoryContactLookupJob.job_id.in_(ids),
+        ProviderDirectoryContactLookupJob.requester_user_id == user.user_id,
+    )).all()
+    by_id = {job.job_id: job for job in found}
+    return {"jobs": [_contact_lookup_payload(by_id[job_id]) for job_id in ids if job_id in by_id]}
