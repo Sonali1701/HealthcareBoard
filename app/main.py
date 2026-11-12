@@ -50,6 +50,7 @@ from .routers import (
     outreach,
     pools,
     privacy,
+    provider_directory,
     profiles,
     saved_searches,
     social,
@@ -222,7 +223,7 @@ async def _handle_redirect(request: Request, exc: RedirectException):
 for module in (
     auth, profiles, employers, jobs, applications, social,
     messaging, notifications, matching, gsa, analytics, uploads,
-    integrations, admin_import, ingest, extension, pools, saved_searches,
+    integrations, admin_import, ingest, extension, pools, provider_directory, saved_searches,
     duplicates, outreach, credits, privacy, submissions, clients, admin,
 ):
     app.include_router(module.router)

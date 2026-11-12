@@ -1,16 +1,12 @@
 (function(){
   const S = {
     user:null, profile:null, authMode:"login",
-    provider:{
-      q:"", category:"", license_title:"", zip:"", radius_mi:"25", state_code:"",
-      city:"", min_experience:"", max_experience:"", contact_available:"", resume_status:"",
-      licensed_state:"", worked_at:""
-    },
-    providerCache:new Map(), providerInflight:new Map(), providerCountCache:new Map(), providerCountInflight:new Map(),
-    providerCountKey:null, providerCountTimer:0, providerStatusTimer:0,
+    provider:{q:"", specialty:"", zip:"", radius_mi:"25", state_code:""},
+    providerCache:new Map(), providerInflight:new Map(),
     providerCards:new Map(), releasedContacts:new Map(), providerReq:0,
-    providerOffset:0, providerTotal:null, providerEstimate:null, providerLowerBound:null, providerHasNext:false, facetCategories:{},
-    providerLastData:null, facetsLoaded:false,
+    providerOffset:0, providerTotal:null, providerEstimate:null, providerEstimateIsLowerBound:false, directoryEstimate:null,
+    providerHasNext:false, facetCategories:{},
+    providerLastData:null, facetsLoaded:false, activeCounts:null,
     // Messaging + talent pools
     threads:[], activeThread:null, threadPoll:null, msgFilter:"",
     threadsReq:0, threadReq:0,
@@ -71,7 +67,7 @@
     stateBlock("fa-triangle-exclamation", text, hint, "is-error");
   // Same state blocks, but legal inside a <tbody>. Column counts must match the
   // <thead> in board.html so the state spans the full table width.
-  const JOB_COLS = 5, PROVIDER_COLS = 8;   // 8 = checkbox + 7 data columns
+  const JOB_COLS = 5, PROVIDER_COLS = 6;   // NPI directory fields
   const stateRow = (cols, html) => `<tr class="row-state"><td colspan="${cols}">${html}</td></tr>`;
   const loadingRow = (cols, text) => stateRow(cols, loading(text));
   const emptyRow = (cols, text, hint, icon) => stateRow(cols, emptyState(text, hint, icon));
@@ -362,7 +358,7 @@
     $$(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.page === id));
     if (id === "dashboard") loadDashboard();
     if (id === "jobs") loadJobs();
-    if (id === "providers") { initProviderFilterOptions(); syncProviderFilterToggle(); if (!S.facetsLoaded) loadProviderFacets(); loadProviders(); loadSavedSearches(); }
+    if (id === "providers") { loadProviders(); loadSavedSearches(); }
     if (id === "ai") setTimeout(() => { const el = $("#ai-input"); if (el) el.focus(); }, 60);
     if (id === "jobai") setTimeout(() => { const el = $("#jai-input"); if (el) el.focus(); }, 60);
     if (id === "extension") loadExtensionPage();
@@ -1290,181 +1286,54 @@
   }
 
   // Built to scale to millions of rows: server-side filtering + paging. We never
-  // fetch an exact COUNT with the result page (that's an O(rows) scan). Tab
-  // totals come from the cached facets/counts endpoints, and Prev/Next uses the
-  // result endpoint's has_next flag.
+  // fetch an exact COUNT for broad browses (that's an O(rows) scan) — the tab
+  // totals come from the cached /facets endpoint, and Prev/Next uses the API's
+  // has_next flag. Exact totals are omitted so large counts do not delay pages.
   const PAGE_SIZE = 60;
-  // Curated license/title options (relevant to healthcare staffing) shown with
-  // full names. Codes not listed here (MBBS, PharmD, degrees, ...) are hidden.
-  const LICENSE_LABELS = {
-    MD:"Physician (MD)", DO:"Physician (DO)", NP:"Nurse Practitioner (NP)",
-    PA:"Physician Assistant (PA)", CRNA:"Nurse Anesthetist (CRNA)",
-    CNM:"Nurse Midwife (CNM)", DNP:"Doctor of Nursing Practice (DNP)",
-    FNP:"Family Nurse Practitioner (FNP)", RN:"Registered Nurse (RN)",
-    LPN:"Licensed Practical Nurse (LPN)", LVN:"Licensed Vocational Nurse (LVN)",
-    CNA:"Certified Nursing Assistant (CNA)", RT:"Respiratory Therapist (RT)",
-    PT:"Physical Therapist (PT)", OT:"Occupational Therapist (OT)",
-  };
-  const LICENSE_ORDER = ["MD","DO","NP","PA","CRNA","CNM","DNP","FNP","RN","LPN","LVN","CNA","RT","PT","OT"];
-  const PROVIDER_STATE_CODES = ["AK","AL","AR","AZ","CA","CO","CT","DC","DE","FL","GA","GU","HI","IA","ID","IL","IN","KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ","NM","NV","NY","OH","OK","OR","PA","PR","RI","SC","SD","TN","TX","UT","VA","VI","VT","WA","WI","WV","WY"];
-  function initProviderFilterOptions(){
-    if (S.providerDirectoryTotal == null){
-      try {
-        const stored = localStorage.getItem("hb_provider_directory_total");
-        if (stored != null && stored.trim() !== "") {
-          const cached = Number(stored);
-          if (Number.isSafeInteger(cached) && cached > 0) S.providerDirectoryTotal = cached;
-        }
-      } catch(e) {}
-    }
-    const license = $("#provider-license-title");
-    if (license && license.options.length <= 1){
-      license.innerHTML = `<option value="">Any license/title</option>` + LICENSE_ORDER
-        .map(code => `<option value="${code}">${esc(LICENSE_LABELS[code])}</option>`).join("");
-    }
-    const state = $("#provider-state");
-    if (state && state.options.length <= 1){
-      state.innerHTML = `<option value="">Any state</option>`
-        + PROVIDER_STATE_CODES.map(code => `<option value="${code}">${code}</option>`).join("");
-    }
-    syncProviderControls();
-    $("#providers-count").textContent = providerCountLabel();
-  }
+  // Broad professions and unambiguous role titles. Degree-only and ambiguous
+  // abbreviations are not offered as directory profession filters.
   function providerParams(state=S.provider, opts={}){
-    const params = new URLSearchParams({limit:String(PAGE_SIZE), providers_only:"true"});
-    Object.entries(state).forEach(([k,v]) => {
-      if (k === "zip" || k === "radius_mi") return;   // sent together below
-      if (v !== "" && v != null) params.set(k, v);
+    const params = new URLSearchParams({limit:String(PAGE_SIZE), count:"0"});
+    ["q","specialty","state_code","zip"].forEach(k => {
+      if (state[k] !== "" && state[k] != null) params.set(k, state[k]);
     });
-    // A radius search centres on a ZIP or a city (city is sent by the loop above).
-    if (state.radius_mi && (state.zip || state.city)){
-      if (state.zip) params.set("zip", state.zip);
-      params.set("radius_mi", state.radius_mi);
-    }
+    if (state.zip && state.radius_mi) params.set("radius_mi", state.radius_mi);
     params.set("offset", String(opts.offset || 0));
-    params.set("count", opts.count ? "1" : "0");
-    if (opts.estimate) params.set("estimate", "1");
     return params;
   }
   function hasNonCategoryFilters(){
     const s = S.provider;
-    return Object.entries(s).some(([key, value]) => {
-      if (key === "category" || key === "radius_mi") return false;
-      return value !== "" && value != null;
-    }) || !!(s.radius_mi && (s.zip || s.city));
-  }
-  function facetTotalFor(category){
-    const c = S.facetCategories;
-    if (!c || !Object.keys(c).length) return null;
-    return category ? (c[category] || 0) : Object.values(c).reduce((s,n)=>s+(Number(n)||0),0);
-  }
-  function renderProviderTabs(){
-    const tabs = $("#provider-tabs");
-    const categories = Object.keys(S.facetCategories || {});
-    tabs.innerHTML = `<button class="tab" data-category="">All</button>`
-      + categories.map(category => `<button class="tab" data-category="${esc(category)}">${esc(category)}</button>`).join("");
-    syncProviderControls();
+    return ["q","specialty","state_code","zip"].some(k => s[k]) || !!(s.radius_mi && s.zip);
   }
   function paintCounts(){
-    const c = S.facetCategories || {};
-    const total = Object.values(c).reduce((s,n)=>s+(Number(n)||0),0);
     $("#providers-count").textContent = providerCountLabel();
-    const filtered = hasNonCategoryFilters();
-    if (!S.facetsLoaded && !Object.keys(c).length) return;
-    $$("#provider-tabs .tab").forEach(t => {
-      if (t.dataset.base == null) t.dataset.base = t.textContent.replace(/\s+[\d,]+$/, "").trim();
-      const n = t.dataset.category ? (c[t.dataset.category] || 0) : total;
-      // Directory-wide counts would be misleading beside filtered results.
-      t.textContent = filtered ? t.dataset.base : `${t.dataset.base} ${Number(n).toLocaleString()}`;
-    });
   }
   async function fetchProviders(params){
     const key = params.toString();
     if (S.providerCache.has(key)) return S.providerCache.get(key);
     if (S.providerInflight.has(key)) return S.providerInflight.get(key);
-    // Let large filtered searches finish; a client deadline only turns a slow
-    // query into a failed search and encourages users to repeat the same work.
-    const req = get("/api/profiles?" + key)
-      .then(d => { S.providerCache.set(key,d); return d; })
-      .finally(() => { S.providerInflight.delete(key); });
+    const req = get("/api/provider-directory?" + key)
+      .then(d => { S.providerCache.set(key,d); S.providerInflight.delete(key); return d; })
+      .catch(e => { S.providerInflight.delete(key); throw e; });
     S.providerInflight.set(key, req);
     return req;
-  }
-  async function fetchProviderCount(pageParams){
-    const params = new URLSearchParams(pageParams);
-    params.set("limit", "1");
-    params.set("offset", "0");
-    params.set("count", "1");
-    params.delete("estimate");
-    const key = params.toString();
-    S.providerCountKey = key;
-    if (S.providerCountCache.has(key)) {
-      S.providerTotal = S.providerCountCache.get(key);
-      S.providerEstimate = null;
-      $("#providers-count").textContent = providerCountLabel();
-      if (S.providerCountKey === key) renderPager(S.providerLastData || {items:[]});
-      return;
-    }
-    let request = S.providerCountInflight.get(key);
-    if (!request) {
-      request = get("/api/profiles?" + key)
-        .then(data => {
-          if (data.total != null) {
-            S.providerCountCache.set(key, Number(data.total));
-            if (S.providerCountCache.size > 200) {
-              S.providerCountCache.delete(S.providerCountCache.keys().next().value);
-            }
-          }
-          return data.total == null ? null : Number(data.total);
-        })
-        .finally(() => S.providerCountInflight.delete(key));
-      S.providerCountInflight.set(key, request);
-    }
-    try {
-      const total = await request;
-      if (total != null && S.providerCountKey === key) {
-        S.providerTotal = total;
-        S.providerEstimate = null;
-        $("#providers-count").textContent = providerCountLabel();
-        renderPager(S.providerLastData || {items:[]});
-      }
-    } catch(e) {
-      // The page remains usable with its truthful lower-bound count. A count
-      // failure must never replace already rendered search results.
-    }
-  }
-  function coarseProviderCount(value){
-    const count = Math.max(0, Math.floor(Number(value) || 0));
-    const step = count < 100 ? 10 : count < 500 ? 100 : count < 5000 ? 500
-      : count < 50000 ? 1000 : count < 1000000 ? 10000 : 100000;
-    return `${(Math.floor(count / step) * step).toLocaleString()}+`;
   }
   // Keep the directory size visible and show the current filtered estimate or
   // exact match count beside it when a search is active.
   function providerCountLabel(){
-    const t = S.providerDirectoryTotal ?? facetTotalFor("");
-    const directory = t == null ? "Loading provider count…" : `${t.toLocaleString()} providers`;
-    if (!hasNonCategoryFilters()) return directory;
-    if (S.providerTotal != null) return `${directory} · ${S.providerTotal.toLocaleString()} match these filters`;
-    if (S.providerEstimate != null) return `${directory} · ${coarseProviderCount(S.providerEstimate)} match these filters (estimated)`;
-    if (S.providerLowerBound != null) return `${directory} · At least ${S.providerLowerBound.toLocaleString()} match these filters`;
-    return directory;
+    const estimate = hasNonCategoryFilters() ? S.providerEstimate : S.directoryEstimate;
+    if (estimate == null) return "NPI provider directory";
+    if (hasNonCategoryFilters() && S.providerEstimateIsLowerBound) return `${Number(estimate).toLocaleString()}+ matching providers`;
+    return `~${Number(estimate).toLocaleString()} ${hasNonCategoryFilters() ? "matching providers" : "NPI providers"}`;
   }
   function renderProviderPage(data){
     const items = data.items || [];
-    items.forEach(p => {
-      S.providerCards.set(p.profile_id, p);
-      // The server remembers releases, so one made in an earlier session comes
-      // back already unlocked — seed the session map from it.
-      if (p.is_released && !S.releasedContacts.has(p.profile_id)) {
-        S.releasedContacts.set(p.profile_id, p);
-      }
-    });
+    items.forEach(p => S.providerCards.set(p.npi, p));
+    S.providerEstimate = data.estimated_total;
+    S.providerEstimateIsLowerBound = !!data.estimate_is_lower_bound;
     $("#providers-count").textContent = providerCountLabel();
     $("#providers-grid").innerHTML = items.length ? items.map(providerRow).join("") : emptyRow(PROVIDER_COLS, "No providers match these filters",
-               "Widen the radius, or drop a credential filter.", "fa-user-doctor");
-    refreshPoolMembership(items.map(p => p.profile_id));
-    renderBulkBar();
+      "Try another specialty, state, ZIP code, or a wider radius.", "fa-user-doctor");
   }
   function renderPager(data){
     const pager = $("#providers-pager"); if (!pager) return;
@@ -1472,14 +1341,10 @@
     const start = shown ? S.providerOffset + 1 : 0;
     const end = S.providerOffset + shown;
     const total = S.providerTotal;
-    const estimate = S.providerEstimate;
+    const estimateText = S.providerEstimate == null ? "" : `${S.providerEstimateIsLowerBound ? "at least " : "about "}${Number(S.providerEstimate).toLocaleString()} matches`;
     const label = !shown ? ""
-      : total != null ? `${start.toLocaleString()}–${end.toLocaleString()} of ${total.toLocaleString()}`
-      : estimate != null
-        ? `${start.toLocaleString()}–${end.toLocaleString()} of ${coarseProviderCount(estimate)} (estimated; counting exact total…)`
-      : S.providerHasNext
-        ? `${start.toLocaleString()}–${end.toLocaleString()}+ matches · counting total…`
-        : `${start.toLocaleString()}–${end.toLocaleString()} matches`;
+      : total != null ? `${start.toLocaleString()}-${end.toLocaleString()} of ${total.toLocaleString()}`
+      : `Page ${Math.floor(S.providerOffset / PAGE_SIZE) + 1}${estimateText ? ` | ${estimateText}` : ""}`;
     pager.innerHTML = shown ? `
       <button class="btn small" id="prov-prev" ${S.providerOffset <= 0 ? "disabled" : ""}><i class="fas fa-chevron-left"></i> Prev</button>
       <span class="pager-label">${label}</span>
@@ -1492,36 +1357,9 @@
     S.providerOffset = 0;
     S.providerTotal = null;
     S.providerEstimate = null;
-    S.providerLowerBound = null;
-    syncProviderFilterToggle();
+    S.providerEstimateIsLowerBound = false;
+    paintCounts();
     loadProviders();
-  }
-  function syncProviderFilterToggle(){
-    const badge = $("#provider-filter-count");
-    const toggle = $("#provider-filter-toggle");
-    if (!badge || !toggle) return;
-    const s = S.provider;
-    const count = [s.license_title, s.state_code, s.min_experience || s.max_experience,
-      s.contact_available, s.resume_status, s.zip].filter(Boolean).length;
-    badge.hidden = !count;
-    badge.textContent = String(count);
-    toggle.setAttribute("aria-label", count ? `Filters, ${count} active` : "Filters");
-  }
-  function setExperienceFilter(value){
-    S.provider.min_experience = "";
-    S.provider.max_experience = "";
-    if (value === "0-2") {
-      S.provider.min_experience = "0";
-      S.provider.max_experience = "2";
-    } else if (value === "3-5") {
-      S.provider.min_experience = "3";
-      S.provider.max_experience = "5";
-    } else if (value === "6-10") {
-      S.provider.min_experience = "6";
-      S.provider.max_experience = "10";
-    } else if (value === "10+") {
-      S.provider.min_experience = "10";
-    }
   }
   // The external contact search (Quick Sourcer). Only offered where the server
   // says the integration is configured — on a deployment without a key the
@@ -1567,103 +1405,55 @@
     </div>`;
   }
   function providerRow(p,i){
-    S.providerCards.set(p.profile_id, p);
-    const loc = providerLocation(p);
-    const profession = short(p.profession_type || (noisyProfileText(p.specialty) ? "" : p.specialty) || "Provider", 28);
-    const specialty = providerSubtitle(p);
-    return `<tr data-row="${p.profile_id}"${S.selected.has(p.profile_id) ? ' class="is-selected"' : ""}>
-      <td class="td-check"><input type="checkbox" class="row-check" data-pick="${p.profile_id}"${S.selected.has(p.profile_id) ? " checked" : ""}></td>
-      <td class="td-provider-name">
-        <div class="cell-user">
-          <span class="avatar">${esc(p.initials || initials(p.first_name, p.last_name))}</span>
-          <div class="cell-id">
-            <div class="cell-name">${esc(displayName(p))}${p.npi_number ? `<span class="provider-npi">NPI ${esc(p.npi_number)}</span>` : ""}${isRevealed(p.profile_id) ? "" : `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>`}</div>
-            <div class="cell-sub">${esc(specialty)}</div>
-          </div>
-        </div>
-      </td>
-      <td class="td-provider-role"><span class="badge accent"><i class="fas fa-circle-check"></i>${esc(profession)}</span></td>
-      <td class="td-provider-category"><span class="badge">${esc(p.job_category || p.provider_category || "Others")}</span></td>
-      <td class="td-provider-experience">${p.years_experience ? `${esc(p.years_experience)} yrs` : `<span class="cell-none">—</span>`}</td>
-      <td class="td-provider-location">${loc ? esc(loc) : `<span class="cell-none">—</span>`}</td>
-      <td class="td-contact">${providerContactCell(p)}</td>
-      <td class="td-actions">
-        ${p.has_resume_file
-          ? `<button class="btn small" data-resume="${p.profile_id}" title="View resume"><i class="fas fa-file-lines"></i>Resume</button>`
-          : `<button class="btn small" disabled title="No resume on file"><i class="fas fa-file-lines"></i>No resume</button>`}
-        <button class="btn small" data-message="${p.profile_id}" title="Message this candidate" aria-label="Message ${esc(displayName(p))}"><i class="fas fa-comment-dots"></i></button>
-        <button class="btn small${S.poolMembership.get(p.profile_id) ? " saved" : ""}" data-pool-save="${p.profile_id}" title="Save to a talent pool"><i class="fas fa-layer-group"></i>${S.poolMembership.get(p.profile_id) ? "Saved" : "Save"}</button>
-      </td>
-    </tr>`;
-  }
-  function showProviderUpdateStatus(state, hasPrevious=false){
-    const status = $("#providers-update-status");
-    const table = $("#providers-table-wrap");
-    clearTimeout(S.providerStatusTimer);
-    if (!status || !table) return;
-    table.classList.toggle("is-updating", state === "loading" && hasPrevious);
-    table.setAttribute("aria-busy", state === "loading" ? "true" : "false");
-    status.hidden = false;
-    status.className = `provider-update-status is-${state}`;
-    if (state === "loading") {
-      status.innerHTML = `<span class="spinner sm dark" aria-hidden="true"></span>${hasPrevious
-        ? "Updating providers… Previous results shown." : "Loading providers…"}`;
-    } else if (state === "done") {
-      status.innerHTML = '<i class="fas fa-circle-check" aria-hidden="true"></i>Results updated';
-      S.providerStatusTimer = setTimeout(() => { status.hidden = true; }, 3000);
-    } else {
-      status.innerHTML = `<i class="fas fa-triangle-exclamation" aria-hidden="true"></i>${hasPrevious
-        ? "Could not update providers. Previous results shown." : "Could not load providers."}`;
-    }
+    S.providerCards.set(p.npi, p);
+    const loc = [p.city, p.state_code, p.zip_code].filter(Boolean).join(", ");
+    const name = [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ");
+    return '<tr data-row="' + esc(p.npi) + '">' +
+      '<td><div class="cell-user"><span class="avatar">' +
+      esc(p.initials || initials(p.first_name, p.last_name)) +
+      '</span><div class="cell-id"><div class="cell-name">' + esc(name) +
+      '</div><div class="cell-sub">NPI ' + esc(p.npi) +
+      '</div></div></div></td>' +
+      '<td>' + (p.credential ? esc(p.credential) : '<span class="cell-none">—</span>') + '</td>' +
+      '<td>' + esc(p.specialty) + '</td>' +
+      '<td><span class="badge">' + esc(p.taxonomy_code) + '</span></td>' +
+      '<td>' + (loc ? esc(loc) : '<span class="cell-none">—</span>') + '</td>' +
+      '<td><span class="badge">' + esc(p.status) + '</span></td></tr>';
   }
   async function loadProviders(){
     if (!isRecruiter()) return;
-    clearTimeout(S.providerCountTimer);
-    S.providerCountKey = null;
     const filtered = hasNonCategoryFilters();
-    // Read only this page plus one row for Next; filtered totals require a full scan.
-    if (filtered && S.providerOffset === 0) S.providerTotal = null;
-    if (filtered) S.providerEstimate = null;
-    S.providerLowerBound = null;
-    paintCounts();
-    const params = providerParams(S.provider, {offset:S.providerOffset, count:false, estimate:filtered});
+    // Return the visible page without waiting for a count across the full
+    // matching set. Pagination uses has_next until an exact count is needed.
+    const wantCount = false;
+    const params = providerParams(S.provider, {offset:S.providerOffset, count:wantCount});
     const seq = ++S.providerReq;
     if (!S.providerCache.has(params.toString())) {
-      showProviderUpdateStatus("loading", !!S.providerLastData);
-      // Keep previous rows visible and dimmed until this request finishes.
-      if (!S.providerLastData) {
+      if (S.providerLastData) {
+        $("#providers-grid").setAttribute("aria-busy", "true");
+        $("#providers-count").textContent = "Updating results…";
+      } else {
         $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, "Loading providers...");
+        $("#providers-count").textContent = providerCountLabel();
       }
-      $("#providers-count").textContent = providerCountLabel();
     }
     try {
       const data = await fetchProviders(params);
       if (seq !== S.providerReq) return;   // a newer request superseded this one
       if (data.total != null) S.providerTotal = data.total;
-      else if (!filtered) S.providerTotal = facetTotalFor(S.provider.category);
-      else if (!data.has_next) S.providerTotal = S.providerOffset + (data.items || []).length;
-      if (filtered) S.providerLowerBound = S.providerOffset + (data.items || []).length + Number(!!data.has_next);
-      if (filtered && S.providerTotal == null && data.estimated_total != null
-          && Number.isFinite(Number(data.estimated_total))) {
-        const lowerBound = S.providerOffset + (data.items || []).length + Number(!!data.has_next);
-        const directoryTotal = facetTotalFor(S.provider.category);
-        const estimate = Math.max(lowerBound, Number(data.estimated_total));
-        S.providerEstimate = directoryTotal != null && directoryTotal >= lowerBound
-          ? Math.min(estimate, directoryTotal) : estimate;
-      }
+      else S.providerTotal = null;
+      // (filtered offset>0 keeps the total captured on page 1)
       S.providerHasNext = !!data.has_next;
       S.providerLastData = data;
+      $("#providers-grid").removeAttribute("aria-busy");
       renderProviderPage(data);
       renderPager(data);
-      showProviderUpdateStatus("done");
-      if (filtered && data.total == null && data.has_next) {
-        S.providerCountTimer = setTimeout(() => {
-          if (seq === S.providerReq) fetchProviderCount(params);
-        }, 250);
-      }
+      // Load dropdown choices after the visible page so facet queries do not
+      // compete with the first provider result request.
+      if (!S.facetsLoaded) loadProviderFacets();
     } catch(e) {
-      if (seq !== S.providerReq) return;
-      showProviderUpdateStatus("error", !!S.providerLastData);
+      $("#providers-grid").removeAttribute("aria-busy");
+      $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, e.status === 403 ? "Recruiter access required." : "Could not load providers.");
       $("#providers-pager").innerHTML = "";
       if (!S.providerLastData) {
         const message = e.status === 403 ? "Recruiter access required." : "Could not load providers.";
@@ -1675,20 +1465,17 @@
   async function loadProviderFacets(){
     if (!isRecruiter() || S.facetsLoaded) return;
     try {
-      const f = await get("/api/profiles/facets?counts_only=true");
+      const f = await get("/api/provider-directory/facets");
       S.facetsLoaded = true;
-      S.facetCategories = f.categories || {};
-      S.providerDirectoryTotal = Object.values(S.facetCategories)
-        .reduce((sum, count) => sum + (Number(count) || 0), 0);
-      try { localStorage.setItem("hb_provider_directory_total", String(S.providerDirectoryTotal)); } catch(e) {}
-      renderProviderTabs();
-      // Show directory-wide tab counts only when no search filter is active.
+      S.directoryEstimate = f.estimated_total || 0;
+      const specialtySelect = $("#provider-specialty");
+      if (specialtySelect) specialtySelect.innerHTML = `<option value="">Any specialty</option>` + (f.specialties || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+      $("#provider-state").innerHTML = `<option value="">Any state</option>` + (f.states || []).map(v => `<option>${esc(v)}</option>`).join("");
+      // The selects only just gained their options — re-apply any active filter
+      // (e.g. one the copilot set) so the dropdowns reflect it.
+      syncProviderControls();
+      // Show the table-size estimate without delaying the first result page.
       paintCounts();
-      // Facets arrived after the first paint: refresh the current view's pager.
-      if (!hasNonCategoryFilters() && S.providerLastData){
-        S.providerTotal = facetTotalFor(S.provider.category);
-        renderPager(S.providerLastData);
-      }
     } catch(e) {}
   }
 
@@ -3715,39 +3502,26 @@
   function applyCopilotFilters(f){
     f = f || {};
     S.provider = {
-      q: f.q || "", category: f.category || "", license_title: f.license_title || "",
-      zip: "", radius_mi: f.radius_mi != null ? String(f.radius_mi) : "25",
-      state_code: f.state_code || "", city: f.city || "",
-      min_experience: f.min_experience != null ? String(f.min_experience) : "",
-      max_experience: f.max_experience != null ? String(f.max_experience) : "",
-      contact_available: f.contact_available || "", resume_status: f.resume_status || "",
-      licensed_state: f.licensed_state || "", worked_at: f.worked_at || "",
+      q: f.q || "", specialty: f.specialty || "", zip: "", radius_mi: f.radius_mi != null ? String(f.radius_mi) : "25",
+      state_code: f.state_code || ""
     };
   }
-  // Mirror S.provider into the visible filter controls (called again once the
-  // facet-populated <select>s exist, so their values actually stick).
   function syncProviderControls(){
     const s = S.provider, set = (sel, v) => { const el = $(sel); if (el) el.value = v || ""; };
     set("#provider-q", s.q);
     set("#provider-state", s.state_code);
-    set("#provider-license-title", s.license_title);
-    set("#provider-contact", s.contact_available);
-    set("#provider-resume", s.resume_status);
+    set("#provider-specialty", s.specialty);
     set("#provider-zip", s.zip);
-    const exp = $("#provider-experience");
-    if (exp){
-      const mn = s.min_experience, mx = s.max_experience;
-      exp.value = (mn === "0" && mx === "2") ? "0-2" : (mn === "3" && mx === "5") ? "3-5"
-        : (mn === "6" && mx === "10") ? "6-10" : (mn === "10" && !mx) ? "10+" : "";
-    }
-    $$("#provider-tabs .tab").forEach(t =>
-      t.classList.toggle("active", (t.dataset.category || "") === (s.category || "")));
+    const radius = $("#provider-radius");
+    if (radius) radius.disabled = !/^\\d{5}$/.test(s.zip || "");
   }
   function copilotApplyToDirectory(filters){
     applyCopilotFilters(filters);
     S.providerOffset = 0;
     syncProviderControls();
     showPage("providers");   // makes the page active + loads facets + loadProviders
+    S.activeCounts = S.facetCategories;
+    paintCounts();
   }
 
   // --- Get Extension page -------------------------------------------------
@@ -4205,71 +3979,53 @@
     const vSignout = $("#verify-signout");
     if (vSignout) vSignout.onclick = () => { setToken(""); setRefresh(""); location.reload(); };
     ["job-q","job-type","job-state"].forEach(id => { const el = $("#" + id); el.addEventListener(id === "job-q" ? "input" : "change", debounce(loadJobs, 250)); });
-    $("#provider-filter-toggle").onclick = () => {
-      const filters = $("#provider-filters");
-      const expanded = filters.classList.toggle("is-collapsed") === false;
-      $("#provider-filter-toggle").setAttribute("aria-expanded", String(expanded));
-    };
-    const applyProviderQuery = debounce(providerFilterChanged, 300);
-    $("#provider-q").addEventListener("input", () => {
-      // Keep the typed value in state immediately. Facets can finish loading
-      // during the debounce window and syncProviderControls() reads this state.
+    $("#provider-q").addEventListener("input", debounce(() => {
       S.provider.q = $("#provider-q").value.trim();
-      applyProviderQuery();
-    });
-    $("#provider-license-title").onchange = () => { S.provider.license_title = $("#provider-license-title").value; providerFilterChanged(); };
+      providerFilterChanged();
+    }, 300));
+    $("#provider-specialty").onchange = () => {
+      S.provider.specialty = $("#provider-specialty").value;
+      providerFilterChanged();
+    };
     const radiusEl = $("#provider-radius");
     const radiusControl = radiusEl.closest(".radius-control");
     const paintRadius = () => {
       const pct = ((radiusEl.value - radiusEl.min) / (radiusEl.max - radiusEl.min)) * 100;
-      radiusEl.style.background = `linear-gradient(90deg, var(--accent) ${pct}%, var(--line) ${pct}%)`;
+      radiusEl.style.background = "linear-gradient(90deg, var(--accent) " + pct + "%, var(--line) " + (100-pct) + "%)";
       const rv = $("#radius-value"); if (rv) rv.textContent = radiusEl.value;
       if (radiusControl) radiusControl.classList.toggle("is-disabled", radiusEl.disabled);
     };
     paintRadius();
-    radiusEl.addEventListener("input", paintRadius);   // live label + fill while dragging
-    radiusEl.addEventListener("change", () => {        // query only when the drag ends
+    radiusEl.addEventListener("input", paintRadius);
+    radiusEl.addEventListener("change", () => {
       S.provider.radius_mi = radiusEl.value;
       if (S.provider.zip) providerFilterChanged();
     });
     $("#provider-zip").addEventListener("input", debounce(() => {
       const z = $("#provider-zip").value.replace(/\D/g, "").slice(0, 5);
       $("#provider-zip").value = z;
-      const valid = z.length === 5;
-      S.provider.zip = valid ? z : "";
-      radiusEl.disabled = !valid;                      // radius only applies with a ZIP
+      S.provider.zip = /^\d{5}$/.test(z) ? z : "";
+      radiusEl.disabled = !S.provider.zip;
       paintRadius();
-      providerFilterChanged();
+      if (!z || z.length === 5) providerFilterChanged();
     }, 350));
-    $("#provider-experience").onchange = () => { setExperienceFilter($("#provider-experience").value); providerFilterChanged(); };
-    $("#provider-contact").onchange = () => { S.provider.contact_available = $("#provider-contact").value; providerFilterChanged(); };
-    $("#provider-resume").onchange = () => { S.provider.resume_status = $("#provider-resume").value; providerFilterChanged(); };
-    $("#provider-state").onchange = () => { S.provider.state_code = $("#provider-state").value; providerFilterChanged(); };
-    $("#provider-tabs").onclick = event => {
-      const t = event.target.closest("button[data-category]");
-      if (!t) return;
-      $$("#provider-tabs .tab").forEach(x => x.classList.remove("active"));
-      t.classList.add("active");
-      S.provider.category = t.dataset.category;
-      S.providerOffset = 0;
-      S.providerTotal = hasNonCategoryFilters() ? null : facetTotalFor(S.provider.category);
-      loadProviders();
+    $("#provider-state").onchange = () => {
+      S.provider.state_code = $("#provider-state").value;
+      providerFilterChanged();
     };
     const resetBtn = $("#search-reset");
     if (resetBtn) resetBtn.onclick = () => {
-      const p = S.provider;
-      ["q", "license_title", "state_code", "licensed_state", "worked_at",
-       "city", "zip", "radius_mi", "contact_available", "resume_status",
-       "min_experience", "max_experience", "category"]
-        .forEach(k => { p[k] = ""; });
+      S.provider = {q:"", specialty:"", zip:"", radius_mi:"25", state_code:""};
       S.providerOffset = 0;
+      S.providerTotal = null;
+      S.providerEstimate = null;
+      S.providerEstimateIsLowerBound = false;
       $("#provider-q").value = "";
+      $("#provider-specialty").value = "";
+      $("#provider-state").value = "";
       $("#provider-zip").value = "";
-      ["#provider-license-title", "#provider-state", "#provider-experience", "#provider-contact", "#provider-resume"]
-        .forEach(s => { const el = $(s); if (el) el.value = ""; });
       radiusEl.value = 25; radiusEl.disabled = true; paintRadius();
-      $$("#provider-tabs .tab").forEach(t => t.classList.toggle("active", t.dataset.category === ""));
-      providerFilterChanged();
+      loadProviders();
       toast("Filters cleared.", {title: "Reset"});
     };
     document.body.addEventListener("click", e => {
@@ -6123,6 +5879,8 @@
     S.providerOffset = 0;
     syncProviderControls();
     loadProviders();
+    S.activeCounts = S.facetCategories;
+    paintCounts();
     s.new_matches = 0;              // acknowledged by opening it
     renderSavedChips();
   }

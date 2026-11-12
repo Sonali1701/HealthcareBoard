@@ -384,17 +384,11 @@
     </section>
 
     <section id="page-providers" class="page">
-      <div class="section-head"><div><h1>Providers</h1><p id="providers-count">Loading providers...</p></div>
-        <button type="button" class="provider-filter-toggle" id="provider-filter-toggle" aria-controls="provider-filters" aria-expanded="false"><i class="fas fa-sliders" aria-hidden="true"></i>Filters<span class="provider-filter-count" id="provider-filter-count" hidden></span><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
-        <div id="providers-update-status" class="provider-update-status" role="status" aria-live="polite" hidden></div>
-      </div>
-      <div class="filter-row provider-filters is-collapsed" id="provider-filters">
-        <input id="provider-q" class="input" aria-label="Search providers by name, specialty, or category" placeholder="Search name, specialty, category (3+ letters)">
-        <select id="provider-license-title" class="input"><option value="">Any license/title</option></select>
+      <div class="section-head"><div><h1>Providers</h1><p id="providers-count">Loading providers...</p></div></div>
+      <div class="filter-row provider-filters">
+        <input id="provider-q" class="input" placeholder="Search name, NPI, specialty, city">
+        <select id="provider-specialty" class="input"><option value="">Any specialty</option></select>
         <select id="provider-state" class="input"><option value="">Any state</option></select>
-        <select id="provider-experience" class="input"><option value="">Years experience</option><option value="0-2">0-2 years</option><option value="3-5">3-5 years</option><option value="6-10">6-10 years</option><option value="10+">10+ years</option></select>
-        <select id="provider-contact" class="input"><option value="">Contact status</option><option value="any">Any contact</option><option value="both">Email + phone</option><option value="email">Email only</option><option value="phone">Phone only</option><option value="missing">Missing contact</option></select>
-        <select id="provider-resume" class="input" aria-label="Résumé availability"><option value="">Any résumé status</option><option value="with_resume">With résumé</option><option value="without_resume">Without résumé</option></select>
         <input id="provider-zip" class="input" maxlength="5" inputmode="numeric" placeholder="ZIP code">
         <div class="radius-control is-disabled" title="Distance from the ZIP code">
           <div class="radius-label">
@@ -409,25 +403,14 @@
         </div>
       </div>
       <div class="saved-row">
-        <button class="btn ghost small" id="search-save"><i class="fas fa-bookmark"></i>Save this search</button>
         <button class="btn ghost small" id="search-reset"><i class="fas fa-rotate-left"></i>Reset filters</button>
-        <div class="saved-chips" id="saved-chips"></div>
-      </div>
-      <div class="tabs" id="provider-tabs">
-        <button class="tab active" data-category="">All</button>
-      </div>
-      <div class="bulk-bar hidden" id="bulk-bar">
-        <strong id="bulk-count">0 selected</strong>
-        <button class="btn primary small" id="bulk-reveal"><i class="fas fa-unlock-keyhole"></i>Reveal contacts</button>
-        <button class="btn primary small" id="bulk-to-pool"><i class="fas fa-layer-group"></i>Add to pool</button>
-        <button class="btn small hidden" id="bulk-find-contact"><i class="fas fa-magnifying-glass"></i>Find contacts</button>
-        <button class="btn ghost small" id="bulk-clear">Clear</button>
+        <span class="muted">NPI Registry data · specialty and taxonomy shown as supplied by source</span>
       </div>
       <div class="table-wrap" id="providers-table-wrap">
         <table class="table">
           <thead><tr>
-            <th class="th-check"><input type="checkbox" id="bulk-all" title="Select all on this page"><label class="bulk-all-label" for="bulk-all">Select all on this page</label></th>
-            <th>Provider / organization</th><th>Role / type</th><th>Category</th><th>Experience</th><th>Location</th><th>Contact</th><th class="th-actions"></th>
+            <th>Provider / organization</th><th>Credential</th><th>Specialty</th>
+            <th>Taxonomy code</th><th>Location</th><th>NPI status</th>
           </tr></thead>
           <tbody id="providers-grid"></tbody>
         </table>

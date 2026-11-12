@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # --- Database ---
     # SQLite for local dev; swap for a postgres URL in production (code is portable).
     database_url: str = "sqlite:///./healthboard.db"
+    # The large NPI source directory lives in its own Neon database so its
+    # indexes and scans do not compete with recruiter accounts and ATS data.
+    provider_directory_database_name: str = "healthcare_provider_directory"
+    provider_directory_database_url: str = ""
 
     # --- Auth / JWT ---
     # CHANGE THIS in production (set JWT_SECRET env var).
