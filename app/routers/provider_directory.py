@@ -24,7 +24,11 @@ _STATE = re.compile(r"^[A-Z]{2}$")
 _CREDENTIAL_SEARCHES = frozenset({
     "MD", "DO", "RN", "NP", "FNP", "LPN", "LVN", "CNA", "PA", "CRNA",
     "CNM", "DNP", "DPT", "PT", "OT", "DDS", "DMD", "DPM", "PHARMD",
-    "RPH", "PHD",
+    "RPH", "PHD", "PA-C", "APRN", "APN", "ARNP", "CRNP", "FNP-C",
+    "CPNP", "PMHNP-BC", "LCSW", "LCSW-C", "LMSW", "LLMSW", "LICSW",
+    "LISW", "MSW", "LPC", "LPCC", "LCPC", "LMHC", "LMFT", "MFT",
+    "LAC", "BCBA", "RBT", "COTA", "OTR/L", "RDH", "ATC", "AUD",
+    "OD", "DC", "PSYD", "LMT", "MBBS", "RDN", "RPT", "APNP",
 })
 # These aliases describe professions in the NPI taxonomy. A credential alone
 # is not enough to identify a profession: RN appears on some NP and CRNA rows.
@@ -51,17 +55,49 @@ _ROLE_SEARCHES = {
     "occupational therapy assistant": ("prefix", "224Z"),
     "slp": ("prefix", "235Z"),
     "speech language pathologist": ("prefix", "235Z"),
+    "slpa": ("code", "2355S0801X"),
+    "speech language assistant": ("code", "2355S0801X"),
+    "rrt": ("prefix", "2279"),
+    "registered respiratory therapist": ("prefix", "2279"),
+    "crt": ("prefix", "2278"),
+    "certified respiratory therapist": ("prefix", "2278"),
+    "rd": ("prefix", "133V"),
+    "registered dietitian": ("prefix", "133V"),
+    "nnp": ("code", "363LN0000X"),
+    "neonatal nurse practitioner": ("code", "363LN0000X"),
+    "pnp": ("code", "363LP0200X"),
+    "pediatric nurse practitioner": ("code", "363LP0200X"),
+    "pmhnp": ("code", "363LP0808X"),
+    "psychiatric mental health nurse practitioner": ("code", "363LP0808X"),
+    "psychiatric nurse practitioner": ("code", "363LP0808X"),
+    "pharm tech": ("code", "183700000X"),
+    "pharmacy technician": ("code", "183700000X"),
+    "cns": ("prefix", "364S"),
+    "clinical nurse specialist": ("prefix", "364S"),
+    # EMT has two taxonomy codes. The nearby 146L/146E/146D codes are
+    # paramedics and emergency attendants, not emergency medical technicians.
+    "emt": ("codes", ("146N00000X", "146M00000X")),
+    "emergency medical technician": ("codes", ("146N00000X", "146M00000X")),
+    "emt b": ("code", "146N00000X"),
+    "basic emergency medical technician": ("code", "146N00000X"),
+    "emt i": ("code", "146M00000X"),
+    "intermediate emergency medical technician": ("code", "146M00000X"),
 }
 _CREDENTIAL_PHRASES = {
     "certified nursing assistant": "CNA",
     "certified nurse midwife": "CNM",
+    "licensed clinical social worker": "LCSW",
+    "licensed professional counselor": "LPC",
+    "board certified behavior analyst": "BCBA",
+    "registered behavior technician": "RBT",
+    "registered dental hygienist": "RDH",
 }
 
 
-def _search_role(q: str | None) -> tuple[str, str] | None:
+def _search_role(q: str | None) -> tuple[str, str | tuple[str, ...]] | None:
     if not q:
         return None
-    phrase = re.sub(r"[\s-]+", " ", q.casefold()).strip()
+    phrase = re.sub(r"[\s/-]+", " ", q.casefold()).strip()
     return _ROLE_SEARCHES.get(phrase) or _ROLE_SEARCHES.get(
         re.sub(r"[^a-z0-9]", "", phrase)
     )
@@ -142,6 +178,9 @@ def _conditions(*, q: str | None, specialty: str | None,
         if kind == "prefix":
             clauses.append("left(p.taxonomy_code, 4) = :role_prefix")
             params["role_prefix"] = value
+        elif kind == "codes":
+            clauses.append("p.taxonomy_code IN (:role_code_0, :role_code_1)")
+            params["role_code_0"], params["role_code_1"] = value
         else:
             clauses.append("p.taxonomy_code = :role_code")
             params["role_code"] = value
@@ -277,21 +316,37 @@ def search_provider_directory(
                 # The last page already tells us the exact number of matches.
                 total = offset + len(items)
                 estimated_total = total
-            elif "credential" in params or "role_prefix" in params:
-                # EXPLAIN estimates every value of these expressions as the
-                # same 0.5% of the table. Use sampled frequencies for an
-                # unfiltered search; otherwise show a truthful lower bound.
+            elif any(key in params for key in (
+                "credential", "role_prefix", "role_code", "role_code_0"
+            )):
+                # EXPLAIN can give the same fallback estimate for distinct
+                # credentials and rare taxonomy codes. Use sampled frequencies
+                # where available; otherwise show a truthful lower bound.
                 if not (specialty or state_code or zip):
                     if "credential" in params:
                         estimated_total = _indexed_expression_estimate(
                             conn, "provider_directory_active_credential_name_idx",
                             "upper", params["credential"],
                         )
-                    else:
+                    elif "role_prefix" in params:
                         estimated_total = _indexed_expression_estimate(
                             conn, "provider_directory_active_role_name_idx",
                             "left", params["role_prefix"],
                         )
+                    elif "role_code" in params:
+                        estimated_total = _indexed_expression_estimate(
+                            conn, "provider_directory", "taxonomy_code",
+                            params["role_code"],
+                        )
+                    else:
+                        estimates = [
+                            _indexed_expression_estimate(
+                                conn, "provider_directory", "taxonomy_code",
+                                params[key],
+                            ) for key in ("role_code_0", "role_code_1")
+                        ]
+                        if all(value is not None for value in estimates):
+                            estimated_total = sum(estimates)
                 if estimated_total is None:
                     estimated_total = minimum_total
                     estimate_is_lower_bound = has_next

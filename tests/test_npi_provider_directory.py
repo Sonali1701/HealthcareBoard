@@ -70,8 +70,7 @@ def test_directory_filters_combine_specialty_state_and_radius():
     assert params["specialty"] == "Family Nurse Practitioner"
     assert params["state_code"] == "NY"
     assert params["radius_mi"] == 25
-    assert params["q0_text"] == "%nurse%"
-    assert params["q1_text"] == "%practitioner%"
+    assert params["role_prefix"] == "363L"
 
 
 def test_short_credentials_search_the_credential_field_only():
@@ -94,6 +93,10 @@ def test_profession_abbreviation_and_full_name_use_same_taxonomy():
         ("PT", "physical therapist", "2251"),
         ("OT", "occupational therapist", "225X"),
         ("SLP", "speech-language pathologist", "235Z"),
+        ("RRT", "registered respiratory therapist", "2279"),
+        ("CRT", "certified respiratory therapist", "2278"),
+        ("RD", "registered dietitian", "133V"),
+        ("CNS", "clinical nurse specialist", "364S"),
     )
     for abbreviation, title, prefix in pairs:
         for term in (abbreviation, title):
@@ -108,7 +111,12 @@ def test_profession_abbreviation_and_full_name_use_same_taxonomy():
 
 def test_nurse_specialties_keep_distinct_taxonomies():
     for term, code in (("FNP", "363LF0000X"),
-                       ("CRNA", "367500000X")):
+                       ("CRNA", "367500000X"),
+                       ("NNP", "363LN0000X"),
+                       ("PNP", "363LP0200X"),
+                       ("PMHNP", "363LP0808X"),
+                       ("SLPA", "2355S0801X"),
+                       ("pharm tech", "183700000X")):
         where, params = _conditions(
             q=term, specialty=None, state_code=None,
             zip_code=None, radius_mi=None, center=None,
@@ -117,15 +125,63 @@ def test_nurse_specialties_keep_distinct_taxonomies():
         assert params == {"role_code": code}
 
 
+def test_new_role_aliases_match_full_taxonomy_titles():
+    for abbreviation, title in (
+        ("NNP", "neonatal nurse practitioner"),
+        ("PNP", "pediatric nurse practitioner"),
+        ("PMHNP", "psychiatric/mental health nurse practitioner"),
+        ("SLPA", "speech-language assistant"),
+        ("pharm tech", "pharmacy technician"),
+    ):
+        short = _conditions(q=abbreviation, specialty=None, state_code=None,
+                            zip_code=None, radius_mi=None, center=None)
+        full = _conditions(q=title, specialty=None, state_code=None,
+                           zip_code=None, radius_mi=None, center=None)
+        assert short == full
+
+
+def test_emt_search_excludes_paramedics_and_emergency_attendants():
+    abbreviation = _conditions(q="EMT", specialty=None, state_code=None,
+                               zip_code=None, radius_mi=None, center=None)
+    full = _conditions(q="emergency medical technician", specialty=None,
+                       state_code=None, zip_code=None, radius_mi=None,
+                       center=None)
+    assert abbreviation == full
+    assert "p.taxonomy_code IN (:role_code_0, :role_code_1)" in abbreviation[0]
+    assert set(abbreviation[1].values()) == {"146N00000X", "146M00000X"}
+    for term, code in (("EMT-B", "146N00000X"), ("EMT-I", "146M00000X")):
+        where, params = _conditions(q=term, specialty=None, state_code=None,
+                                    zip_code=None, radius_mi=None, center=None)
+        assert "p.taxonomy_code = :role_code" in where
+        assert params == {"role_code": code}
+
+
 def test_certification_searches_keep_their_credential_meaning():
     for abbreviation, title in (("CNA", "certified nursing assistant"),
-                                ("CNM", "certified nurse midwife")):
+                                ("CNM", "certified nurse midwife"),
+                                ("LCSW", "licensed clinical social worker"),
+                                ("LPC", "licensed professional counselor"),
+                                ("BCBA", "board certified behavior analyst"),
+                                ("RBT", "registered behavior technician"),
+                                ("RDH", "registered dental hygienist")):
         short = _conditions(q=abbreviation, specialty=None, state_code=None,
                             zip_code=None, radius_mi=None, center=None)
         full = _conditions(q=title, specialty=None, state_code=None,
                            zip_code=None, radius_mi=None, center=None)
         assert short == full
         assert short[1] == {"credential": abbreviation}
+
+
+def test_common_license_abbreviations_match_recorded_credentials_only():
+    for abbreviation in ("PA-C", "APRN", "LMSW", "LMFT", "COTA", "OTR/L",
+                         "ATC", "RDN", "PMHNP-BC"):
+        where, params = _conditions(
+            q=abbreviation.lower(), specialty=None, state_code=None,
+            zip_code=None, radius_mi=None, center=None,
+        )
+        assert "upper(btrim(p.credential)) = :credential" in where
+        assert "lower(p.specialty) LIKE" not in where
+        assert params == {"credential": abbreviation}
 
 
 def test_unknown_two_letter_search_does_not_match_inside_specialty():
