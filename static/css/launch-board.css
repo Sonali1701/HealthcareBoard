@@ -235,39 +235,10 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 #providers-table-wrap.is-updating .table{opacity:.55;pointer-events:none}
 #providers-table-wrap .table{transition:opacity .18s var(--ease)}
 #providers-table-wrap.is-updating + #providers-pager{opacity:.55;pointer-events:none}
-/* The provider directory keeps every action in view at normal browser zoom. */
-@media(max-width:1700px){
-  #providers-table-wrap{overflow-x:hidden}
-  #providers-table-wrap .table,#providers-table-wrap thead,#providers-table-wrap tbody{display:block;width:100%;min-width:0}
-  #providers-table-wrap thead tr{display:block}
-  #providers-table-wrap thead th:not(.th-check){display:none}
-  #providers-table-wrap thead .th-check{display:flex;align-items:center;gap:9px;width:100%;padding:10px 16px;text-transform:none;letter-spacing:0}
-  #providers-table-wrap .bulk-all-label{display:inline;color:var(--muted);font-size:12px;cursor:pointer}
-  #providers-grid tr[data-row]{display:grid;grid-template-columns:28px minmax(0,1.4fr) minmax(0,1fr) minmax(0,.65fr) minmax(0,1fr) minmax(245px,1.45fr);grid-template-areas:"check name name contact contact actions" "check role category experience location actions";gap:7px 14px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
-  #providers-grid tr[data-row]:last-child{border-bottom:0}
-  #providers-grid tr[data-row]>td{display:block;min-width:0;width:auto;padding:0;border:0}
-  #providers-grid .td-check{grid-area:check;align-self:start;padding-top:8px!important}
-  #providers-grid .td-provider-name{grid-area:name}
-  #providers-grid .td-provider-role{grid-area:role}
-  #providers-grid .td-provider-category{grid-area:category}
-  #providers-grid .td-provider-experience{grid-area:experience}
-  #providers-grid .td-provider-location{grid-area:location;overflow-wrap:anywhere}
-  #providers-grid .td-contact{grid-area:contact;min-width:0}
-  #providers-grid .td-actions{grid-area:actions;display:flex!important;justify-content:flex-end;gap:6px;flex-wrap:wrap;white-space:normal}
-  #providers-grid .td-actions .btn+.btn{margin-left:0}
-  #providers-grid .td-provider-role:before,#providers-grid .td-provider-category:before,#providers-grid .td-provider-experience:before,#providers-grid .td-provider-location:before{display:block;color:var(--faint);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:3px}
-  #providers-grid .td-provider-role:before{content:"Role"}
-  #providers-grid .td-provider-category:before{content:"Category"}
-  #providers-grid .td-provider-experience:before{content:"Experience"}
-  #providers-grid .td-provider-location:before{content:"Location"}
-  #providers-grid .badge{max-width:100%;white-space:normal;overflow-wrap:anywhere}
-  #providers-grid .contact-cell{flex-wrap:wrap}
-  #providers-grid .contact-lines a{overflow-wrap:anywhere}
-}
-@media(max-width:1250px){
-  #providers-grid tr[data-row]{grid-template-columns:28px minmax(0,1fr) minmax(0,1fr);grid-template-areas:"check name name" ". role category" ". experience location" ". contact contact" ". actions actions";gap:10px 14px}
-  #providers-grid .td-actions{justify-content:flex-start}
-}
+/* The NPI directory has eight actual table columns. Keep their headings and
+   cells aligned, and scroll horizontally when the viewport is too narrow. */
+#providers-table-wrap{overflow-x:auto}
+#providers-table-wrap .table{min-width:1120px}
 .tabs{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:18px}
 .tabs .tab{flex:0 0 auto;white-space:nowrap}
 .tab{border:0;background:transparent;padding:10px 14px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;font-size:14px;cursor:pointer;transition:color .15s var(--ease),border-color .15s var(--ease)}
