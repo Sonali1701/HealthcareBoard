@@ -149,6 +149,27 @@ def _engine_or_503():
     return _engine
 
 
+def _credential_estimate(conn, credential: str) -> int | None:
+    """Use the active credential index's sampled frequency for a fast estimate.
+
+    PostgreSQL's EXPLAIN gives the same default row estimate for every value
+    of this expression, even after ANALYZE. The index statistics preserve the
+    distinct frequencies of common credentials without counting millions of
+    matching rows on every page request.
+    """
+    return conn.execute(text("""
+        SELECT round((s.most_common_freqs[
+            array_position(s.most_common_vals::text::text[], :credential)
+        ] * c.reltuples)::numeric)::bigint
+        FROM pg_stats s
+        JOIN pg_class c
+          ON c.oid = to_regclass('provider_directory_active_credential_name_idx')
+        WHERE s.schemaname = current_schema()
+          AND s.tablename = 'provider_directory_active_credential_name_idx'
+          AND s.attname = 'upper'
+    """), {"credential": credential}).scalar_one_or_none()
+
+
 @router.get("")
 def search_provider_directory(
     user: CurrentUser,
@@ -201,6 +222,22 @@ def search_provider_directory(
                 total = conn.execute(text(
                     f"SELECT count(*) FROM provider_directory p WHERE {where}"
                 ), params).scalar_one()
+            elif not has_next and (offset == 0 or items):
+                # The last page already tells us the exact number of matches.
+                total = offset + len(items)
+                estimated_total = total
+            elif q and q.strip().upper() in _CREDENTIAL_SEARCHES:
+                # EXPLAIN estimates all credential values as the same 0.5% of
+                # the table. Use sampled frequencies for the unfiltered search;
+                # with other filters, show a truthful lower bound instead.
+                if not (specialty or state_code or zip):
+                    estimated_total = _credential_estimate(conn, q.strip().upper())
+                if estimated_total is None:
+                    estimated_total = minimum_total
+                    estimate_is_lower_bound = has_next
+                elif estimated_total < minimum_total:
+                    estimated_total = minimum_total
+                    estimate_is_lower_bound = has_next
             else:
                 plan = conn.execute(text(
                     f"EXPLAIN (FORMAT JSON) SELECT npi FROM provider_directory p WHERE {where}"

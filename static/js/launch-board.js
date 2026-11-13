@@ -1333,6 +1333,9 @@
   // exact match count beside it when a search is active.
   function providerCountLabel(){
     const estimate = hasNonCategoryFilters() ? S.providerEstimate : S.directoryEstimate;
+    if (hasNonCategoryFilters() && S.providerTotal != null) {
+      return `${Number(S.providerTotal).toLocaleString()} matching providers`;
+    }
     if (estimate == null) return "NPI provider directory";
     if (hasNonCategoryFilters() && S.providerEstimateIsLowerBound) return `${Number(estimate).toLocaleString()}+ matching providers`;
     return `~${Number(estimate).toLocaleString()} ${hasNonCategoryFilters() ? "matching providers" : "NPI providers"}`;
