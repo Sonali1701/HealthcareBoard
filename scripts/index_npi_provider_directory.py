@@ -14,6 +14,10 @@ from scripts.import_npi_provider_directory_20261112 import (  # noqa: E402
 )
 
 INDEXES = (
+    ("provider_directory_active_role_name_idx",
+     "CREATE INDEX CONCURRENTLY IF NOT EXISTS provider_directory_active_role_name_idx "
+     "ON provider_directory (left(taxonomy_code, 4), lower(last_name), lower(first_name), npi) "
+     "WHERE status = 'ACTIVE'"),
     ("provider_directory_active_credential_name_idx",
      "CREATE INDEX CONCURRENTLY IF NOT EXISTS provider_directory_active_credential_name_idx "
      "ON provider_directory (upper(btrim(credential)), lower(last_name), lower(first_name), npi) "

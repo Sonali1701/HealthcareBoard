@@ -19,13 +19,52 @@ from ..services import quick_sourcer
 router = APIRouter(prefix="/api/provider-directory", tags=["provider-directory"])
 _ZIP = re.compile(r"^\d{5}$")
 _STATE = re.compile(r"^[A-Z]{2}$")
-# A short credential such as RN must not match letters inside a specialty
-# (for example, "Internal Medicine") or a person's name.
+# Short codes must be resolved before broad text matching: RN must not match
+# letters inside "Internal Medicine", and MD must not match a person's name.
 _CREDENTIAL_SEARCHES = frozenset({
     "MD", "DO", "RN", "NP", "FNP", "LPN", "LVN", "CNA", "PA", "CRNA",
     "CNM", "DNP", "DPT", "PT", "OT", "DDS", "DMD", "DPM", "PHARMD",
     "RPH", "PHD",
 })
+# These aliases describe professions in the NPI taxonomy. A credential alone
+# is not enough to identify a profession: RN appears on some NP and CRNA rows.
+# Prefixes include the taxonomy's specialty variants; codes select one role.
+_ROLE_SEARCHES = {
+    "rn": ("prefix", "163W"), "registered nurse": ("prefix", "163W"),
+    "registered nurses": ("prefix", "163W"),
+    "np": ("prefix", "363L"), "nurse practitioner": ("prefix", "363L"),
+    "nurse practitioners": ("prefix", "363L"),
+    "fnp": ("code", "363LF0000X"),
+    "family nurse practitioner": ("code", "363LF0000X"),
+    "pa": ("prefix", "363A"), "physician assistant": ("prefix", "363A"),
+    "crna": ("code", "367500000X"),
+    "certified registered nurse anesthetist": ("code", "367500000X"),
+    "nurse anesthetist": ("code", "367500000X"),
+    "lpn": ("prefix", "164W"), "licensed practical nurse": ("prefix", "164W"),
+    "lvn": ("prefix", "164X"), "licensed vocational nurse": ("prefix", "164X"),
+    "pt": ("prefix", "2251"), "physical therapist": ("prefix", "2251"),
+    "ot": ("prefix", "225X"), "occupational therapist": ("prefix", "225X"),
+    "pta": ("prefix", "2252"),
+    "physical therapy assistant": ("prefix", "2252"),
+    "physical therapist assistant": ("prefix", "2252"),
+    "ota": ("prefix", "224Z"),
+    "occupational therapy assistant": ("prefix", "224Z"),
+    "slp": ("prefix", "235Z"),
+    "speech language pathologist": ("prefix", "235Z"),
+}
+_CREDENTIAL_PHRASES = {
+    "certified nursing assistant": "CNA",
+    "certified nurse midwife": "CNM",
+}
+
+
+def _search_role(q: str | None) -> tuple[str, str] | None:
+    if not q:
+        return None
+    phrase = re.sub(r"[\s-]+", " ", q.casefold()).strip()
+    return _ROLE_SEARCHES.get(phrase) or _ROLE_SEARCHES.get(
+        re.sub(r"[^a-z0-9]", "", phrase)
+    )
 
 
 class DirectoryContactLookupRequest(BaseModel):
@@ -95,8 +134,18 @@ def _conditions(*, q: str | None, specialty: str | None,
     if zip_code and radius_mi is None:
         clauses.append("p.zip_code = :zip_code")
         params["zip_code"] = zip_code
+    role = _search_role(q)
     credential_query = q.strip().upper() if q else ""
-    if credential_query in _CREDENTIAL_SEARCHES:
+    credential_query = _CREDENTIAL_PHRASES.get(q.strip().casefold(), credential_query) if q else ""
+    if role:
+        kind, value = role
+        if kind == "prefix":
+            clauses.append("left(p.taxonomy_code, 4) = :role_prefix")
+            params["role_prefix"] = value
+        else:
+            clauses.append("p.taxonomy_code = :role_code")
+            params["role_code"] = value
+    elif credential_query in _CREDENTIAL_SEARCHES:
         clauses.append("upper(btrim(p.credential)) = :credential")
         params["credential"] = credential_query
     elif q:
@@ -149,25 +198,27 @@ def _engine_or_503():
     return _engine
 
 
-def _credential_estimate(conn, credential: str) -> int | None:
-    """Use the active credential index's sampled frequency for a fast estimate.
+def _indexed_expression_estimate(conn, index_name: str, column: str,
+                                 value: str) -> int | None:
+    """Use a partial index's sampled frequency for a fast role/degree estimate.
 
     PostgreSQL's EXPLAIN gives the same default row estimate for every value
     of this expression, even after ANALYZE. The index statistics preserve the
-    distinct frequencies of common credentials without counting millions of
+    distinct frequencies of common values without counting millions of
     matching rows on every page request.
     """
     return conn.execute(text("""
         SELECT round((s.most_common_freqs[
-            array_position(s.most_common_vals::text::text[], :credential)
+            array_position(s.most_common_vals::text::text[], :value)
         ] * c.reltuples)::numeric)::bigint
         FROM pg_stats s
         JOIN pg_class c
-          ON c.oid = to_regclass('provider_directory_active_credential_name_idx')
+          ON c.oid = to_regclass(:index_name)
         WHERE s.schemaname = current_schema()
-          AND s.tablename = 'provider_directory_active_credential_name_idx'
-          AND s.attname = 'upper'
-    """), {"credential": credential}).scalar_one_or_none()
+          AND s.tablename = :index_name
+          AND s.attname = :column
+    """), {"index_name": index_name, "column": column,
+           "value": value}).scalar_one_or_none()
 
 
 @router.get("")
@@ -226,12 +277,21 @@ def search_provider_directory(
                 # The last page already tells us the exact number of matches.
                 total = offset + len(items)
                 estimated_total = total
-            elif q and q.strip().upper() in _CREDENTIAL_SEARCHES:
-                # EXPLAIN estimates all credential values as the same 0.5% of
-                # the table. Use sampled frequencies for the unfiltered search;
-                # with other filters, show a truthful lower bound instead.
+            elif "credential" in params or "role_prefix" in params:
+                # EXPLAIN estimates every value of these expressions as the
+                # same 0.5% of the table. Use sampled frequencies for an
+                # unfiltered search; otherwise show a truthful lower bound.
                 if not (specialty or state_code or zip):
-                    estimated_total = _credential_estimate(conn, q.strip().upper())
+                    if "credential" in params:
+                        estimated_total = _indexed_expression_estimate(
+                            conn, "provider_directory_active_credential_name_idx",
+                            "upper", params["credential"],
+                        )
+                    else:
+                        estimated_total = _indexed_expression_estimate(
+                            conn, "provider_directory_active_role_name_idx",
+                            "left", params["role_prefix"],
+                        )
                 if estimated_total is None:
                     estimated_total = minimum_total
                     estimate_is_lower_bound = has_next

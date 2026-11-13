@@ -75,7 +75,7 @@ def test_directory_filters_combine_specialty_state_and_radius():
 
 
 def test_short_credentials_search_the_credential_field_only():
-    for abbreviation in ("MD", "rn", "DO"):
+    for abbreviation in ("MD", "do", "DPT"):
         where, params = _conditions(
             q=abbreviation, specialty=None, state_code=None,
             zip_code=None, radius_mi=None, center=None,
@@ -84,6 +84,48 @@ def test_short_credentials_search_the_credential_field_only():
         assert "lower(p.specialty) LIKE" not in where
         assert "lower(p.first_name) LIKE" not in where
         assert params == {"credential": abbreviation.upper()}
+
+
+def test_profession_abbreviation_and_full_name_use_same_taxonomy():
+    pairs = (
+        ("RN", "registered nurse", "163W"),
+        ("NP", "nurse practitioner", "363L"),
+        ("PA", "physician assistant", "363A"),
+        ("PT", "physical therapist", "2251"),
+        ("OT", "occupational therapist", "225X"),
+        ("SLP", "speech-language pathologist", "235Z"),
+    )
+    for abbreviation, title, prefix in pairs:
+        for term in (abbreviation, title):
+            where, params = _conditions(
+                q=term, specialty=None, state_code=None,
+                zip_code=None, radius_mi=None, center=None,
+            )
+            assert "left(p.taxonomy_code, 4) = :role_prefix" in where
+            assert "p.credential" not in where
+            assert params == {"role_prefix": prefix}
+
+
+def test_nurse_specialties_keep_distinct_taxonomies():
+    for term, code in (("FNP", "363LF0000X"),
+                       ("CRNA", "367500000X")):
+        where, params = _conditions(
+            q=term, specialty=None, state_code=None,
+            zip_code=None, radius_mi=None, center=None,
+        )
+        assert "p.taxonomy_code = :role_code" in where
+        assert params == {"role_code": code}
+
+
+def test_certification_searches_keep_their_credential_meaning():
+    for abbreviation, title in (("CNA", "certified nursing assistant"),
+                                ("CNM", "certified nurse midwife")):
+        short = _conditions(q=abbreviation, specialty=None, state_code=None,
+                            zip_code=None, radius_mi=None, center=None)
+        full = _conditions(q=title, specialty=None, state_code=None,
+                           zip_code=None, radius_mi=None, center=None)
+        assert short == full
+        assert short[1] == {"credential": abbreviation}
 
 
 def test_unknown_two_letter_search_does_not_match_inside_specialty():
