@@ -1509,6 +1509,26 @@
       // compete with the first provider result request.
       if (!S.facetsLoaded) loadProviderFacets();
     } catch(e) {
+      // Superseded provider searches are intentionally aborted when a new
+      // filter value starts. Browsers may report this as an AbortError or as
+      // the generic "signal is aborted without reason" TypeError. It is not
+      // a directory/database failure and should never be shown as one.
+      const cancelled = e && (
+        e.name === "AbortError" ||
+        /signal is aborted without reason|the operation was aborted/i.test(e.message || "") ||
+        !!(S.providerAbort && S.providerAbort.signal.aborted)
+      );
+      if (cancelled) {
+        $("#providers-grid").removeAttribute("aria-busy");
+        const status = $("#provider-loading-status");
+        status.classList.add("hidden");
+        status.classList.remove("is-error");
+        if (!S.providerLastData) {
+          $("#providers-grid").innerHTML = emptyRow(PROVIDER_COLS, "Search cancelled", "Change a filter to load providers.", "fa-user-doctor");
+        }
+        $("#providers-count").textContent = providerCountLabel();
+        return;
+      }
       $("#providers-grid").removeAttribute("aria-busy");
       const status = $("#provider-loading-status");
       status.classList.remove("hidden");
