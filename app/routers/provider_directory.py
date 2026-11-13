@@ -29,7 +29,11 @@ _CREDENTIAL_SEARCHES = frozenset({
     "LISW", "MSW", "LPC", "LPCC", "LCPC", "LMHC", "LMFT", "MFT",
     "LAC", "BCBA", "RBT", "COTA", "OTR/L", "RDH", "ATC", "AUD",
     "OD", "DC", "PSYD", "LMT", "MBBS", "RDN", "RPT", "APNP",
+    "FNP-BC", "NP-C", "CCC-SLP", "LSW", "COTA/L", "CPHT",
 })
+_COMPACT_CREDENTIAL_SEARCHES = {
+    re.sub(r"[^A-Z0-9]", "", code): code for code in _CREDENTIAL_SEARCHES
+}
 # These aliases describe professions in the NPI taxonomy. A credential alone
 # is not enough to identify a profession: RN appears on some NP and CRNA rows.
 # Prefixes include the taxonomy's specialty variants; codes select one role.
@@ -91,6 +95,38 @@ _CREDENTIAL_PHRASES = {
     "board certified behavior analyst": "BCBA",
     "registered behavior technician": "RBT",
     "registered dental hygienist": "RDH",
+    # Specific expansions from the supplied credential-keyword workbook.
+    # Broad words such as "doctor", "nurse", "therapist" and "rehab" are
+    # deliberately excluded: several credentials share those keywords.
+    "doctor of medicine": "MD",
+    "doctor of osteopathic medicine": "DO",
+    "doctor of dental surgery": "DDS",
+    "doctor of dental medicine": "DMD",
+    "doctor of pharmacy": "PHARMD",
+    "doctor of physical therapy": "DPT",
+    "doctor of chiropractic": "DC",
+    "doctor of optometry": "OD",
+    "doctor of podiatric medicine": "DPM",
+    "doctor of audiology": "AUD",
+    "doctor of psychology": "PSYD",
+    "doctor of nursing practice": "DNP",
+    "doctor of philosophy": "PHD",
+    "registered pharmacist": "RPH",
+    "certified physician assistant": "PA-C",
+    "physician assistant certified": "PA-C",
+    "licensed master social worker": "LMSW",
+    "licensed marriage and family therapist": "LMFT",
+    "licensed mental health counselor": "LMHC",
+    "licensed professional clinical counselor": "LPCC",
+    "licensed independent clinical social worker": "LICSW",
+    "licensed massage therapist": "LMT",
+    "certified occupational therapy assistant": "COTA",
+    "certified athletic trainer": "ATC",
+    "certified pharmacy technician": "CPHT",
+    "certified pediatric nurse practitioner": "CPNP",
+    "certificate of clinical competence in speech language pathology": "CCC-SLP",
+    "family nurse practitioner board certified": "FNP-BC",
+    "nurse practitioner certified": "NP-C",
 }
 
 
@@ -101,6 +137,17 @@ def _search_role(q: str | None) -> tuple[str, str | tuple[str, ...]] | None:
     return _ROLE_SEARCHES.get(phrase) or _ROLE_SEARCHES.get(
         re.sub(r"[^a-z0-9]", "", phrase)
     )
+
+
+def _search_credential(q: str | None) -> str:
+    if not q:
+        return ""
+    phrase = re.sub(r"[\s/-]+", " ", q.casefold()).strip()
+    mapped = _CREDENTIAL_PHRASES.get(phrase)
+    if mapped:
+        return mapped
+    compact = re.sub(r"[^A-Z0-9]", "", q.upper())
+    return _COMPACT_CREDENTIAL_SEARCHES.get(compact, q.strip().upper())
 
 
 class DirectoryContactLookupRequest(BaseModel):
@@ -171,8 +218,7 @@ def _conditions(*, q: str | None, specialty: str | None,
         clauses.append("p.zip_code = :zip_code")
         params["zip_code"] = zip_code
     role = _search_role(q)
-    credential_query = q.strip().upper() if q else ""
-    credential_query = _CREDENTIAL_PHRASES.get(q.strip().casefold(), credential_query) if q else ""
+    credential_query = _search_credential(q)
     if role:
         kind, value = role
         if kind == "prefix":

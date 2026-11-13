@@ -184,6 +184,52 @@ def test_common_license_abbreviations_match_recorded_credentials_only():
         assert params == {"credential": abbreviation}
 
 
+def test_specific_keywords_from_credential_workbook_search_exact_credentials():
+    pairs = (
+        ("Doctor of Medicine", "MD"),
+        ("Doctor of Osteopathic Medicine", "DO"),
+        ("Doctor of Dental Surgery", "DDS"),
+        ("Doctor of Pharmacy", "PHARMD"),
+        ("Registered Pharmacist", "RPH"),
+        ("Certified Physician Assistant", "PA-C"),
+        ("Licensed Master Social Worker", "LMSW"),
+        ("Licensed Marriage and Family Therapist", "LMFT"),
+        ("Certified Pharmacy Technician", "CPHT"),
+        ("Certificate of Clinical Competence in Speech-Language Pathology",
+         "CCC-SLP"),
+    )
+    for phrase, credential in pairs:
+        where, params = _conditions(
+            q=phrase, specialty=None, state_code=None,
+            zip_code=None, radius_mi=None, center=None,
+        )
+        assert "upper(btrim(p.credential)) = :credential" in where
+        assert "lower(p.specialty) LIKE" not in where
+        assert params == {"credential": credential}
+
+
+def test_punctuated_credential_abbreviations_use_exact_credential_search():
+    for variant, credential in (("M.D.", "MD"), ("D.D.S.", "DDS"),
+                                ("P.A.-C.", "PA-C"),
+                                ("C.C.C.-S.L.P.", "CCC-SLP")):
+        where, params = _conditions(
+            q=variant, specialty=None, state_code=None,
+            zip_code=None, radius_mi=None, center=None,
+        )
+        assert "upper(btrim(p.credential)) = :credential" in where
+        assert params == {"credential": credential}
+
+
+def test_shared_workbook_keywords_do_not_imply_a_specific_credential():
+    for term in ("doctor", "nurse", "therapist", "medical assistant"):
+        where, params = _conditions(
+            q=term, specialty=None, state_code=None,
+            zip_code=None, radius_mi=None, center=None,
+        )
+        assert "upper(btrim(p.credential)) = :credential" not in where
+        assert "credential" not in params
+
+
 def test_unknown_two_letter_search_does_not_match_inside_specialty():
     where, params = _conditions(
         q="er", specialty=None, state_code=None,
