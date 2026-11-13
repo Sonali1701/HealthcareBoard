@@ -3,7 +3,7 @@
     user:null, profile:null, authMode:"login",
     provider:{q:"", specialty:"", zip:"", radius_mi:"25", state_code:""},
     providerCache:new Map(), providerInflight:new Map(),
-    providerCards:new Map(), releasedContacts:new Map(), directoryContacts:new Map(), providerReq:0,
+    providerCards:new Map(), releasedContacts:new Map(), directoryContacts:new Map(), providerReq:0, providerAbort:null, providerPendingKey:null,
     providerOffset:0, providerTotal:null, providerEstimate:null, providerEstimateIsLowerBound:false, directoryEstimate:null,
     providerHasNext:false, facetCategories:{},
     providerLastData:null, facetsLoaded:false, activeCounts:null,
@@ -197,6 +197,7 @@
     return _refreshing;
   }
   const get = (p, options={}) => api("GET", p, undefined, false, options.signal);
+  const getWithSignal = (p, signal) => get(p, {signal});
   const post = (p,b={}) => api("POST", p, b);
   const patch = (p,b={}) => api("PATCH", p, b);
   const put = (p,b={}) => api("PUT", p, b);
@@ -1310,11 +1311,21 @@
   }
   async function fetchProviders(params){
     const key = params.toString();
-    if (S.providerCache.has(key)) return S.providerCache.get(key);
+    if (S.providerCache.has(key)) {
+      const cached = S.providerCache.get(key);
+      S.providerCache.delete(key);
+      S.providerCache.set(key, cached);
+      return cached;
+    }
     if (S.providerInflight.has(key)) return S.providerInflight.get(key);
-    const req = get("/api/provider-directory?" + key)
-      .then(d => { S.providerCache.set(key,d); S.providerInflight.delete(key); return d; })
-      .catch(e => { S.providerInflight.delete(key); throw e; });
+    const req = getWithSignal("/api/provider-directory?" + key, S.providerAbort && S.providerAbort.signal)
+      .then(d => {
+        S.providerCache.set(key,d);
+        if (S.providerCache.size > 50) S.providerCache.delete(S.providerCache.keys().next().value);
+        if (S.providerInflight.get(key) === req) S.providerInflight.delete(key);
+        return d;
+      })
+      .catch(e => { if (S.providerInflight.get(key) === req) S.providerInflight.delete(key); throw e; });
     S.providerInflight.set(key, req);
     return req;
   }
@@ -1408,9 +1419,10 @@
       <span class="contact-avail">${avail}</span>
     </div>`;
   }
-  const NAME_CREDENTIALS = /(?:,?\s+)(?:MD|M\.D\.|DO|D\.O\.|MBBS|MBCHB|DMD|DDS|DPM|DPT|PHARMD|PSYD|PHD|MPH|MSC|MS|MBA|MHA|RN|BSN|MSN|NP|FNP|DNP|PA-C|PA|FACP|FAAP|FACS|FACC|FAAD|LPN|LVN|CNA)\.?$/i;
+  const NAME_CREDENTIALS = /(?:,\s*|\s+)(?:MD|M\.D\.|DO|D\.O\.|MBBS|MBCHB|DMD|DDS|DPM|DPT|PHARMD|PSYD|PHD|MPH|MSC|MS|MBA|MHA|RN|BSN|MSN|NP|FNP|DNP|PA-C|PA|FACP|FAAP|FACS|FACC|FAAD|LPN|LVN|CNA)\.?$/i;
   function formatProviderNamePart(value){
-    let part = clean(value);
+    let part = clean(value).replace(/[0-9]+/g, "");
+    part = clean(part);
     if (!part) return "";
     while (NAME_CREDENTIALS.test(part)) part = part.replace(NAME_CREDENTIALS, "").trim();
     part = part.replace(/^[\s'’\"]+|[\s,;]+$/g, "");
@@ -1457,6 +1469,15 @@
     // matching set. Pagination uses has_next until an exact count is needed.
     const wantCount = false;
     const params = providerParams(S.provider, {offset:S.providerOffset, count:wantCount});
+    const requestKey = params.toString();
+    if (S.providerPendingKey !== requestKey) {
+      if (S.providerAbort) {
+        S.providerAbort.abort();
+        S.providerInflight.delete(S.providerPendingKey);
+      }
+      S.providerAbort = new AbortController();
+      S.providerPendingKey = requestKey;
+    }
     const seq = ++S.providerReq;
     const needsNetwork = !S.providerCache.has(params.toString());
     if (needsNetwork) {
