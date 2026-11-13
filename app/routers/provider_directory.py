@@ -19,6 +19,13 @@ from ..services import quick_sourcer
 router = APIRouter(prefix="/api/provider-directory", tags=["provider-directory"])
 _ZIP = re.compile(r"^\d{5}$")
 _STATE = re.compile(r"^[A-Z]{2}$")
+# A short credential such as RN must not match letters inside a specialty
+# (for example, "Internal Medicine") or a person's name.
+_CREDENTIAL_SEARCHES = frozenset({
+    "MD", "DO", "RN", "NP", "FNP", "LPN", "LVN", "CNA", "PA", "CRNA",
+    "CNM", "DNP", "DPT", "PT", "OT", "DDS", "DMD", "DPM", "PHARMD",
+    "RPH", "PHD",
+})
 
 
 class DirectoryContactLookupRequest(BaseModel):
@@ -88,9 +95,17 @@ def _conditions(*, q: str | None, specialty: str | None,
     if zip_code and radius_mi is None:
         clauses.append("p.zip_code = :zip_code")
         params["zip_code"] = zip_code
-    if q:
+    credential_query = q.strip().upper() if q else ""
+    if credential_query in _CREDENTIAL_SEARCHES:
+        clauses.append("upper(btrim(p.credential)) = :credential")
+        params["credential"] = credential_query
+    elif q:
         for index, token in enumerate(q.strip().split()[:6]):
             key = f"q{index}"
+            # Two-letter fragments are too broad for an infix specialty match.
+            # For example, RN occurs inside "Internal" and pulls in physicians.
+            specialty_match = (token.casefold() + "%" if len(token) < 3
+                               else "%" + token.casefold() + "%")
             clauses.append(
                 f"(lower(p.first_name) LIKE :{key}_name "
                 f"OR lower(p.middle_name) LIKE :{key}_name "
@@ -101,7 +116,7 @@ def _conditions(*, q: str | None, specialty: str | None,
                 f"OR p.taxonomy_code LIKE :{key}_npi)"
             )
             params[f"{key}_name"] = token.casefold() + "%"
-            params[f"{key}_text"] = "%" + token.casefold() + "%"
+            params[f"{key}_text"] = specialty_match
             params[f"{key}_npi"] = token + "%"
     if radius_mi is not None and zip_code:
         if center is None:

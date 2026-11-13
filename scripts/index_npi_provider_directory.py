@@ -14,6 +14,10 @@ from scripts.import_npi_provider_directory_20261112 import (  # noqa: E402
 )
 
 INDEXES = (
+    ("provider_directory_active_credential_name_idx",
+     "CREATE INDEX CONCURRENTLY IF NOT EXISTS provider_directory_active_credential_name_idx "
+     "ON provider_directory (upper(btrim(credential)), lower(last_name), lower(first_name), npi) "
+     "WHERE status = 'ACTIVE'"),
     ("provider_directory_first_name_prefix_idx",
      "CREATE INDEX CONCURRENTLY IF NOT EXISTS provider_directory_first_name_prefix_idx "
      "ON provider_directory (lower(first_name) text_pattern_ops)"),
@@ -43,12 +47,14 @@ def main() -> int:
                 cur.execute(ddl)
                 print(f"READY {name} in {time.monotonic() - started:.1f}s", flush=True)
             cur.execute("ANALYZE provider_directory")
-            cur.execute("""
+            names = tuple(name for name, _ in INDEXES)
+            placeholders = ", ".join(["%s"] * len(names))
+            cur.execute(f"""
                 SELECT indexname FROM pg_indexes
                 WHERE schemaname='public' AND tablename='provider_directory'
-                AND indexname IN (%s, %s, %s, %s, %s)
+                AND indexname IN ({placeholders})
                 ORDER BY indexname
-            """, tuple(name for name, _ in INDEXES))
+            """, names)
             print("VERIFIED=" + ",".join(row[0] for row in cur.fetchall()), flush=True)
     return 0
 

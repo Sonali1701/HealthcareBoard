@@ -74,6 +74,27 @@ def test_directory_filters_combine_specialty_state_and_radius():
     assert params["q1_text"] == "%practitioner%"
 
 
+def test_short_credentials_search_the_credential_field_only():
+    for abbreviation in ("MD", "rn", "DO"):
+        where, params = _conditions(
+            q=abbreviation, specialty=None, state_code=None,
+            zip_code=None, radius_mi=None, center=None,
+        )
+        assert "upper(btrim(p.credential)) = :credential" in where
+        assert "lower(p.specialty) LIKE" not in where
+        assert "lower(p.first_name) LIKE" not in where
+        assert params == {"credential": abbreviation.upper()}
+
+
+def test_unknown_two_letter_search_does_not_match_inside_specialty():
+    where, params = _conditions(
+        q="er", specialty=None, state_code=None,
+        zip_code=None, radius_mi=None, center=None,
+    )
+    assert "lower(p.specialty) LIKE :q0_text" in where
+    assert params["q0_text"] == "er%"
+
+
 def test_neon_plain_postgres_urls_use_installed_psycopg_driver():
     assert _normalized_database_url("postgres://u:p@db.example/neondb").drivername == "postgresql+psycopg"
     assert _normalized_database_url("postgresql://u:p@db.example/neondb").drivername == "postgresql+psycopg"
