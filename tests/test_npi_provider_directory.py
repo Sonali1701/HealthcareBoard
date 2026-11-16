@@ -3,7 +3,11 @@ from scripts.import_npi_provider_directory_20261112 import (
     npi_is_valid,
     parse_source_row,
 )
-from app.routers.provider_directory import _conditions, _normalized_database_url
+from app.routers.provider_directory import (
+    _CREDENTIAL_KEYWORDS,
+    _conditions,
+    _normalized_database_url,
+)
 
 
 def row(**updates):
@@ -79,10 +83,10 @@ def test_short_credentials_search_the_credential_field_only():
             q=abbreviation, specialty=None, state_code=None,
             zip_code=None, radius_mi=None, center=None,
         )
-        assert "upper(btrim(p.credential)) = :credential" in where
+        assert "upper(btrim(p.credential)) = ANY(:credentials)" in where
         assert "lower(p.specialty) LIKE" not in where
         assert "lower(p.first_name) LIKE" not in where
-        assert params == {"credential": abbreviation.upper()}
+        assert abbreviation.upper() in params["credentials"]
 
 
 def test_profession_abbreviation_and_full_name_use_same_taxonomy():
@@ -168,8 +172,10 @@ def test_certification_searches_keep_their_credential_meaning():
                             zip_code=None, radius_mi=None, center=None)
         full = _conditions(q=title, specialty=None, state_code=None,
                            zip_code=None, radius_mi=None, center=None)
-        assert short == full
-        assert short[1] == {"credential": abbreviation}
+        assert "upper(btrim(p.credential)) = ANY(:credentials)" in short[0]
+        assert "upper(btrim(p.credential)) = ANY(:credentials)" in full[0]
+        assert abbreviation in short[1]["credentials"]
+        assert abbreviation in full[1]["credentials"]
 
 
 def test_common_license_abbreviations_match_recorded_credentials_only():
@@ -179,9 +185,9 @@ def test_common_license_abbreviations_match_recorded_credentials_only():
             q=abbreviation.lower(), specialty=None, state_code=None,
             zip_code=None, radius_mi=None, center=None,
         )
-        assert "upper(btrim(p.credential)) = :credential" in where
+        assert "upper(btrim(p.credential)) = ANY(:credentials)" in where
         assert "lower(p.specialty) LIKE" not in where
-        assert params == {"credential": abbreviation}
+        assert abbreviation in params["credentials"]
 
 
 def test_specific_keywords_from_credential_workbook_search_exact_credentials():
@@ -203,9 +209,9 @@ def test_specific_keywords_from_credential_workbook_search_exact_credentials():
             q=phrase, specialty=None, state_code=None,
             zip_code=None, radius_mi=None, center=None,
         )
-        assert "upper(btrim(p.credential)) = :credential" in where
+        assert "upper(btrim(p.credential)) = ANY(:credentials)" in where
         assert "lower(p.specialty) LIKE" not in where
-        assert params == {"credential": credential}
+        assert credential in params["credentials"]
 
 
 def test_punctuated_credential_abbreviations_use_exact_credential_search():
@@ -216,18 +222,34 @@ def test_punctuated_credential_abbreviations_use_exact_credential_search():
             q=variant, specialty=None, state_code=None,
             zip_code=None, radius_mi=None, center=None,
         )
-        assert "upper(btrim(p.credential)) = :credential" in where
-        assert params == {"credential": credential}
+        assert "upper(btrim(p.credential)) = ANY(:credentials)" in where
+        assert credential in params["credentials"]
 
 
-def test_shared_workbook_keywords_do_not_imply_a_specific_credential():
+def test_workbook_keyword_maps_to_every_credential_listed_for_it():
     for term in ("doctor", "nurse", "therapist", "medical assistant"):
         where, params = _conditions(
             q=term, specialty=None, state_code=None,
             zip_code=None, radius_mi=None, center=None,
         )
-        assert "upper(btrim(p.credential)) = :credential" not in where
-        assert "credential" not in params
+        assert "upper(btrim(p.credential)) = ANY(:credentials)" in where
+        assert params["credentials"] == _CREDENTIAL_KEYWORDS[term]
+        assert len(params["credentials"]) > 1
+
+
+def test_workbook_keyword_map_keeps_collisions_and_source_credentials():
+    assert "MD" in _CREDENTIAL_KEYWORDS["doctor of medicine"]
+    assert "DDS-MD" in _CREDENTIAL_KEYWORDS["doctor of medicine"]
+    assert len(_CREDENTIAL_KEYWORDS["therapist"]) > 1000
+
+
+def test_one_letter_keyword_noise_does_not_override_name_search():
+    where, params = _conditions(
+        q="A", specialty=None, state_code=None,
+        zip_code=None, radius_mi=None, center=None,
+    )
+    assert "credential" not in params
+    assert "lower(p.first_name) LIKE :q0_name" in where
 
 
 def test_unknown_two_letter_search_does_not_match_inside_specialty():

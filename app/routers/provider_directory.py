@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -34,6 +35,13 @@ _CREDENTIAL_SEARCHES = frozenset({
 _COMPACT_CREDENTIAL_SEARCHES = {
     re.sub(r"[^A-Z0-9]", "", code): code for code in _CREDENTIAL_SEARCHES
 }
+# Generated from column D of the supplied NPI credential inventory. A keyword
+# may intentionally map to multiple recorded credential values when the source
+# sheet associates it with multiple credentials.
+_CREDENTIAL_KEYWORDS = json.loads(
+    (Path(__file__).resolve().parents[1] / "data" /
+     "npi_credential_keyword_map.json").read_text(encoding="utf-8")
+)
 # These aliases describe professions in the NPI taxonomy. A credential alone
 # is not enough to identify a profession: RN appears on some NP and CRNA rows.
 # Prefixes include the taxonomy's specialty variants; codes select one role.
@@ -139,15 +147,32 @@ def _search_role(q: str | None) -> tuple[str, str | tuple[str, ...]] | None:
     )
 
 
-def _search_credential(q: str | None) -> str:
+def _normalize_credential_keyword(q: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", q.casefold()).strip()
+
+
+def _search_credential(q: str | None) -> tuple[str, ...]:
     if not q:
-        return ""
-    phrase = re.sub(r"[\s/-]+", " ", q.casefold()).strip()
-    mapped = _CREDENTIAL_PHRASES.get(phrase)
+        return ()
+    phrase = _normalize_credential_keyword(q)
+    # Single-character items in the source keyword column are mostly initials
+    # and import noise; keep one-letter searches available for name lookup.
+    if len(phrase) < 2:
+        return ()
+    mapped = _CREDENTIAL_KEYWORDS.get(phrase)
     if mapped:
-        return mapped
+        return tuple(mapped)
+    # Keep hand-curated role/credential phrases that are intentionally more
+    # precise than the workbook's broad resume keyword lists.
+    curated_phrase = re.sub(r"[\s/-]+", " ", q.casefold()).strip()
+    curated = _CREDENTIAL_PHRASES.get(curated_phrase)
+    if curated:
+        return (curated,)
     compact = re.sub(r"[^A-Z0-9]", "", q.upper())
-    return _COMPACT_CREDENTIAL_SEARCHES.get(compact, q.strip().upper())
+    direct = _COMPACT_CREDENTIAL_SEARCHES.get(compact)
+    if direct:
+        return (direct,)
+    return ()
 
 
 class DirectoryContactLookupRequest(BaseModel):
@@ -230,9 +255,9 @@ def _conditions(*, q: str | None, specialty: str | None,
         else:
             clauses.append("p.taxonomy_code = :role_code")
             params["role_code"] = value
-    elif credential_query in _CREDENTIAL_SEARCHES:
-        clauses.append("upper(btrim(p.credential)) = :credential")
-        params["credential"] = credential_query
+    elif credential_query:
+        clauses.append("upper(btrim(p.credential)) = ANY(:credentials)")
+        params["credentials"] = list(credential_query)
     elif q:
         for index, token in enumerate(q.strip().split()[:6]):
             key = f"q{index}"
