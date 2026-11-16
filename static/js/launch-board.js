@@ -321,7 +321,7 @@
       btn.disabled = false;
       btn.textContent = S.authMode === "signup" ? "Create account" : "Sign in";
       let hasInvite = false;
-      try { hasInvite = !!sessionStorage.getItem("hb_invite"); } catch(_) {}
+      try { hasInvite = !!localStorage.getItem("hb_invite"); } catch(_) {}
       if (mode === "signup" && hasInvite
           && (e.status === 409 || /already (has an account|registered)/i.test(e.message || ""))) {
         showAuthMode("login");
@@ -6797,7 +6797,7 @@
     // Stash a team-invite token from the URL so it survives the sign-in flow.
     try {
       const it = new URLSearchParams(location.search).get("invite");
-      if (it) sessionStorage.setItem("hb_invite", it);
+      if (it) localStorage.setItem("hb_invite", it);
     } catch(_){}
     // If we were signed out because the account was used elsewhere, say so once.
     try {
@@ -6835,7 +6835,7 @@
     // No token (or it was rejected): show the public home page, not a raw login.
     $("#boot-splash").classList.add("hidden");
     let invited = false;
-    try { invited = !!sessionStorage.getItem("hb_invite"); } catch(_){}
+    try { invited = !!localStorage.getItem("hb_invite"); } catch(_){}
     if (invited){
       showAuth("signup");
       toast("Create an account or sign in to accept your team invitation.",
@@ -6846,13 +6846,13 @@
   }
   async function acceptStashedInvite(){
     let tok = null;
-    try { tok = sessionStorage.getItem("hb_invite"); } catch(_){}
+    try { tok = localStorage.getItem("hb_invite"); } catch(_){}
     if (!tok) return false;
     try {
       const r = await post("/api/employers/invites/accept", {token: tok});
       S.employer = r.employer || S.employer;
       try { localStorage.setItem("hb_page", "orgadmin"); } catch(_){}
-      try { sessionStorage.removeItem("hb_invite"); } catch(_){}
+      try { localStorage.removeItem("hb_invite"); } catch(_){}
       try { history.replaceState(null, "", location.pathname); } catch(_){}
       toast(r.already ? `You're already part of ${esc(r.employer.org_name)}.`
                       : `You've joined ${esc(r.employer.org_name)}.`,
