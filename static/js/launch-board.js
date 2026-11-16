@@ -502,11 +502,12 @@
       </div><div class="table-wrap"><table class="table"><thead><tr>
         <th>Candidate</th><th>Location</th><th>Recruiter</th><th>Result</th><th>CEIPAL applicant ID</th><th>When</th><th>Details</th>
       </tr></thead><tbody>${items.length ? items.map(item => {
-        const missingEmail = item.state === "failed" && /has no email address/i.test(item.error || "");
+        const missingEmail = item.state === "failed" && /without an email address|has no email address/i.test(item.error || "");
           const [label, tone] = missingEmail ? ["Email needed", "warn"]
             : (states[item.state] || [item.state || "Unknown", "no"]);
         const detail = item.state === "already_in_ceipal"
           ? `Matched by ${(item.matched_by || []).join(" and ") || "contact"}`
+          : missingEmail ? "Add an email and retry. MedHunt needs it to check for duplicates and upload to CEIPAL."
           : item.error || "";
         return `<tr><td><b>${esc(item.candidate_name || "Candidate")}</b><div class="cell-sub">${esc(item.candidate_id || "")}</div></td>
           <td>${esc(item.location || "—")}</td><td>${esc(item.user_email || "Unknown user")}</td>
