@@ -301,7 +301,7 @@ def _find_existing_applicant(client: httpx.Client, token: str, candidate: dict,
     emails = sorted({_email_key(value) for value in _values(candidate.get("emails"))} - {""})
     if not emails:
         raise MedhuntCeipalError(
-            "Ceipal cannot safely check duplicates for a candidate without an email address."
+            "Candidate has no email address. MedHunt needs an email to check CEIPAL for duplicates and upload this candidate; add one and retry."
         )
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     url = _api_url("getApplicantsList", configuration)

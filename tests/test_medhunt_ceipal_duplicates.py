@@ -179,7 +179,7 @@ class MedhuntCeipalDuplicateTests(unittest.TestCase):
             })
 
     def test_phone_only_candidate_fails_closed(self):
-        with self.assertRaisesRegex(medhunt_ceipal.MedhuntCeipalError, "without an email"):
+        with self.assertRaisesRegex(medhunt_ceipal.MedhuntCeipalError, "has no email address"):
             medhunt_ceipal._find_existing_applicant(
                 FakeCeipalClient(lambda *_: None), "token", {"phones": ["4155550100"]},
             )
