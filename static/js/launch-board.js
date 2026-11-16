@@ -3988,7 +3988,13 @@
     // Landing → sign-in, and back. Any element with data-auth-open opens the
     // auth screen in the requested mode.
     $$("[data-auth-open]").forEach(b => b.addEventListener("click", e => {
-      e.preventDefault(); showAuth(b.dataset.authOpen);
+      e.preventDefault();
+      const signupRole = b.dataset.signupRole;
+      if (signupRole) {
+        const roleInput = document.querySelector(`input[name="signup-role"][value="${signupRole}"]`);
+        if (roleInput) roleInput.checked = true;
+      }
+      showAuth(b.dataset.authOpen);
     }));
     const authBack = $("#auth-back");
     if (authBack) authBack.onclick = showLanding;

@@ -6,7 +6,7 @@
   <title>MedHunt</title>
   <link rel="icon" href="/assets/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
   <link rel="preload" href="/assets/medhunt-logo.jpg?v={{ asset_version }}" as="image" type="image/jpeg">
-  <meta name="description" content="A screened directory of healthcare professionals, live roles from real facilities, and credentials you can actually check.">
+  <meta name="description" content="Search healthcare provider records, explore roles and manage recruiting work with MedHunt.">
   <meta name="theme-color" content="#0d2545">
   <link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/assets/css/launch-board.css?v={{ asset_version }}">
@@ -27,8 +27,10 @@
       <nav class="lp-links">
         <a href="#platform">Platform</a>
         <a href="#pipeline">How it works</a>
+        <a href="#data-privacy">Data &amp; privacy</a>
+        <a href="#faq">FAQ</a>
         <button class="lp-signin" data-auth-open="login">Sign in</button>
-        <button class="btn primary" data-auth-open="signup">Get started</button>
+        <button class="btn primary" data-auth-open="signup">Create an account</button>
       </nav>
     </div>
   </header>
@@ -36,30 +38,27 @@
   <section class="lp-hero" id="top">
     <div class="lp-hero-inner">
       <div class="lp-hero-copy">
-        <span class="lp-kicker">The healthcare staffing marketplace</span>
-        <h1>Where clinicians and agencies <em>actually connect.</em></h1>
-        <p>Healthcare professionals explore roles with pay details where available and manage their profile visibility. Staffing agencies search screened provider profiles, review listed credentials, and organize outreach in one place.</p>
+        <span class="lp-kicker">Healthcare hiring, in one workspace</span>
+        <h1>Find healthcare talent.<br><em>Move work forward.</em></h1>
+        <p>Explore healthcare roles or search provider records by specialty, credential and location. MedHunt brings candidate discovery and recruiting workflows into one workspace.</p>
         <div class="lp-cta-row">
-          <button class="btn primary lg" data-auth-open="signup">Find your next role</button>
-          <a class="lp-secondary" href="#who">For agencies <i class="fas fa-arrow-right"></i></a>
+          <button class="btn primary lg" data-auth-open="signup" data-signup-role="job_seeker"><i class="fas fa-user-nurse"></i> Find jobs</button>
+          <a class="lp-secondary" href="#who">Explore agency tools <i class="fas fa-arrow-right"></i></a>
         </div>
       </div>
 
       <div class="lp-hero-stage">
         <div class="lp-console">
-          <div class="lp-console-top"><span class="lp-tab active">Directory</span><span class="lp-tab">Pools</span><span class="lp-tab">Submissions</span><span class="lp-conn">● live</span></div>
-          <div class="lp-query"><i class="fas fa-magnifying-glass"></i><span>icu nurses in texas · 10+ yrs · with resume</span></div>
+          <div class="lp-console-top"><span class="lp-tab active">Provider directory</span><span class="lp-preview-label"><i class="fas fa-wand-magic-sparkles"></i> Product preview</span></div>
+          <div class="lp-query"><i class="fas fa-magnifying-glass"></i><span>Registered Nurse &nbsp; · &nbsp; Texas</span><span class="lp-query-filter">2 filters</span></div>
           <div class="lp-rows">
-            <div class="lp-row"><span class="lp-mono-av">TH</span><div class="lp-rmeta"><b>ICU Registered Nurse</b><span>Austin, TX · 8 yrs · Resume</span></div><span class="lp-reveal">Reveal · 1 cr</span></div>
-            <div class="lp-row"><span class="lp-mono-av">MR</span><div class="lp-rmeta"><b>ER Nurse Practitioner</b><span>Dallas, TX · 12 yrs</span></div><span class="lp-reveal">Reveal · 1 cr</span></div>
-            <div class="lp-row"><span class="lp-mono-av">SK</span><div class="lp-rmeta"><b>Physical Therapist</b><span>Houston, TX · 6 yrs</span></div><span class="lp-reveal">Reveal · 1 cr</span></div>
+            <div class="lp-row"><span class="lp-mono-av"><i class="fas fa-user-nurse"></i></span><div class="lp-rmeta"><b>Provider record</b><span>Registered Nurse &nbsp;·&nbsp; Austin, TX</span></div><span class="lp-record-tag">NPI record</span></div>
+            <div class="lp-row"><span class="lp-mono-av lp-avatar-alt"><i class="fas fa-user-nurse"></i></span><div class="lp-rmeta"><b>Provider record</b><span>Family Nurse Practitioner &nbsp;·&nbsp; Dallas, TX</span></div><span class="lp-record-tag">NPI record</span></div>
+            <div class="lp-row"><span class="lp-mono-av lp-avatar-teal"><i class="fas fa-user-nurse"></i></span><div class="lp-rmeta"><b>Provider record</b><span>Licensed Practical Nurse &nbsp;·&nbsp; Houston, TX</span></div><span class="lp-record-tag">NPI record</span></div>
           </div>
-          <div class="lp-console-foot"><i class="fas fa-lock"></i>Identity masked until you reveal · every reveal logged</div>
+          <div class="lp-console-foot"><i class="fas fa-circle-info"></i>Illustrative preview. Details are shown as supplied by the source.</div>
         </div>
-        <div class="lp-placement">
-          <div class="lp-placement-l"><span class="lp-placed">PLACED</span><b>Nadia N. → St David’s Medical Center</b></div>
-          <div class="lp-margin"><span>margin</span><b>+$28<i>/hr</i></b></div>
-        </div>
+        <div class="lp-preview-note"><span class="lp-preview-note-icon"><i class="fas fa-location-dot"></i></span><span><b>Search with useful filters</b><small>Specialty, credential, state and location</small></span><i class="fas fa-arrow-right lp-preview-arrow"></i></div>
       </div>
     </div>
   </section>
@@ -69,45 +68,56 @@
       <div class="lp-lane-grid">
         <div class="lp-lane">
           <span class="lp-lane-tag"><i class="fas fa-user-nurse"></i>For healthcare professionals</span>
-          <h2>Your next assignment, on your terms.</h2>
+          <h2>Find your next healthcare role.</h2>
           <ul class="lp-lane-list">
-            <li><i class="fas fa-money-bill-trend-up"></i><span><b>See real take-home pay</b> on every job — taxable pay plus tax-free per-diem, calculated for the assignment’s city and shift.</span></li>
-            <li><i class="fas fa-user-shield"></i><span><b>Control who contacts you.</b> Your name and number stay hidden until you choose to share them — no spam, no cold calls.</span></li>
-            <li><i class="fas fa-id-badge"></i><span><b>A credential wallet</b> that tracks your licences and reminds you before anything expires.</span></li>
+            <li><i class="fas fa-magnifying-glass"></i><span><b>Explore healthcare roles.</b> Search opportunities by role, specialty and location.</span></li>
+            <li><i class="fas fa-user-shield"></i><span><b>Manage your professional profile.</b> Keep your experience and credentials together in your MedHunt account.</span></li>
+            <li><i class="fas fa-comments"></i><span><b>Keep your search organized.</b> Follow applications and messages from one workspace.</span></li>
           </ul>
-          <button class="btn primary" data-auth-open="signup">Find jobs — it’s free</button>
+          <button class="btn primary" data-auth-open="signup" data-signup-role="job_seeker">Explore job seeker tools</button>
         </div>
         <div class="lp-lane lp-lane-agency">
           <span class="lp-lane-tag"><i class="fas fa-briefcase"></i>For staffing agencies</span>
-          <h2>Source, submit and place — from one desk.</h2>
+          <h2>Source, organize and follow up.</h2>
           <ul class="lp-lane-list">
-            <li><i class="fas fa-magnifying-glass"></i><span><b>A screened directory</b> with plain-language AI search across healthcare provider profiles.</span></li>
-            <li><i class="fas fa-unlock"></i><span><b>Reveal contacts on demand</b> — pay only for the candidates you actually work; everything else stays free.</span></li>
-            <li><i class="fas fa-chart-line"></i><span><b>Pools, submissions and placements</b> with the bill-vs-pay margin booked on every deal.</span></li>
+            <li><i class="fas fa-magnifying-glass"></i><span><b>Search provider records.</b> Narrow results by specialty, credential, state and location.</span></li>
+            <li><i class="fas fa-address-card"></i><span><b>Look up contact details.</b> Request a lookup when you want to follow up; results can vary.</span></li>
+            <li><i class="fas fa-folder-open"></i><span><b>Organize recruiting work.</b> Use candidate pools, submissions and placement tools in one workspace.</span></li>
           </ul>
-          <button class="btn primary" data-auth-open="signup">Start sourcing</button>
+          <button class="btn primary" data-auth-open="signup" data-signup-role="recruiter">Create an agency account</button>
         </div>
       </div>
     </div>
   </section>
 
   <section class="lp-band">
-    <div class="lp-inner"><p>Two sides, one platform — clinicians find better assignments, agencies fill them faster, and the pay is transparent on both ends.</p></div>
+    <div class="lp-inner"><p>Search, organize and follow up with healthcare talent from one focused workspace.</p></div>
+  </section>
+
+  <section class="lp-section lp-trust" id="data-privacy">
+    <div class="lp-inner">
+      <div class="lp-trust-intro"><span class="lp-eyebrow">// Clear records. Clear expectations.</span><h2 class="lp-h2">Know what a provider listing represents.</h2><p>MedHunt brings provider records and recruiting tools together. A directory listing is not the same as a clinician-created MedHunt account.</p></div>
+      <div class="lp-trust-grid">
+        <article class="lp-trust-card"><span class="lp-trust-icon"><i class="fas fa-database"></i></span><h3>Source details stay visible</h3><p>Provider specialty and taxonomy are presented from the NPI Registry source. Review records with your own credentialing process before making hiring decisions.</p></article>
+        <article class="lp-trust-card"><span class="lp-trust-icon lp-trust-icon-blue"><i class="fas fa-user-check"></i></span><h3>A listing is not an endorsement</h3><p>Not every person in the directory has registered with MedHunt or confirmed their listing. Treat directory information as a starting point for outreach and verification.</p></article>
+        <article class="lp-trust-card"><span class="lp-trust-icon lp-trust-icon-green"><i class="fas fa-magnifying-glass"></i></span><h3>Contact lookup is a separate step</h3><p>Contact details are not guaranteed for every record. Use the lookup action when available, and confirm returned details before relying on them.</p></article>
+      </div>
+    </div>
   </section>
 
   <section class="lp-section" id="platform">
     <div class="lp-inner">
-      <span class="lp-eyebrow">// For agencies — the workspace</span>
+      <span class="lp-eyebrow">// For agencies: the workspace</span>
       <h2 class="lp-h2">One workspace, the whole desk.</h2>
       <div class="lp-bento">
         <div class="lp-cell lp-cell-lg">
           <div class="lp-cell-head"><h3>A directory built for staffing</h3>
-            <p>Search clinicians by licence, specialty, location and radius — pre-screened, deduplicated, and continuously maintained.</p></div>
-          <div class="lp-minitable">
-            <div class="lp-mt-row"><span>RN · ICU</span><span>Austin, TX</span><span class="lp-mt-yr">8 yrs</span></div>
-            <div class="lp-mt-row"><span>NP · ER</span><span>Dallas, TX</span><span class="lp-mt-yr">12 yrs</span></div>
-            <div class="lp-mt-row"><span>PT</span><span>Houston, TX</span><span class="lp-mt-yr">6 yrs</span></div>
-            <div class="lp-mt-row"><span>RN · L&amp;D</span><span>San Antonio</span><span class="lp-mt-yr">9 yrs</span></div>
+            <p>Search provider records by name, credential, specialty, NPI and location, with filters to narrow your results.</p></div>
+          <div class="lp-minitable" aria-label="Illustrative provider record fields">
+            <div class="lp-mt-row"><span>Provider name</span><span>Source record</span><span class="lp-mt-yr">NPI</span></div>
+            <div class="lp-mt-row"><span>Credential</span><span>Source record</span><span class="lp-mt-yr">NPI</span></div>
+            <div class="lp-mt-row"><span>Specialty</span><span>Source taxonomy</span><span class="lp-mt-yr">NPI</span></div>
+            <div class="lp-mt-row"><span>Location</span><span>Source record</span><span class="lp-mt-yr">NPI</span></div>
           </div>
         </div>
         <div class="lp-cell">
@@ -121,7 +131,7 @@
         </div>
         <div class="lp-cell">
           <h3>Pools &amp; outreach</h3>
-          <p>Shortlist into pools tied to a job order, then run compliant email campaigns with open and reply tracking.</p>
+          <p>Keep candidates organized in pools and manage outreach from your recruiting workspace.</p>
         </div>
         <div class="lp-cell lp-cell-money">
           <h3>Submit, place &amp; bill</h3>
@@ -135,22 +145,35 @@
   <section class="lp-section lp-pipeline-sec" id="pipeline">
     <div class="lp-inner">
       <span class="lp-eyebrow">// The workflow</span>
-      <h2 class="lp-h2">From first search to booked margin.</h2>
+      <h2 class="lp-h2">From provider search to organized follow-up.</h2>
       <div class="lp-pipeline">
-        <div class="lp-stage"><span class="lp-stage-n">01</span><h3>Search</h3><p>Find matching clinicians in the screened directory or with AI search.</p></div>
-        <div class="lp-stage"><span class="lp-stage-n">02</span><h3>Reveal</h3><p>Unlock contact details for the candidates you want to work.</p></div>
-        <div class="lp-stage"><span class="lp-stage-n">03</span><h3>Submit</h3><p>Put them forward to your client facilities and track the response.</p></div>
-        <div class="lp-stage lp-stage-end"><span class="lp-stage-n">04</span><h3>Place</h3><p>Close the deal — the bill-vs-pay margin is booked automatically.</p></div>
+        <div class="lp-stage"><span class="lp-stage-n">01</span><h3>Search</h3><p>Filter provider records by specialty, credential and location.</p></div>
+        <div class="lp-stage"><span class="lp-stage-n">02</span><h3>Look up</h3><p>Request contact details for records you want to follow up on.</p></div>
+        <div class="lp-stage"><span class="lp-stage-n">03</span><h3>Organize</h3><p>Save candidates to pools and keep recruiting work together.</p></div>
+        <div class="lp-stage lp-stage-end"><span class="lp-stage-n">04</span><h3>Track</h3><p>Manage submissions and placements through your workflow.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section lp-faq" id="faq">
+    <div class="lp-inner lp-faq-layout">
+      <div class="lp-faq-intro"><span class="lp-eyebrow">// Frequently asked</span><h2 class="lp-h2">A few things to know.</h2><p>Answers about provider records, contact lookup and the MedHunt directory.</p></div>
+      <div class="lp-faq-list">
+        <details class="lp-faq-item"><summary>Where does provider directory information come from?<span></span></summary><p>The directory uses provider records supplied by the NPI Registry. Specialty and taxonomy are shown as source data and should be independently reviewed for hiring decisions.</p></details>
+        <details class="lp-faq-item"><summary>Does every listing include contact details?<span></span></summary><p>No. Contact lookup is a separate action, and a result may not be available for every provider.</p></details>
+        <details class="lp-faq-item"><summary>Has every person in the directory joined MedHunt?<span></span></summary><p>No. A directory record does not mean the person has created an account or confirmed the information in that record.</p></details>
+        <details class="lp-faq-item"><summary>What can agencies search by?<span></span></summary><p>Search provider records by name, credential, NPI, specialty and city. Use the specialty, state and location filters to narrow results.</p></details>
+        <details class="lp-faq-item"><summary>How can healthcare professionals use MedHunt?<span></span></summary><p>Create an account to explore roles, maintain a professional profile and credentials, and manage applications and messages.</p></details>
       </div>
     </div>
   </section>
 
   <section class="lp-final">
     <div class="lp-inner">
-      <h2>Join the healthcare marketplace.</h2>
-      <p>Whether you’re finding your next role or filling one — get started free.</p>
+      <h2>Bring your healthcare search into focus.</h2>
+      <p>Explore MedHunt as a healthcare professional or staffing agency.</p>
       <div class="lp-final-cta">
-        <button class="btn lg lp-final-btn" data-auth-open="signup">Get started</button>
+        <button class="btn lg lp-final-btn" data-auth-open="signup">Create an account</button>
         <button class="lp-final-signin" data-auth-open="login">or sign in</button>
       </div>
     </div>
@@ -162,6 +185,8 @@
       <nav class="lp-foot-links">
         <a href="#platform">Platform</a>
         <a href="#pipeline">How it works</a>
+        <a href="#data-privacy">Data &amp; privacy</a>
+        <a href="#faq">FAQ</a>
         <button class="lp-textlink" data-auth-open="login">Sign in</button>
         <a href="/terms">Terms</a>
         <a href="/privacy">Privacy</a>
