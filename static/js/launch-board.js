@@ -320,6 +320,15 @@
     } catch(e) {
       btn.disabled = false;
       btn.textContent = S.authMode === "signup" ? "Create account" : "Sign in";
+      let hasInvite = false;
+      try { hasInvite = !!sessionStorage.getItem("hb_invite"); } catch(_) {}
+      if (mode === "signup" && hasInvite
+          && (e.status === 409 || /already (has an account|registered)/i.test(e.message || ""))) {
+        showAuthMode("login");
+        emailInput.value = email;
+        err.textContent = "You already have an account. Sign in to accept this invitation and join the organization.";
+        return;
+      }
       if (S.authMode === mode) err.textContent = e.message || "Authentication failed.";
     }
   }

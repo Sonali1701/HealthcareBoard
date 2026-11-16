@@ -97,18 +97,19 @@ def register(body: RegisterRequest, db: DbSession, request: Request,
              _rl: None = Depends(auth_rate_limit)):
     if settings.email_enabled and not settings.sendgrid_api_key.strip():
         raise HTTPException(status_code=503, detail="Email verification is temporarily unavailable")
+    email = str(body.email).strip().lower()
     existing = db.scalar(select(User).where(
-        func.lower(User.email) == str(body.email).lower()
+        func.lower(func.trim(User.email)) == email
     ))
     if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="This email already has an account. Sign in to continue.")
 
     # When email is configured, require verification; otherwise auto-activate (dev).
     initial_status = (
         UserStatus.pending_verify if settings.email_enabled else UserStatus.active
     )
     user = User(
-        email=body.email,
+        email=email,
         password_hash=hash_password(body.password),
         role=body.role,
         status=initial_status,
@@ -141,7 +142,8 @@ def register(body: RegisterRequest, db: DbSession, request: Request,
 
 
 def _login(body: LoginRequest, db: DbSession, request: Request) -> TokenPair:
-    user = db.scalar(select(User).where(User.email == body.email))
+    email = str(body.email).strip().lower()
+    user = db.scalar(select(User).where(func.lower(func.trim(User.email)) == email))
     if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if user.deleted_at is not None or user.status == UserStatus.suspended:
