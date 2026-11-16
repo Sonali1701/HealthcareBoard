@@ -1,4 +1,4 @@
-"""Authentication & account endpoints: register, login, JWT refresh, MFA,
+﻿"""Authentication & account endpoints: register, login, JWT refresh, MFA,
 password reset, email verification, OAuth (stub)."""
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def client_ip(request: Request | None) -> str | None:
 
 def _issue_tokens(db: DbSession, user: User, request: Request | None = None) -> TokenPair:
     # Generate the session id up front so it can be stamped into the access token
-    # as its `sid` claim — that claim is what single-session enforcement checks.
+    # as its `sid` claim â€” that claim is what single-session enforcement checks.
     session_id = new_uuid()
     access = create_access_token(user.user_id, user.role.value, session_id=session_id)
     refresh = create_refresh_token(user.user_id)
@@ -191,7 +191,7 @@ def refresh_token(body: RefreshRequest, db: DbSession, request: Request):
 
     # Single active session: only the account's current active session may rotate
     # forward. This closes a race where two near-simultaneous logins could each
-    # leave the other's refresh row un-revoked — the active-session pointer is the
+    # leave the other's refresh row un-revoked â€” the active-session pointer is the
     # single source of truth, so a superseded refresh token is rejected here too.
     if (settings.enforces_single_session(user.role.value)
             and user.active_session_id
@@ -275,7 +275,7 @@ def mfa_disable(body: MFAVerifyRequest, user: CurrentUser, db: DbSession):
 # The token is emailed. For local development (email disabled, non-production)
 # it is ALSO returned as `dev_token` so a developer can complete the flow
 # without a mail provider. It is never returned in production and never returned
-# when email actually delivered it — see `_dev_token` below.
+# when email actually delivered it â€” see `_dev_token` below.
 
 def _maybe_dev_token(resp: dict, raw: str, sent: bool) -> dict:
     """Expose a reset/verify token in the response only when it is safe to.
@@ -292,7 +292,8 @@ def _maybe_dev_token(resp: dict, raw: str, sent: bool) -> dict:
 @router.post("/password-reset/request")
 def password_reset_request(body: PasswordResetRequest, db: DbSession, request: Request,
                            _rl: None = Depends(auth_rate_limit)):
-    user = db.scalar(select(User).where(User.email == body.email))
+    email = str(body.email).strip().lower()
+    user = db.scalar(select(User).where(func.lower(func.trim(User.email)) == email))
     # Always return success to avoid email enumeration.
     if not user:
         return {"detail": "If the email exists, a reset link was sent"}
@@ -320,7 +321,7 @@ def password_reset_confirm(body: PasswordResetConfirm, db: DbSession):
         raise HTTPException(status_code=400, detail="Invalid token")
     user.password_hash = hash_password(body.new_password)
     rec.used_at = utcnow()
-    # A reset is a recovery action — assume the old sessions may be the
+    # A reset is a recovery action â€” assume the old sessions may be the
     # attacker's. Revoke every refresh session and drop the active-session
     # pointer so nothing keeps working on the strength of the old password.
     for s in db.scalars(select(Session).where(Session.user_id == user.user_id)):

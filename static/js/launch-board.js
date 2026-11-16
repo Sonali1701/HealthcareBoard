@@ -52,18 +52,18 @@
   // then all we have (and all we show) is `masked_name`.
   const displayName = (p) => {
     const full = `${(p.first_name || "").trim()} ${(p.last_name || "").trim()}`.trim();
-    return (isRevealed(p.profile_id) && full) ? full : (p.masked_name || "—");
+    return (isRevealed(p.profile_id) && full) ? full : (p.masked_name || "â€”");
   };
   const loading = text => `<div class="loading-state"><span class="spinner"></span><strong>${esc(text)}</strong></div>`;
   // Finished states, with no spinner. These used to reuse loading(), which left
-  // a spinner turning under "No notifications" and under every error — a page
+  // a spinner turning under "No notifications" and under every error â€” a page
   // that has given up must not look like a page still working.
   const stateBlock = (icon, text, hint, cls) =>
     `<div class="loading-state ${cls}"><i class="fas ${icon}"></i><strong>${esc(text)}</strong>${
       hint ? `<span class="state-hint">${esc(hint)}</span>` : ""}</div>`;
   const emptyState = (text, hint = "", icon = "fa-inbox") =>
     stateBlock(icon, text, hint, "is-empty");
-  const errorState = (text, hint = "That is usually temporary — try again in a moment.") =>
+  const errorState = (text, hint = "That is usually temporary â€” try again in a moment.") =>
     stateBlock("fa-triangle-exclamation", text, hint, "is-error");
   // Same state blocks, but legal inside a <tbody>. Column counts must match the
   // <thead> in board.html so the state spans the full table width.
@@ -82,7 +82,7 @@
     const text = clean(value);
     if (!text) return true;
     if (text.length > 72) return true;
-    if (/@|\(\d{3}\)|\d{3}[-.\s]\d{3}[-.\s]\d{4}|[_-]{4,}|•/.test(text)) return true;
+    if (/@|\(\d{3}\)|\d{3}[-.\s]\d{3}[-.\s]\d{4}|[_-]{4,}|â€¢/.test(text)) return true;
     if (/\u2022|\u00e2\u20ac\u00a2/.test(text)) return true;
     if (/^\d+\s+/.test(text)) return true;
     if (/\b(road|rd|street|st|drive|dr|court|ct|way|avenue|ave|blvd|lane|ln|apt|suite)\b/i.test(text)) return true;
@@ -157,7 +157,7 @@
   }
   // Clear a dead session and return to the signed-out screen. Used when the
   // refresh token itself is rejected (expired after 30 days, revoked, or the
-  // password was reset) — nothing works until the user signs in again.
+  // password was reset) â€” nothing works until the user signs in again.
   function signOutExpired(){
     if (S._signedOut) return;
     S._signedOut = true;
@@ -301,7 +301,7 @@
     if (!emailInput.checkValidity()) { err.textContent = "Enter a valid email address."; emailInput.focus(); return; }
     const mode = S.authMode;
     const btn = $("#auth-submit");
-    btn.disabled = true; btn.textContent = "Please wait…";
+    btn.disabled = true; btn.textContent = "Please waitâ€¦";
     try {
       if (mode === "signup") {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
@@ -326,10 +326,12 @@
           && (e.status === 409 || /already (has an account|registered)/i.test(e.message || ""))) {
         showAuthMode("login");
         emailInput.value = email;
-        err.textContent = "You already have an account. Sign in to accept this invitation and join the organization.";
+        err.textContent = "This email already has a MedHunt account. Sign in with that account to accept the invitation. If you need to reset its password, use Forgot password; the invitation will stay saved.";
         return;
       }
-      if (S.authMode === mode) err.textContent = e.message || "Authentication failed.";
+      if (S.authMode === mode) err.textContent = hasInvite && S.authMode === "login" && e.status === 401
+        ? "That password did not match this MedHunt account. Use Forgot password if needed; your invitation is still saved."
+        : (e.message || "Authentication failed.");
     }
   }
 
@@ -346,10 +348,10 @@
   function showPage(id){
     setMobileMenu(false);
     // Community Feed is hidden pre-launch (read-only, seeded demo content). The
-    // page, social.py API and loadFeed() are kept — remove this line and restore
+    // page, social.py API and loadFeed() are kept â€” remove this line and restore
     // the nav button in board.html to bring it back.
     if (id === "community") id = "dashboard";
-    // Retired from the product — keep the code/pages but make them unreachable.
+    // Retired from the product â€” keep the code/pages but make them unreachable.
     if (["submissions", "clients", "placements", "extension", "paytools"].includes(id)) id = "dashboard";
     if ((id === "providers" || id === "ai" || id === "extension" || id === "pools"
          || id === "matching" || id === "outreach" || id === "credits" || id === "submissions"
@@ -399,7 +401,7 @@
   const ADMIN_COLS = 10, ADMIN_ORG_COLS = 9, ADMIN_LOGIN_COLS = 5, ADMIN_JOB_COLS = 7, ADMIN_AUDIT_COLS = 5;
   const ROLE_LABEL = {job_seeker:"Job seeker", recruiter:"Recruiter", employer:"Employer", admin:"Admin"};
   const STATUS_LABEL = {active:"Active", suspended:"Suspended", pending_verify:"Pending", deleted:"Deleted"};
-  const adminDate = iso => iso ? new Date(iso).toLocaleDateString([], {year:"numeric", month:"short", day:"numeric"}) : "—";
+  const adminDate = iso => iso ? new Date(iso).toLocaleDateString([], {year:"numeric", month:"short", day:"numeric"}) : "â€”";
 
   function loadAdmin(){
     if (!isAdmin()) return;
@@ -423,7 +425,7 @@
     if (name === "audit") loadAdminAudit();
   }
 
-  const medhuntDate = value => value ? new Date(Number(value) * 1000).toLocaleString() : "—";
+  const medhuntDate = value => value ? new Date(Number(value) * 1000).toLocaleString() : "â€”";
   const medhuntPath = employerId => employerId ? `?employer_id=${encodeURIComponent(employerId)}` : "";
 
   async function loadMedhuntDevices(selector, employerId=""){
@@ -437,8 +439,8 @@
         <div class="table-wrap"><table class="table"><thead><tr><th>Account</th><th>Device</th><th>Status</th><th>Last used</th><th></th></tr></thead>
         <tbody>${(data.items || []).length ? data.items.map(d => `<tr>
           <td>${esc(d.user_email || d.user_id)}</td>
-          <td>${esc(d.device_name || "Browser")} · ${esc(d.installation_suffix || "")}</td>
-          <td>${esc(d.status)}${Number(d.approved_device_count || 0) > 1 ? ` · ${Number(d.approved_device_count)} devices` : ""}</td>
+          <td>${esc(d.device_name || "Browser")} Â· ${esc(d.installation_suffix || "")}</td>
+          <td>${esc(d.status)}${Number(d.approved_device_count || 0) > 1 ? ` Â· ${Number(d.approved_device_count)} devices` : ""}</td>
           <td>${esc(medhuntDate(d.last_seen))}</td>
           <td>${d.status === "pending" ? `<button class="btn small primary" data-medhunt-approve="${Number(d.id)}" data-medhunt-org="${esc(employerId)}">Approve</button>` : ""}</td>
         </tr>`).join("") : `<tr><td colspan="5">No registered devices.</td></tr>`}</tbody></table></div>`;
@@ -463,9 +465,9 @@
       box.innerHTML = `${items.some(item => item.has_reply) ? `<div class="row" style="justify-content:flex-end;margin-bottom:10px"><button class="btn small" data-medhunt-bulk="${esc(employerId)}">Assign selected replies</button></div>` : ""}<div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-medhunt-select-all aria-label="Select candidate replies"></th><th>Candidate</th><th>Started by</th><th>Candidate replied?</th><th>Assigned recruiter</th><th>Recruiter replied?</th><th>Last activity</th><th></th></tr></thead>
         <tbody>${items.length ? items.map(c => `<tr>
           <td><input type="checkbox" data-medhunt-select="${Number(c.id)}" data-candidate-id="${esc(c.candidate_id)}" ${c.has_reply && !(Number(c.last_outbound_at || 0) > Number(c.last_reply_at || 0)) && c.status !== "opted_out" ? "" : "disabled"}></td>
-          <td>${esc(c.candidate_name || "Candidate")}</td><td>${esc(c.initiated_by_email || "Unknown user")}</td><td>${c.has_reply ? `Yes · ${esc(medhuntDate(c.last_reply_at))}` : "No reply yet"}${c.status === "opted_out" ? ` · <b>STOP</b>` : ""}</td>
+          <td>${esc(c.candidate_name || "Candidate")}</td><td>${esc(c.initiated_by_email || "Unknown user")}</td><td>${c.has_reply ? `Yes Â· ${esc(medhuntDate(c.last_reply_at))}` : "No reply yet"}${c.status === "opted_out" ? ` Â· <b>STOP</b>` : ""}</td>
           <td>${esc(c.assigned_recruiter_email || "Unassigned")}</td>
-          <td>${Number(c.last_outbound_at || 0) > Number(c.last_reply_at || 0) ? `Yes · ${esc(c.last_outbound_user_email || "team member")}` : "No"}</td>
+          <td>${Number(c.last_outbound_at || 0) > Number(c.last_reply_at || 0) ? `Yes Â· ${esc(c.last_outbound_user_email || "team member")}` : "No"}</td>
           <td>${esc(medhuntDate(c.last_message_at || c.updated))}</td>
           <td><button class="btn small" data-medhunt-conversation="${Number(c.id)}" data-medhunt-org="${esc(employerId)}">Review thread</button></td>
         </tr>`).join("") : `<tr><td colspan="8">No outreach conversations yet.</td></tr>`}</tbody></table></div>`;
@@ -505,9 +507,9 @@
           ? `Matched by ${(item.matched_by || []).join(" and ") || "contact"}`
           : item.error || "";
         return `<tr><td><b>${esc(item.candidate_name || "Candidate")}</b><div class="cell-sub">${esc(item.candidate_id || "")}</div></td>
-          <td>${esc(item.location || "—")}</td><td>${esc(item.user_email || "Unknown user")}</td>
-          <td><span class="status-pill ${tone}">${esc(label)}</span></td><td>${esc(item.applicant_id || "—")}</td>
-          <td>${item.created_at ? esc(new Date(item.created_at).toLocaleString()) : "—"}</td><td>${esc(detail || "—")}</td></tr>`;
+          <td>${esc(item.location || "â€”")}</td><td>${esc(item.user_email || "Unknown user")}</td>
+          <td><span class="status-pill ${tone}">${esc(label)}</span></td><td>${esc(item.applicant_id || "â€”")}</td>
+          <td>${item.created_at ? esc(new Date(item.created_at).toLocaleString()) : "â€”"}</td><td>${esc(detail || "â€”")}</td></tr>`;
       }).join("") : `<tr><td colspan="7">No CEIPAL delivery attempts recorded yet.</td></tr>`}</tbody></table></div>`;
     } catch(e) { box.innerHTML = errorState("Could not load CEIPAL activity.", e.message); }
   }
@@ -519,7 +521,7 @@
     try {
       const data = await get("/api/extension/medhunt/my-replies");
       const items = data.items || [];
-      box.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Candidate</th><th>Status</th><th>Assigned to</th><th>Last reply</th><th></th></tr></thead><tbody>${items.length ? items.map(c => `<tr><td>${esc(c.candidate_name || "Candidate")}</td><td>${esc(c.status)}${c.status === "opted_out" ? " · STOP" : ""}</td><td>${esc(c.assigned_recruiter_email || "Unassigned")}</td><td>${esc(medhuntDate(c.last_reply_at || c.last_message_at || c.updated))}</td><td><button class="btn small" data-medhunt-conversation="${Number(c.id)}" data-medhunt-view="1">View reply</button></td></tr>`).join("") : `<tr><td colspan="5">No replies assigned to you yet.</td></tr>`}</tbody></table></div>`;
+      box.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Candidate</th><th>Status</th><th>Assigned to</th><th>Last reply</th><th></th></tr></thead><tbody>${items.length ? items.map(c => `<tr><td>${esc(c.candidate_name || "Candidate")}</td><td>${esc(c.status)}${c.status === "opted_out" ? " Â· STOP" : ""}</td><td>${esc(c.assigned_recruiter_email || "Unassigned")}</td><td>${esc(medhuntDate(c.last_reply_at || c.last_message_at || c.updated))}</td><td><button class="btn small" data-medhunt-conversation="${Number(c.id)}" data-medhunt-view="1">View reply</button></td></tr>`).join("") : `<tr><td colspan="5">No replies assigned to you yet.</td></tr>`}</tbody></table></div>`;
     } catch(e) { box.innerHTML = errorState("Could not load your candidate replies.", e.message); }
   }
 
@@ -568,7 +570,7 @@
       $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card form-card">
         <div class="modal-head"><strong>${esc(conversation.candidate_name || "Candidate reply")}</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div>
         <div class="dlg-body"><div class="msg-bubbles" style="max-height:38vh;overflow:auto">${messages.map(m => `<p><b>${m.direction === "inbound" ? "Candidate" : esc(m.sender_name || "Recruiter")}:</b> ${esc(m.body || "")}</p>`).join("")}</div>
-          ${conversation.status === "opted_out" ? `<p class="muted">This candidate opted out. Replies are disabled.</p>` : conversation.can_reply ? `<label>Reply to candidate<textarea class="input" id="medhunt-reply" rows="3" maxlength="500" placeholder="Write a reply…"></textarea></label><button class="btn" id="medhunt-reply-send">Send reply</button>` : `<p class="muted">Only the original or assigned recruiter can reply. Reassign the unanswered candidate reply to another teammate above.</p>`}
+          ${conversation.status === "opted_out" ? `<p class="muted">This candidate opted out. Replies are disabled.</p>` : conversation.can_reply ? `<label>Reply to candidate<textarea class="input" id="medhunt-reply" rows="3" maxlength="500" placeholder="Write a replyâ€¦"></textarea></label><button class="btn" id="medhunt-reply-send">Send reply</button>` : `<p class="muted">Only the original or assigned recruiter can reply. Reassign the unanswered candidate reply to another teammate above.</p>`}
           <label>Assign recruiter<select class="input" id="medhunt-recruiter"><option value="">Choose recruiter</option>${(recruiters.items || []).map(r => `<option value="${esc(r.user_id)}"${r.user_id === conversation.assigned_recruiter_id ? " selected" : ""}>${esc(r.name || r.email)}</option>`).join("")}</select></label></div>
         <div class="dlg-foot"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="medhunt-assign">Assign recruiter</button></div>
       </div></div>`;
@@ -594,7 +596,7 @@
     try {
       const conversation = await get(`/api/extension/medhunt/conversations/${id}`);
       const messages = conversation.messages || [];
-      $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card form-card"><div class="modal-head"><strong>${esc(conversation.candidate_name || "Candidate reply")}</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div><div class="dlg-body"><p class="muted">${esc(conversation.candidate_phone || "")}</p><div class="msg-bubbles" style="max-height:48vh;overflow:auto">${messages.map(m => `<p><b>${m.direction === "inbound" ? "Candidate" : esc(m.sender_name || "Recruiter")}:</b> ${esc(m.body || "")}</p>`).join("")}</div>${conversation.status === "opted_out" ? `<p class="muted">This candidate opted out. Replies are disabled.</p>` : conversation.can_reply ? `<label>Reply to candidate<textarea class="input" id="medhunt-reply" rows="3" maxlength="500" placeholder="Write a reply…"></textarea></label><button class="btn primary" id="medhunt-reply-send">Send reply</button>` : `<p class="muted">Only the original or assigned recruiter can reply.</p>`}</div><div class="dlg-foot"><button class="btn ghost" data-close-modal>Close</button></div></div></div>`;
+      $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card form-card"><div class="modal-head"><strong>${esc(conversation.candidate_name || "Candidate reply")}</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div><div class="dlg-body"><p class="muted">${esc(conversation.candidate_phone || "")}</p><div class="msg-bubbles" style="max-height:48vh;overflow:auto">${messages.map(m => `<p><b>${m.direction === "inbound" ? "Candidate" : esc(m.sender_name || "Recruiter")}:</b> ${esc(m.body || "")}</p>`).join("")}</div>${conversation.status === "opted_out" ? `<p class="muted">This candidate opted out. Replies are disabled.</p>` : conversation.can_reply ? `<label>Reply to candidate<textarea class="input" id="medhunt-reply" rows="3" maxlength="500" placeholder="Write a replyâ€¦"></textarea></label><button class="btn primary" id="medhunt-reply-send">Send reply</button>` : `<p class="muted">Only the original or assigned recruiter can reply.</p>`}</div><div class="dlg-foot"><button class="btn ghost" data-close-modal>Close</button></div></div></div>`;
       bindMedhuntReply(id, "", () => viewMedhuntConversation(button));
     } catch(e) { toast(e.message || "Could not open candidate reply.", {kind:"err"}); }
   }
@@ -622,7 +624,7 @@
 
   async function loadAdminLogins(){
     const tb = $("#admin-login-rows");
-    tb.innerHTML = loadingRow(ADMIN_LOGIN_COLS, "Loading login activity…");
+    tb.innerHTML = loadingRow(ADMIN_LOGIN_COLS, "Loading login activityâ€¦");
     const params = new URLSearchParams({limit:ADMIN.lLimit, offset:ADMIN.lOffset});
     try {
       const data = await get("/api/admin/logins?" + params.toString());
@@ -634,12 +636,12 @@
       tb.innerHTML = data.logins.map(l => {
         const who = l.name ? `<b>${esc(l.name)}</b><span class="admin-sub">${esc(l.email || "")}</span>`
                            : `<b>${esc((l.email || "unknown").split("@")[0])}</b><span class="admin-sub">${esc(l.email || "")}</span>`;
-        const when = l.created_at ? new Date(l.created_at).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "—";
+        const when = l.created_at ? new Date(l.created_at).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "â€”";
         const sess = l.active ? `<span class="admin-badge ok">Active</span>` : `<span class="admin-badge">Expired</span>`;
         return `<tr>
           <td class="admin-user-cell">${who}</td>
-          <td class="admin-ip">${esc(l.ip || "—")}</td>
-          <td>${esc(l.device || "—")}</td>
+          <td class="admin-ip">${esc(l.ip || "â€”")}</td>
+          <td>${esc(l.device || "â€”")}</td>
           <td>${esc(when)}</td>
           <td>${sess}</td>
         </tr>`;
@@ -667,7 +669,7 @@
       ]);
       const q = data.lookup_provider;
       const nf = n => Number(n || 0).toLocaleString();
-      box.innerHTML = (q ? statGroup("Quick Sourcer lookups · live", [
+      box.innerHTML = (q ? statGroup("Quick Sourcer lookups Â· live", [
         statCard("Requests sent now", nf(q.active), "Medhunt1 requests to Quick Sourcer"),
         statCard("Waiting in Medhunt1", nf(q.queued), q.processing ? `${nf(q.processing)} extension lookups processing` : "extension lookups waiting"),
         statCard("Medhunt1 worker limit", nf(q.concurrency_limit), "Not Quick Sourcer's available slots"),
@@ -679,7 +681,7 @@
       + (backfill.error ? errorState("Neon contact enrichment metrics unavailable.", backfill.error) : statGroup("Neon contact enrichment", [
         statCard("Contactless eligible", nf(backfill.eligible_contactless), backfill.schedule || ""),
         statCard("Waiting", nf(backfill.queued), `${nf(backfill.processing)} processing`),
-        statCard("Enriched", nf(backfill.enriched), `${nf(backfill.enriched_24h)} today · ${nf(backfill.enriched_7d)}/7d`),
+        statCard("Enriched", nf(backfill.enriched), `${nf(backfill.enriched_24h)} today Â· ${nf(backfill.enriched_7d)}/7d`),
         statCard("Not found", nf(backfill.not_found), "eligible for retry after cooldown"),
         statCard("Failed", nf(backfill.failed), "temporary failures retry automatically"),
       ]));
@@ -694,11 +696,11 @@
 
   async function loadAdminOverview(){
     const box = $("#admin-stats");
-    box.innerHTML = loading("Loading platform overview…");
+    box.innerHTML = loading("Loading platform overviewâ€¦");
     try {
       const o = await get("/api/admin/overview");
       const u = o.users, c = o.content, b = o.billing;
-      const nf = n => (n == null ? "—" : Number(n).toLocaleString());
+      const nf = n => (n == null ? "â€”" : Number(n).toLocaleString());
       box.innerHTML =
         statGroup("Users", [
           statCard("Total users", nf(u.total), `${nf(u.active)} active`),
@@ -706,16 +708,16 @@
           statCard("Recruiters", nf(u.recruiters)),
           statCard("Admins", nf(u.admins)),
           statCard("Suspended", nf(u.suspended)),
-          statCard("New this week", nf(u.new_7d), `${nf(u.new_24h)} today · ${nf(u.new_30d)}/30d`),
+          statCard("New this week", nf(u.new_7d), `${nf(u.new_24h)} today Â· ${nf(u.new_30d)}/30d`),
         ])
         + statGroup("Content", [
-          statCard("Providers", `${c.profiles_estimated ? "≈" : ""}${nf(c.profiles)}`, `${c.profiles_estimated ? "≈" : ""}${nf(c.profiles_listable)} listable`),
-          statCard("Jobs", nf(c.jobs), `${nf(c.jobs_active)} active · ${nf(c.jobs_featured)} featured`),
+          statCard("Providers", `${c.profiles_estimated ? "â‰ˆ" : ""}${nf(c.profiles)}`, `${c.profiles_estimated ? "â‰ˆ" : ""}${nf(c.profiles_listable)} listable`),
+          statCard("Jobs", nf(c.jobs), `${nf(c.jobs_active)} active Â· ${nf(c.jobs_featured)} featured`),
           statCard("Organizations", nf(c.organizations), `${nf(c.organizations_verified)} verified`),
           statCard("Applications", nf(c.applications)),
           statCard("Messages", nf(c.messages)),
         ])
-        + statGroup("Billing · credits", [
+        + statGroup("Billing Â· credits", [
           statCard("Credits in circulation", nf(b.credit_balance)),
           statCard("Credits spent", nf(b.credit_spent), "lifetime reveals"),
           statCard("Credits granted", nf(b.credit_granted), "lifetime"),
@@ -732,7 +734,7 @@
 
   async function loadAdminUsers(){
     const tb = $("#admin-user-rows");
-    tb.innerHTML = loadingRow(ADMIN_COLS, "Loading users…");
+    tb.innerHTML = loadingRow(ADMIN_COLS, "Loading usersâ€¦");
     const q = clean($("#admin-user-q").value);
     const role = $("#admin-user-role").value;
     const status = $("#admin-user-status").value;
@@ -776,9 +778,9 @@
       <td><span class="admin-badge ${statusCls}">${STATUS_LABEL[u.status] || u.status}</span></td>
       <td><input type="checkbox" data-admin-ats="ceipal" data-user-id="${esc(u.user_id)}"${u.medhunt_ceipal_enabled ? " checked" : ""} aria-label="Send ${esc(u.email)} candidates to CEIPAL"></td>
       <td><input type="checkbox" data-admin-ats="nexus" data-user-id="${esc(u.user_id)}"${u.medhunt_nexus_enabled ? " checked" : ""} aria-label="Send ${esc(u.email)} candidates to Nexus"></td>
-      <td>${u.credit_balance == null ? "—" : Number(u.credit_balance).toLocaleString()}</td>
+      <td>${u.credit_balance == null ? "â€”" : Number(u.credit_balance).toLocaleString()}</td>
       <td>${u.last_login_at ? adminDate(u.last_login_at) : "Never"}</td>
-      <td class="admin-ip">${esc(u.last_ip || "—")}</td>
+      <td class="admin-ip">${esc(u.last_ip || "â€”")}</td>
       <td>${adminDate(u.created_at)}</td>
       <td class="td-actions"><button class="btn ghost small" data-admin-user="${esc(u.user_id)}"><i class="fas fa-sliders"></i>Manage</button>${action}</td>
     </tr>`;
@@ -797,7 +799,7 @@
 
   async function loadAdminOrgs(){
     const tb = $("#admin-org-rows");
-    tb.innerHTML = loadingRow(ADMIN_ORG_COLS, "Loading organizations…");
+    tb.innerHTML = loadingRow(ADMIN_ORG_COLS, "Loading organizationsâ€¦");
     const q = clean($("#admin-org-q").value);
     const params = new URLSearchParams({limit:ADMIN.oLimit, offset:ADMIN.oOffset});
     if (q) params.set("q", q);
@@ -809,13 +811,13 @@
         return;
       }
       tb.innerHTML = data.organizations.map(o => {
-        const loc = [o.city, o.state_code].filter(Boolean).join(", ") || "—";
+        const loc = [o.city, o.state_code].filter(Boolean).join(", ") || "â€”";
         const verified = o.is_verified ? ` <i class="fas fa-circle-check admin-verified" title="Verified"></i>` : "";
         return `<tr>
           <td><b>${esc(o.org_name)}</b>${verified}</td>
-          <td>${esc(o.org_type || "—")}</td>
+          <td>${esc(o.org_type || "â€”")}</td>
           <td>${esc(loc)}</td>
-          <td class="admin-sub">${esc(o.owner_email || "—")}</td>
+          <td class="admin-sub">${esc(o.owner_email || "â€”")}</td>
           <td><b>${Number(o.credits || 0).toLocaleString()}</b></td>
           <td>${Number(o.members).toLocaleString()}</td>
           <td>${Number(o.jobs).toLocaleString()} <span class="admin-sub">(${Number(o.jobs_active).toLocaleString()} active)</span></td>
@@ -832,7 +834,7 @@
   // ---- Admin: jobs moderation ----------------------------------------------
   async function loadAdminJobs(){
     const tb = $("#admin-job-rows");
-    tb.innerHTML = loadingRow(ADMIN_JOB_COLS, "Loading jobs…");
+    tb.innerHTML = loadingRow(ADMIN_JOB_COLS, "Loading jobsâ€¦");
     const q = clean($("#admin-job-q").value), status = $("#admin-job-status").value;
     const params = new URLSearchParams({limit:ADMIN.jLimit, offset:ADMIN.jOffset});
     if (q) params.set("q", q);
@@ -859,8 +861,8 @@
       : `<button class="btn ghost small" data-admin-job-activate="${esc(j.job_id)}">Activate</button>`;
     return `<tr>
       <td class="admin-user-cell">${feat}<b>${esc(j.title)}</b><span class="admin-sub">${esc(j.specialty || j.source || "")}</span></td>
-      <td>${esc(j.org_name || "—")}</td>
-      <td>${esc(j.location || "—")}</td>
+      <td>${esc(j.org_name || "â€”")}</td>
+      <td>${esc(j.location || "â€”")}</td>
       <td><span class="admin-badge ${statusCls}">${esc(j.status)}</span></td>
       <td>${Number(j.applications || 0).toLocaleString()}</td>
       <td>${adminDate(j.created_at)}</td>
@@ -883,7 +885,7 @@
   // ---- Admin: audit log ----------------------------------------------------
   async function loadAdminAudit(){
     const tb = $("#admin-audit-rows");
-    tb.innerHTML = loadingRow(ADMIN_AUDIT_COLS, "Loading audit log…");
+    tb.innerHTML = loadingRow(ADMIN_AUDIT_COLS, "Loading audit logâ€¦");
     const params = new URLSearchParams({limit:ADMIN.auLimit, offset:ADMIN.auOffset});
     try {
       const data = await get("/api/admin/audit?" + params.toString());
@@ -894,14 +896,14 @@
       }
       tb.innerHTML = data.logs.map(l => {
         const action = (l.action || "").replace("admin.", "").replace(/_/g, " ");
-        const when = l.created_at ? new Date(l.created_at).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "—";
+        const when = l.created_at ? new Date(l.created_at).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "â€”";
         const meta = l.meta && Object.keys(l.meta).length
           ? Object.entries(l.meta).map(([k, v]) => `${k}: ${v}`).join(", ") : "";
         const target = [l.entity_type, l.entity_id ? l.entity_id.slice(0, 8) : ""].filter(Boolean).join(" ");
         return `<tr>
           <td><b>${esc(action)}</b></td>
-          <td class="admin-sub">${esc(l.actor || "—")}</td>
-          <td class="admin-sub">${esc(target || "—")}</td>
+          <td class="admin-sub">${esc(l.actor || "â€”")}</td>
+          <td class="admin-sub">${esc(target || "â€”")}</td>
           <td class="admin-sub">${esc(meta)}</td>
           <td>${esc(when)}</td>
         </tr>`;
@@ -936,14 +938,14 @@
   }
 
   async function openAdminUser(userId){
-    adminModal("User", loading("Loading user…"));
+    adminModal("User", loading("Loading userâ€¦"));
     try {
       const u = await get(`/api/admin/users/${userId}`);
       const orgs = (u.organizations || []).map(o =>
-        `<span class="admin-badge">${esc(o.org_name)} · ${esc(o.role)}</span>`).join(" ")
+        `<span class="admin-badge">${esc(o.org_name)} Â· ${esc(o.role)}</span>`).join(" ")
         || `<span class="admin-sub">Not in any organization</span>`;
       const logins = (u.recent_logins || []).map(l =>
-        `<div class="admin-recent-row"><span class="admin-ip">${esc(l.ip || "—")}</span>
+        `<div class="admin-recent-row"><span class="admin-ip">${esc(l.ip || "â€”")}</span>
           <span class="admin-sub">${esc(adminDate(l.created_at))}</span>
           ${l.active ? `<span class="admin-badge ok">active</span>` : ""}</div>`).join("")
         || `<span class="admin-sub">No logins recorded</span>`;
@@ -957,12 +959,12 @@
             <div><label>Role</label><div>${esc(ROLE_LABEL[u.role] || u.role)}</div></div>
             <div><label>Email verified</label><div>${u.email_verified ? "Yes" : `No <button class="btn ghost small" id="au-verify">Verify now</button>`}</div></div>
             <div><label>Joined</label><div>${esc(adminDate(u.created_at))}</div></div>
-            <div><label>Last IP</label><div class="admin-ip">${esc(u.last_ip || "—")}</div></div>
+            <div><label>Last IP</label><div class="admin-ip">${esc(u.last_ip || "â€”")}</div></div>
           </div>
           <div class="admin-credit-box">
             <div><span class="admin-stat-val">${Number(u.credits.balance).toLocaleString()}</span>
               <span class="admin-stat-label">Credits</span>
-              <span class="admin-sub">${Number(u.credits.lifetime_granted).toLocaleString()} granted · ${Number(u.credits.lifetime_spent).toLocaleString()} spent</span></div>
+              <span class="admin-sub">${Number(u.credits.lifetime_granted).toLocaleString()} granted Â· ${Number(u.credits.lifetime_spent).toLocaleString()} spent</span></div>
             <div class="admin-credit-actions">
               <button class="btn ghost small" id="au-grant"><i class="fas fa-plus"></i>Grant</button>
               <button class="btn ghost small" id="au-deduct"><i class="fas fa-minus"></i>Deduct</button>
@@ -999,19 +1001,19 @@
           openAdminUser(userId); loadAdminUsers();
         } catch(e) { toast(e.message || "Could not save routing.", {title:"Medhunt", kind:"err"}); }
       };
-      $("#au-grant").onclick = () => adminAdjustCredits({title:`Grant credits · ${u.email}`, sign:1,
+      $("#au-grant").onclick = () => adminAdjustCredits({title:`Grant credits Â· ${u.email}`, sign:1,
         url:`/api/admin/users/${userId}/credits`, after:() => openAdminUser(userId)});
-      $("#au-deduct").onclick = () => adminAdjustCredits({title:`Deduct credits · ${u.email}`, sign:-1,
+      $("#au-deduct").onclick = () => adminAdjustCredits({title:`Deduct credits Â· ${u.email}`, sign:-1,
         url:`/api/admin/users/${userId}/credits`, after:() => openAdminUser(userId)});
     } catch(e){ $("#admin-modal-body").innerHTML = errorState("Could not load the user.", e.message || ""); }
   }
 
   async function openAdminOrg(orgId){
-    adminModal("Organization", loading("Loading organization…"));
+    adminModal("Organization", loading("Loading organizationâ€¦"));
     try {
       const o = await get(`/api/admin/organizations/${orgId}`);
       const members = (o.members || []).map(m => `<tr>
-        <td>${esc(m.name || m.email || "—")}<div class="admin-sub">${esc(m.email || "")}</div></td>
+        <td>${esc(m.name || m.email || "â€”")}<div class="admin-sub">${esc(m.email || "")}</div></td>
         <td>${m.is_owner ? `<span class="admin-badge accent">Owner</span>`
           : `<select class="admin-mini-sel" data-org-member-role="${esc(m.user_id)}">${
               ["recruiter", "manager", "admin"].map(r => `<option value="${r}"${r === m.role ? " selected" : ""}>${r}</option>`).join("")
@@ -1020,14 +1022,14 @@
       </tr>`).join("");
       const teams = (o.teams || []).map(t => `<tr>
         <td><b>${esc(t.name)}</b><div class="admin-sub">${esc(t.status || "active")}</div></td>
-        <td>${t.quick_sourcer_average_response_ms_5m == null ? "—" : `${Number(t.quick_sourcer_average_response_ms_5m).toLocaleString()} ms`}<div class="admin-sub">${Number(t.quick_sourcer_requests_5m || 0)} requests · last 5 min</div></td>
+        <td>${t.quick_sourcer_average_response_ms_5m == null ? "â€”" : `${Number(t.quick_sourcer_average_response_ms_5m).toLocaleString()} ms`}<div class="admin-sub">${Number(t.quick_sourcer_requests_5m || 0)} requests Â· last 5 min</div></td>
         <td><label><input type="checkbox" data-admin-qs-team="${esc(t.team_id)}"${t.quick_sourcer_dedicated ? " checked" : ""}> Dedicated pool</label></td>
       </tr>`).join("");
       $("#admin-modal-body").innerHTML = `
         <div class="admin-detail">
           <div class="admin-detail-head">
             <div><h3>${esc(o.org_name)} ${o.is_verified ? `<i class="fas fa-circle-check admin-verified"></i>` : ""}</h3>
-              <div class="admin-sub">${esc(o.org_type || "—")} · ${esc([o.city, o.state_code].filter(Boolean).join(", ") || "—")} · owner ${esc(o.owner_email || "—")}</div></div>
+              <div class="admin-sub">${esc(o.org_type || "â€”")} Â· ${esc([o.city, o.state_code].filter(Boolean).join(", ") || "â€”")} Â· owner ${esc(o.owner_email || "â€”")}</div></div>
           </div>
           <div class="admin-detail-grid">
             <div><label>Jobs</label><div>${Number(o.jobs).toLocaleString()} <span class="admin-sub">(${Number(o.jobs_active).toLocaleString()} active)</span></div></div>
@@ -1050,7 +1052,7 @@
           toast("Organization updated.", {title:"Organization"}); openAdminOrg(orgId); loadAdminOrgs(); }
         catch(e){ toast(e.message || "Failed.", {kind:"err"}); }
       };
-      $("#ao-grant").onclick = () => adminAdjustCredits({title:`Grant credits · ${o.org_name}`, sign:1,
+      $("#ao-grant").onclick = () => adminAdjustCredits({title:`Grant credits Â· ${o.org_name}`, sign:1,
         url:`/api/admin/organizations/${orgId}/credits`, after:() => openAdminOrg(orgId)});
       $$("#admin-modal-body [data-admin-qs-team]").forEach(input => input.onchange = async () => {
         const teamId = input.dataset.adminQsTeam;
@@ -1086,9 +1088,9 @@
       fields:[
         {name:"email", label:"User email", type:"email", required:true, wide:true, placeholder:"person@agency.com"},
         {name:"role", label:"Org role", type:"select", value:"recruiter", options:[
-          {value:"recruiter", label:"Member — use the tools"},
-          {value:"manager", label:"Manager — manage members"},
-          {value:"admin", label:"Admin — manage roles & billing"}]},
+          {value:"recruiter", label:"Member â€” use the tools"},
+          {value:"manager", label:"Manager â€” manage members"},
+          {value:"admin", label:"Admin â€” manage roles & billing"}]},
       ]});
     if (!v) return;
     try { await post(`/api/admin/organizations/${orgId}/members`, {email:v.email.trim(), role:v.role});
@@ -1126,7 +1128,7 @@
     const from = total ? offset + 1 : 0, to = Math.min(offset + limit, total);
     const prevDis = offset <= 0 ? " disabled" : "";
     const nextDis = offset + limit >= total ? " disabled" : "";
-    el.innerHTML = `<span class="admin-pager-info">${from}–${to} of ${total.toLocaleString()}</span>`
+    el.innerHTML = `<span class="admin-pager-info">${from}â€“${to} of ${total.toLocaleString()}</span>`
       + `<button class="btn ghost small" data-pg="prev"${prevDis}><i class="fas fa-chevron-left"></i>Prev</button>`
       + `<button class="btn ghost small" data-pg="next"${nextDis}>Next<i class="fas fa-chevron-right"></i></button>`;
     el.querySelector('[data-pg="prev"]').onclick = () => { ADMIN[offsetKey] = Math.max(0, offset - limit); reload(); };
@@ -1135,25 +1137,25 @@
 
   function jobRow(j){
     const loc = [j.city,j.state_code].filter(Boolean).join(", ") || "Flexible";
-    // Show the real range, not just a ceiling — pay transparency is the hook.
+    // Show the real range, not just a ceiling â€” pay transparency is the hook.
     const payUnit = j.pay_unit === "hourly" ? "/hr" : "";
     const pay = j.pay_rate_max
       ? (j.pay_rate_min && Math.round(j.pay_rate_min) !== Math.round(j.pay_rate_max)
-          ? `$${Math.round(j.pay_rate_min)}–$${Math.round(j.pay_rate_max)}${payUnit}`
+          ? `$${Math.round(j.pay_rate_min)}â€“$${Math.round(j.pay_rate_max)}${payUnit}`
           : `$${Math.round(j.pay_rate_max)}${payUnit}`)
       : "";
     // Agencies file one req per seat; the list is grouped, so say how many.
     const seats = (j.openings || 1) > 1 ? `<span class="badge accent openings">${j.openings} openings</span>` : "";
     const fit = j.fit_score > 0 ? `<span class="fit-badge">match</span>` : "";
-    const sub = [j.facility, loc].filter(Boolean).join(" · ");
+    const sub = [j.facility, loc].filter(Boolean).join(" Â· ");
     return `<tr>
       <td>
         <div class="cell-name"><button class="linklike" data-jobview="${esc(j.job_id)}">${esc(j.title)}</button>${j.is_urgent ? `<span class="badge coral">Urgent</span>` : ""}${seats}${fit}</div>
         <div class="cell-sub">${esc(sub)}</div>
       </td>
-      <td>${j.job_type ? `<span class="badge accent">${esc(j.job_type)}</span>` : `<span class="cell-none">—</span>`}</td>
-      <td>${j.specialty ? `<span class="badge">${esc(j.specialty)}</span>` : `<span class="cell-none">—</span>`}</td>
-      <td>${pay ? `<strong>${esc(pay)}</strong>` : `<span class="cell-none">—</span>`}</td>
+      <td>${j.job_type ? `<span class="badge accent">${esc(j.job_type)}</span>` : `<span class="cell-none">â€”</span>`}</td>
+      <td>${j.specialty ? `<span class="badge">${esc(j.specialty)}</span>` : `<span class="cell-none">â€”</span>`}</td>
+      <td>${pay ? `<strong>${esc(pay)}</strong>` : `<span class="cell-none">â€”</span>`}</td>
       <td class="td-actions">${isRecruiter()
         ? `<button class="btn small primary" data-source="${j.job_id}" title="Find matching candidates"><i class="fas fa-bolt"></i>Source</button>`
         : `<button class="btn small" data-jobview="${j.job_id}">View</button><button class="btn small primary" data-apply="${j.job_id}">Apply</button>`}</td>
@@ -1195,9 +1197,9 @@
       : (rec ? "Your recruiting workspace" : "Your healthcare workspace");
     const sourcingPromise = rec ? get("/api/analytics/sourcing?days=30").catch(() => null) : null;
     const seekerCountsPromise = !rec && S.profile ? Promise.all([
-      get("/api/jobs?limit=1").then(r => (r.total || 0).toLocaleString()).catch(() => "—"),
-      get("/api/applications/mine").then(r => r.length).catch(() => "—"),
-      get("/api/applications/saved").then(r => r.length).catch(() => "—"),
+      get("/api/jobs?limit=1").then(r => (r.total || 0).toLocaleString()).catch(() => "â€”"),
+      get("/api/applications/mine").then(r => r.length).catch(() => "â€”"),
+      get("/api/applications/saved").then(r => r.length).catch(() => "â€”"),
     ]) : null;
 
     // The header and call to action belong to whoever is looking. A recruiter
@@ -1240,9 +1242,9 @@
       // Everything a recruiter is measured on comes back in one call.
       $("#dash-metrics").innerHTML =
         metricTile(total.toLocaleString(), "Open roles", "employer", "fa-briefcase")
-        + metricTile("—", "Contacts revealed", "credits", "fa-unlock")
-        + metricTile("—", "Shortlisted", "pools", "fa-layer-group")
-        + metricTile("—", "Conversations", "messages", "fa-comments");
+        + metricTile("â€”", "Contacts revealed", "credits", "fa-unlock")
+        + metricTile("â€”", "Shortlisted", "pools", "fa-layer-group")
+        + metricTile("â€”", "Conversations", "messages", "fa-comments");
       try {
         const a = await sourcingPromise;
         if (!a) return;
@@ -1261,7 +1263,7 @@
       + metricTile(apps, "Applications", "applications", "fa-paper-plane")
       + metricTile(saved, "Saved jobs", "jobs", "fa-bookmark")
       + metricTile(pct, "Profile complete", "profile", "fa-user-check");
-    $("#dash-metrics").innerHTML = seekerTiles("—", "—", "—");
+    $("#dash-metrics").innerHTML = seekerTiles("â€”", "â€”", "â€”");
     if (!S.profile) return;
     // /api/jobs/recommended reports total = the page it returned, so the real
     // board count has to come from the unfiltered list.
@@ -1284,7 +1286,7 @@
       const seats = data.items.reduce((n,j) => n + (j.openings || 1), 0);
       const shown = data.items.length;
       $("#jobs-count").textContent = `${shown}${data.has_next ? "+" : ""} role${shown === 1 && !data.has_next ? "" : "s"}`
-        + (seats > data.items.length ? ` · ${seats} openings on this page` : "");
+        + (seats > data.items.length ? ` Â· ${seats} openings on this page` : "");
       data.items.forEach(j => S.jobsById.set(j.job_id, j));   // for the sourcing header
       list.innerHTML = data.items.length ? data.items.map(jobRow).join("") : emptyRow(JOB_COLS, "No jobs match this search",
                "Try a broader title, or clear the state filter.", "fa-briefcase");
@@ -1296,7 +1298,7 @@
   }
 
   // Built to scale to millions of rows: server-side filtering + paging. We never
-  // fetch an exact COUNT for broad browses (that's an O(rows) scan) — the tab
+  // fetch an exact COUNT for broad browses (that's an O(rows) scan) â€” the tab
   // totals come from the cached /facets endpoint, and Prev/Next uses the API's
   // has_next flag. Exact totals are omitted so large counts do not delay pages.
   const PAGE_SIZE = 60;
@@ -1389,7 +1391,7 @@
     loadProviders();
   }
   // The external contact search (Quick Sourcer). Only offered where the server
-  // says the integration is configured — on a deployment without a key the
+  // says the integration is configured â€” on a deployment without a key the
   // button could only ever fail, so it is not drawn at all.
   function lookupBtn(id, label){
     if (!S.features.contact_lookup) return "";
@@ -1404,7 +1406,7 @@
       if (released.phone) lines.push(`<a href="tel:${esc(released.phone)}"><i class="fas fa-phone"></i><span>${esc(released.phone)}</span></a>`);
       // Provenance is only worth showing once the contact is revealed.
       const by = p.contact_updated_by_email ? `<span class="contact-meta"><i class="fas fa-clock-rotate-left"></i>Updated by ${esc(p.contact_updated_by_email)}</span>` : "";
-      // Already paid for, but we still hold no email (or no phone) for them —
+      // Already paid for, but we still hold no email (or no phone) for them â€”
       // the external search is the only way left to fill that gap.
       const gap = !released.email || !released.phone
         ? lookupBtn(p.profile_id, lines.length ? "Find more" : "Find contact") : "";
@@ -1414,10 +1416,10 @@
         ${by}
       </div>`;
     }
-    // Availability comes from has_email/has_phone — the values themselves are
+    // Availability comes from has_email/has_phone â€” the values themselves are
     // not in the payload until the profile is released.
     if (!(p.has_email || p.has_phone)) {
-      // Nothing to reveal, so nothing to pay for — but this is exactly the row
+      // Nothing to reveal, so nothing to pay for â€” but this is exactly the row
       // the external lookup exists for: a real person with no way to reach them.
       return `<div class="contact-cell">${lookupBtn(p.profile_id, "Find contact")}</div>`;
     }
@@ -1437,9 +1439,9 @@
     part = clean(part);
     if (!part) return "";
     while (NAME_CREDENTIALS.test(part)) part = part.replace(NAME_CREDENTIALS, "").trim();
-    part = part.replace(/^[\s'’\"]+|[\s,;]+$/g, "");
-    if (/^[A-Z\s.'’()-]+$/.test(part)) {
-      part = part.toLowerCase().replace(/(^|[\s'’(-])([a-z])/g, (_m, lead, letter) => lead + letter.toUpperCase());
+    part = part.replace(/^[\s'â€™\"]+|[\s,;]+$/g, "");
+    if (/^[A-Z\s.'â€™()-]+$/.test(part)) {
+      part = part.toLowerCase().replace(/(^|[\s'â€™(-])([a-z])/g, (_m, lead, letter) => lead + letter.toUpperCase());
     }
     return part;
   }
@@ -1455,10 +1457,10 @@
       '</span><div class="cell-id"><div class="cell-name">' + esc(name) +
       '</div><div class="cell-sub">NPI ' + esc(p.npi) +
       '</div></div></div></td>' +
-      '<td>' + (p.credential ? esc(p.credential) : '<span class="cell-none">—</span>') + '</td>' +
+      '<td>' + (p.credential ? esc(p.credential) : '<span class="cell-none">â€”</span>') + '</td>' +
       '<td>' + esc(p.specialty) + '</td>' +
       '<td><span class="badge">' + esc(p.taxonomy_code) + '</span></td>' +
-      '<td>' + (loc ? esc(loc) : '<span class="cell-none">—</span>') + '</td>' +
+      '<td>' + (loc ? esc(loc) : '<span class="cell-none">â€”</span>') + '</td>' +
       '<td><span class="badge">' + esc(p.status) + '</span></td>' +
       '<td>' + directoryContactCell(p) + '</td></tr>';
   }
@@ -1469,7 +1471,7 @@
       ${contact.phone ? `<a href="tel:${esc(contact.phone)}"><i class="fas fa-phone"></i><span>${esc(contact.phone)}</span></a>` : ""}
       <span class="contact-meta">${esc(contact.source || "Contact found")}</span></div>`;
     const pending = contact && ["queued","processing"].includes(contact.status);
-    const label = pending ? "Searching…" : contact && ["failed","not_found"].includes(contact.status) ? "Try again" : "Find contact";
+    const label = pending ? "Searchingâ€¦" : contact && ["failed","not_found"].includes(contact.status) ? "Try again" : "Find contact";
     const icon = pending ? "fa-spinner fa-spin" : "fa-magnifying-glass";
     return `<div class="contact-cell"><button class="reveal-btn lookup-btn" data-directory-lookup="${esc(p.npi)}" ${!S.features.contact_lookup || pending ? "disabled" : ""} title="Search for an email or phone; successful matches use a reveal credit."><i class="fas ${icon}"></i>${label}</button>
       ${contact && contact.detail ? `<span class="contact-meta">${esc(contact.detail)}</span>` : ""}</div>`;
@@ -1495,10 +1497,10 @@
     if (needsNetwork) {
       const status = $("#provider-loading-status");
       status.classList.remove("hidden", "is-error");
-      status.innerHTML = '<span class="spinner sm"></span><strong>Updating providers…</strong><span>New results will appear here.</span>';
+      status.innerHTML = '<span class="spinner sm"></span><strong>Updating providersâ€¦</strong><span>New results will appear here.</span>';
       if (S.providerLastData) {
         $("#providers-grid").setAttribute("aria-busy", "true");
-        $("#providers-count").textContent = "Updating results…";
+        $("#providers-count").textContent = "Updating resultsâ€¦";
       } else {
         $("#providers-grid").innerHTML = loadingRow(PROVIDER_COLS, "Loading providers...");
         $("#providers-count").textContent = providerCountLabel();
@@ -1564,7 +1566,7 @@
       const specialtySelect = $("#provider-specialty");
       if (specialtySelect) specialtySelect.innerHTML = `<option value="">Any specialty</option>` + (f.specialties || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
       $("#provider-state").innerHTML = `<option value="">Any state</option>` + (f.states || []).map(v => `<option>${esc(v)}</option>`).join("");
-      // The selects only just gained their options — re-apply any active filter
+      // The selects only just gained their options â€” re-apply any active filter
       // (e.g. one the copilot set) so the dropdowns reflect it.
       syncProviderControls();
       // Show the table-size estimate without delaying the first result page.
@@ -1577,7 +1579,7 @@
       value ? esc(value) : `<span class="cell-none">${esc(hint || "Not provided")}</span>`}</strong></div>`;
   }
   async function loadProfile(){
-    // A recruiter has no candidate profile — this page is their account, not a
+    // A recruiter has no candidate profile â€” this page is their account, not a
     // "complete your profile to appear in search" flow (which would be wrong,
     // since recruiters aren't listed in the directory).
     if (isRecruiter()){ renderAccountView(); return; }
@@ -1645,7 +1647,7 @@
       <div class="sec-row">
         <div><strong>Two-factor authentication</strong>
           <div class="muted">${on
-            ? "On — a code from your authenticator app is required when you sign in."
+            ? "On â€” a code from your authenticator app is required when you sign in."
             : "Add a second step at sign-in using an authenticator app."}</div></div>
         <span class="spacer"></span>
         <span class="privacy-state ${on ? "on" : "off"}">${on ? "On" : "Off"}</span>
@@ -1667,12 +1669,12 @@
     let enroll;
     try { enroll = await post("/api/auth/mfa/enroll", {}); }
     catch(e) { return toast(e.message || "Could not start setup.", {kind:"err"}); }
-    // No QR (the CSP blocks external libraries) — authenticator apps all accept
+    // No QR (the CSP blocks external libraries) â€” authenticator apps all accept
     // a setup key typed in by hand, so we show that.
     const v = await formDialog({
       title: "Turn on two-factor authentication",
       intro: "Add this setup key to an authenticator app (Google Authenticator, Authy, "
-           + "1Password…), then enter the 6-digit code it shows. Setup key: " + enroll.secret,
+           + "1Passwordâ€¦), then enter the 6-digit code it shows. Setup key: " + enroll.secret,
       submit: "Verify & turn on",
       fields: [{name:"code", label:"6-digit code", required:true, wide:true,
                 placeholder:"123456", max:6}],
@@ -1684,7 +1686,7 @@
       toast("Two-factor authentication is on.", {title:"2FA enabled"});
       renderSecurity();
     } catch(e) {
-      toast(e.status === 400 ? "That code didn't match — use the current one from your app."
+      toast(e.status === 400 ? "That code didn't match â€” use the current one from your app."
           : (e.message || "That did not work."), {title:"Could not enable 2FA", kind:"err"});
     }
   }
@@ -1743,12 +1745,12 @@
       const pct = Math.max(0, Math.min(100, c.score || 0));
       box.innerHTML = `<div class="pc-wrap">
         <div class="pc-head"><b>${pct}%</b><span>${c.complete
-          ? "Your profile is complete — recruiters can find you."
+          ? "Your profile is complete â€” recruiters can find you."
           : "Complete your profile so recruiters can find you"}</span></div>
         <div class="pc-bar"><i class="${c.complete ? "done" : ""}" style="width:${pct}%"></i></div>
         ${c.missing.length ? `<div class="pc-missing">${
           c.missing.map(m => `<span class="pc-chip">${esc(m)}</span>`).join("")}</div>` : ""}
-        ${c.missing.length ? `<p class="pc-note">Recruiters search by licence, specialty, experience and location —
+        ${c.missing.length ? `<p class="pc-note">Recruiters search by licence, specialty, experience and location â€”
           without them your profile will not appear in their results.</p>` : ""}
       </div>`;
     } catch(e) {
@@ -1775,16 +1777,16 @@
           <button class="btn small primary" id="cred-add"><i class="fas fa-plus"></i>Add licence</button></div>
         ${c.alerts.length ? `<div class="cred-alert"><i class="fas fa-triangle-exclamation"></i>
            ${c.alerts.map(a => `${esc(a.label)} ${a.status === "expired" ? "has expired"
-             : `expires in ${a.days_left} days`}`).join(" · ")}</div>` : ""}
-        ${c.licenses.map(l => row(`${l.license_type} — ${l.state_code}`,
-            [l.license_number, l.is_compact ? "compact" : ""].filter(Boolean).join(" · "),
+             : `expires in ${a.days_left} days`}`).join(" Â· ")}</div>` : ""}
+        ${c.licenses.map(l => row(`${l.license_type} â€” ${l.state_code}`,
+            [l.license_number, l.is_compact ? "compact" : ""].filter(Boolean).join(" Â· "),
             l.status, l.days_left, l.license_id)).join("")}
         ${c.certifications.map(x => row(x.cert_name, "", x.status, x.days_left, null)).join("")}
         ${(!c.licenses.length && !c.certifications.length)
           ? `<p class="muted" style="font-size:12.5px">No licences on file. Recruiters filter by
-             licence and state — adding yours makes you findable.</p>` : ""}
+             licence and state â€” adding yours makes you findable.</p>` : ""}
         ${c.compact_eligible ? `<p class="pc-note"><i class="fas fa-shield-halved"></i>
-           You hold a compact licence — eligible to practise in around 40 states.</p>` : ""}
+           You hold a compact licence â€” eligible to practise in around 40 states.</p>` : ""}
       </div>`;
       const add = $("#cred-add");
       if (add) add.onclick = addCredential;
@@ -1805,7 +1807,7 @@
            + "you before it lapses.",
       submit: "Add licence",
       fields: [
-        {name:"license_type", label:"Licence type", required:true, placeholder:"RN, LPN, MD, PT…"},
+        {name:"license_type", label:"Licence type", required:true, placeholder:"RN, LPN, MD, PTâ€¦"},
         {name:"state_code", label:"Issuing state", required:true, placeholder:"TX", max:2},
         {name:"license_number", label:"Licence number", hint:"optional"},
         {name:"expiry_date", label:"Expires", type:"date", hint:"optional", wide:true},
@@ -1841,7 +1843,7 @@
       <div class="wallet-main">
         <div class="wallet-title"><b>${esc(l.license_type)}</b><span class="wallet-state">${esc(l.state_code)}</span>
           ${l.is_compact ? `<span class="wallet-badge compact"><i class="fas fa-shield-halved"></i>Compact</span>` : ""}</div>
-        <div class="wallet-sub">${esc(l.license_number || "No number on file")}${l.expiry_date ? ` · expires ${esc(String(l.expiry_date).slice(0,10))}` : ""}</div>
+        <div class="wallet-sub">${esc(l.license_number || "No number on file")}${l.expiry_date ? ` Â· expires ${esc(String(l.expiry_date).slice(0,10))}` : ""}</div>
         <div class="wallet-badges">${verif}</div>
       </div>
       <div class="wallet-right">${expiryPill(l.status, l.days_left)}
@@ -1875,8 +1877,8 @@
           ${walletStat(by("expired"), "Expired", by("expired") ? "expired" : "")}
         </div>`
         + ((c.alerts && c.alerts.length) ? `<div class="cred-alert"><i class="fas fa-triangle-exclamation"></i>
-            ${c.alerts.map(a => `${esc(a.label)} ${a.status === "expired" ? "has expired" : `expires in ${a.days_left} days`}`).join(" · ")}</div>` : "")
-        + (c.compact_eligible ? `<p class="pc-note"><i class="fas fa-shield-halved"></i>You hold a compact licence — eligible to practise in around 40 states.</p>` : "")
+            ${c.alerts.map(a => `${esc(a.label)} ${a.status === "expired" ? "has expired" : `expires in ${a.days_left} days`}`).join(" Â· ")}</div>` : "")
+        + (c.compact_eligible ? `<p class="pc-note"><i class="fas fa-shield-halved"></i>You hold a compact licence â€” eligible to practise in around 40 states.</p>` : "")
         + `<div class="wallet-section"><h2>Licences</h2>${
             (c.licenses || []).length ? `<div class="wallet-list">${c.licenses.map(licCard).join("")}</div>`
               : emptyState("No licences yet", "Add your licences so recruiters can find you and we can track expiry.", "fa-id-card")}</div>`
@@ -1896,11 +1898,11 @@
   async function addCertification(){
     const v = await formDialog({
       title: "Add a certification",
-      intro: "BLS, ACLS, PALS, CCRN, TNCC… An expiry date lets us warn you before it lapses.",
+      intro: "BLS, ACLS, PALS, CCRN, TNCCâ€¦ An expiry date lets us warn you before it lapses.",
       submit: "Add certification",
       fields: [
-        {name:"cert_name", label:"Certification", required:true, placeholder:"BLS, ACLS, CCRN…"},
-        {name:"issuing_body", label:"Issuing body", hint:"optional", placeholder:"AHA, AACN…"},
+        {name:"cert_name", label:"Certification", required:true, placeholder:"BLS, ACLS, CCRNâ€¦"},
+        {name:"issuing_body", label:"Issuing body", hint:"optional", placeholder:"AHA, AACNâ€¦"},
         {name:"cert_number", label:"Number", hint:"optional"},
         {name:"expiry_date", label:"Expires", type:"date", hint:"optional", wide:true},
       ],
@@ -1937,7 +1939,7 @@
     if (navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(text).then(
         () => toast("Paste it into an email or message to a recruiter.", {title:"Credential summary copied"}),
-        () => toast("Could not copy automatically — select and copy manually.", {kind:"err"}));
+        () => toast("Could not copy automatically â€” select and copy manually.", {kind:"err"}));
     } else {
       toast("Copying isn't supported in this browser.", {kind:"err"});
     }
@@ -1977,7 +1979,7 @@
     });
     if (f.elements.available_date.value) body.available_date = f.elements.available_date.value;
     body.open_to_work = !!f.elements.open_to_work.checked;
-    msg.className = "pf-msg"; msg.textContent = "Saving…";
+    msg.className = "pf-msg"; msg.textContent = "Savingâ€¦";
     try {
       S.profile = await patch("/api/profiles/me", body);
       msg.className = "pf-msg ok"; msg.textContent = "Saved.";
@@ -2102,14 +2104,14 @@
     if (S.employer) loadOrgAdmin();
   }
 
-  // Dedicated organization-admin page: org info, members & roles, usage/billing —
+  // Dedicated organization-admin page: org info, members & roles, usage/billing â€”
   // all scoped to the user's own organization and gated by their org role.
   async function loadOrgAdmin(){
     const box = $("#orgadmin-panel");
     if (!box) return;
     const request = S.orgAdminReq = (S.orgAdminReq || 0) + 1;
     box.setAttribute("aria-busy", "true");
-    if (!box.childElementCount) box.innerHTML = loading("Loading your organization…");
+    if (!box.childElementCount) box.innerHTML = loading("Loading your organizationâ€¦");
     try {
       // Returning visitors already know their organization, so load its team
       // alongside the overview instead of waiting for an extra round trip.
@@ -2237,7 +2239,7 @@
           <div class="oa-org">
             <span class="oa-label">Organization</span>
             <h2>${esc(emp.org_name)} ${emp.is_verified ? `<span class="emp-verified"><i class="fas fa-circle-check"></i>Verified</span>` : ""}</h2>
-            <div class="oa-meta">${esc([emp.org_type, [emp.city, emp.state_code].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "—")}</div>
+            <div class="oa-meta">${esc([emp.org_type, [emp.city, emp.state_code].filter(Boolean).join(", ")].filter(Boolean).join(" Â· ") || "â€”")}</div>
           </div>
           <div class="oa-roleplate">
             <span class="oa-label">Your access</span>
@@ -2256,7 +2258,7 @@
               : `<button class="btn primary small" id="oa-zoom-connect"><i class="fas fa-link"></i>Connect Zoom</button>`}
           </div></div>
           <p class="team-note">${zoomIntegration?.connected
-            ? `Connected${zoomIntegration.zoom_account_id ? ` · account ${esc(zoomIntegration.zoom_account_id)}` : ""}. Sync matches Zoom Phone users to Halo members by email. New senders require approval below.`
+            ? `Connected${zoomIntegration.zoom_account_id ? ` Â· account ${esc(zoomIntegration.zoom_account_id)}` : ""}. Sync matches Zoom Phone users to Halo members by email. New senders require approval below.`
             : zoomIntegration?.configured === false
               ? "Zoom OAuth credentials must be configured on the Halo backend before an organization can connect."
               : "Connect once as a Zoom account administrator, then sync member phone numbers automatically."}</p>
@@ -2288,7 +2290,7 @@
           <div class="team-head"><h2>Teams</h2>${teamData.can_create
             ? `<button class="btn ghost small" id="oa-team-create"><i class="fas fa-plus"></i>Create team</button>` : ""}</div>
           <p class="team-note">Managers can manage members and messaging only inside their assigned teams.</p>
-          <div class="admin-chips">${orgTeams.length ? orgTeams.map(t => `<span class="badge">${esc(t.name)} · ${Number(t.member_count || 0)} members</span>`).join("") : "No teams configured"}</div>
+          <div class="admin-chips">${orgTeams.length ? orgTeams.map(t => `<span class="badge">${esc(t.name)} Â· ${Number(t.member_count || 0)} members</span>`).join("") : "No teams configured"}</div>
         </div>
 
         <div class="an-section" style="margin-top:22px">
@@ -2330,12 +2332,12 @@
           <div class="table-wrap"><table class="table">
             <thead><tr><th>Member</th><th>Role</th><th>Credits left</th><th>Contacts revealed</th><th>MedHunt enriched</th></tr></thead>
             <tbody>${usage.members.map(m => `<tr>
-              <td><div class="cell-name">${esc(m.name || m.email || "—")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
+              <td><div class="cell-name">${esc(m.name || m.email || "â€”")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
               <td><span class="badge">${esc(m.role_label || ORG_ROLE_LABEL[m.role] || m.role)}</span></td>
               <td><b>${Number(m.credits).toLocaleString()}</b></td>
               <td>${Number(m.reveals).toLocaleString()}</td>
               <td>${Number(m.medhunt_enriched || 0).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
-          <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team · ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your MedHunt administrator.</p></div>` : ""}
+          <p class="team-note">${Number(usage.totals.credits).toLocaleString()} credits across the team Â· ${Number(usage.totals.reveals).toLocaleString()} contacts revealed. Need more credits? Contact your MedHunt administrator.</p></div>` : ""}
         ${perms.analytics && S.features.medhunt_backend ? `<div class="an-section" style="margin-top:22px"><h2>SMS conversations</h2><p class="team-note">Review who contacted each candidate, see replies and recruiter follow-up, and reassign unanswered replies.</p><div id="org-medhunt-replies"></div></div>` : ""}
         ${perms.analytics ? `<div class="an-section" style="margin-top:22px"><h2>CEIPAL delivery activity</h2><p class="team-note">See which enriched candidates were added to CEIPAL, already existed there, or failed to upload.</p><div id="org-medhunt-ceipal"></div></div>` : ""}
         ${perms.manage_roles && S.features.medhunt_backend ? `<div class="an-section" style="margin-top:22px"><h2>Extension devices</h2><p class="team-note">See who uses multiple devices and approve requests after a revoked installation signs in again.</p><div id="org-medhunt-devices"></div></div>` : ""}
@@ -2402,7 +2404,7 @@
 
   async function configureMedhuntSmsSender(userId, email, employerId, current={}){
     const v = await formDialog({
-      title: `SMS sender · ${email}`,
+      title: `SMS sender Â· ${email}`,
       intro: "Assign this teammate's Zoom Phone number and the Zoom user ID that owns it. Candidate messages and replies will use this sender.",
       submit: "Save sender",
       fields: [
@@ -2530,7 +2532,7 @@
       title:"Create team",
       intro:"Managers assigned to this team will only manage its members, conversations and messaging access.",
       submit:"Create team",
-      fields:[{name:"name", label:"Team name", type:"text", required:true, maxlength:160, placeholder:"Nursing — East"}],
+      fields:[{name:"name", label:"Team name", type:"text", required:true, maxlength:160, placeholder:"Nursing â€” East"}],
     });
     if (!v) return;
     try {
@@ -2552,7 +2554,7 @@
       label:`${team.name}${(team.manager_user_ids || []).includes(userId) ? " (manager)" : ""}`,
     }));
     const v = await formDialog({
-      title:`Team assignment · ${email}`,
+      title:`Team assignment Â· ${email}`,
       intro:"Choose a team and the member's access inside that team. Organization admins can assign team managers; team managers can assign members.",
       submit:"Save assignment",
       fields:[
@@ -2612,7 +2614,7 @@
 
   async function grantMedhuntExtensionCredits(userId, email, employerId){
     const v = await formDialog({
-      title: `Grant extension credits · ${email}`,
+      title: `Grant extension credits Â· ${email}`,
       intro: "These credits are separate from contact-reveal credits. One credit covers one new candidate enrichment lookup; cached contact results do not use credits.",
       submit: "Grant credits",
       fields: [
@@ -2680,10 +2682,10 @@
     // Managers can invite plain members; only owners/admins can grant elevated roles.
     const canElevate = !!(S.teamPerms && S.teamPerms.manage_roles);
     const roleOptions = canElevate ? [
-      {value:"recruiter", label:"Member — source and submit candidates"},
-      {value:"manager", label:"Manager — also manage members"},
-      {value:"admin", label:"Admin — also manage roles & billing"},
-    ] : [{value:"recruiter", label:"Member — source and submit candidates"}];
+      {value:"recruiter", label:"Member â€” source and submit candidates"},
+      {value:"manager", label:"Manager â€” also manage members"},
+      {value:"admin", label:"Admin â€” also manage roles & billing"},
+    ] : [{value:"recruiter", label:"Member â€” source and submit candidates"}];
     const teamOptions = (S.orgTeams || [])
       .filter(t => canElevate || S.managedTeamIds?.has(t.team_id))
       .map(t => ({value:t.team_id, label:t.name}));
@@ -2694,7 +2696,7 @@
     const v = await formDialog({
       title: "Invite a teammate",
       intro: "They'll get an email invitation to join your organisation. They don't "
-           + "need a MedHunt account yet — they can create one when they accept.",
+           + "need a MedHunt account yet â€” they can create one when they accept.",
       submit: "Send invitation",
       fields: [
         {name:"email", label:"Their email", type:"email", required:true, wide:true,
@@ -2730,7 +2732,7 @@
   }
   function jobStatusPill(status){
     const cls = status === "active" ? "ok" : status === "closed" ? "no" : "";
-    const label = status ? status[0].toUpperCase() + status.slice(1) : "—";
+    const label = status ? status[0].toUpperCase() + status.slice(1) : "â€”";
     return `<span class="status-pill ${cls}">${esc(label)}</span>`;
   }
 
@@ -2755,14 +2757,14 @@
             <thead><tr><th>Role</th><th>Type</th><th>Location</th><th>Pay</th><th title="Inbound applicants, if you post this order publicly">Applied</th><th>Status</th><th class="th-actions"></th></tr></thead>
             <tbody>${jobs.map(j => {
               const closed = j.status !== "active";
-              const loc = [j.city, j.state_code].filter(Boolean).join(", ") || "—";
+              const loc = [j.city, j.state_code].filter(Boolean).join(", ") || "â€”";
               const n = j.application_count || 0;
               return `<tr class="${closed ? "row-muted" : ""}">
                 <td><div class="cell-name"><button class="linklike" data-jobview="${esc(j.job_id)}">${esc(j.title)}</button></div>
                     <div class="cell-sub">${esc(j.specialty || j.profession_type || "")}</div></td>
                 <td><span class="badge accent">${esc(j.job_type || "-")}</span></td>
                 <td>${esc(loc)}</td>
-                <td>${j.pay_rate_max ? `<strong>$${Math.round(j.pay_rate_max)}/hr</strong>` : "—"}</td>
+                <td>${j.pay_rate_max ? `<strong>$${Math.round(j.pay_rate_max)}/hr</strong>` : "â€”"}</td>
                 <td><button class="btn small ghost" data-applicants="${esc(j.job_id)}" title="Inbound applicants"><i class="fas fa-users"></i>${n}</button></td>
                 <td>${jobStatusPill(j.status)}</td>
                 <td class="td-actions">
@@ -2772,7 +2774,7 @@
                 </td>
               </tr>`;
             }).join("")}</tbody></table></div>`
-        : `<p class="muted" style="font-size:13px">No job orders yet — create one to start sourcing candidates against it.</p>`}</div>`;
+        : `<p class="muted" style="font-size:13px">No job orders yet â€” create one to start sourcing candidates against it.</p>`}</div>`;
     $$("#employer-jobs [data-job-edit]").forEach(b => b.onclick = () => editJob(b.dataset.jobEdit));
     $$("#employer-jobs [data-job-close]").forEach(b => b.onclick = () => closeJob(b.dataset.jobClose));
     const jt = $("#jobs-template");
@@ -2803,12 +2805,12 @@
     if (!file || !S.employer) return;
     const fd = new FormData();
     fd.append("file", file);
-    toast(`Reading ${file.name}…`, {title:"Bulk upload"});
+    toast(`Reading ${file.name}â€¦`, {title:"Bulk upload"});
     try {
       const r = await api("POST", `/api/jobs/bulk?employer_id=${S.employer.employer_id}`, fd);
       let msg = `${r.created} job order${r.created === 1 ? "" : "s"} created`;
-      if (r.skipped) msg += ` · ${r.skipped} blank row${r.skipped === 1 ? "" : "s"} skipped`;
-      if (r.failed) msg += ` · ${r.failed} with errors`;
+      if (r.skipped) msg += ` Â· ${r.skipped} blank row${r.skipped === 1 ? "" : "s"} skipped`;
+      if (r.failed) msg += ` Â· ${r.failed} with errors`;
       toast(msg, {title:"Bulk upload", kind: r.failed ? "err" : "ok"});
       loadEmployer();
       if (r.errors && r.errors.length)
@@ -2859,10 +2861,10 @@
       submit: "Save changes",
       fields: [
         {name:"org_name", label:"Organization name", required:true, wide:true, value:emp.org_name || ""},
-        {name:"org_type", label:"Type", value:emp.org_type || "", placeholder:"Staffing agency, Hospital…"},
+        {name:"org_type", label:"Type", value:emp.org_type || "", placeholder:"Staffing agency, Hospitalâ€¦"},
         {name:"city", label:"City", value:emp.city || ""},
         {name:"state_code", label:"State", value:emp.state_code || "", max:2},
-        {name:"website_url", label:"Website", wide:true, value:emp.website_url || "", placeholder:"https://…"},
+        {name:"website_url", label:"Website", wide:true, value:emp.website_url || "", placeholder:"https://â€¦"},
         {name:"quick_sourcer_per_user_limit", label:"Organization default Quick Sourcer limit", type:"number", min:1, max:80,
          value:emp.quick_sourcer_per_user_limit || 10, hint:"Used for members without an individual limit override."},
         {name:"description", label:"About", type:"textarea", wide:true, value:emp.description || "",
@@ -2890,7 +2892,7 @@
   const SHIFT_OPTIONS = [["","Any shift"],["Day","Day"],["Night","Night"],["Evening","Evening"],["Rotating","Rotating"],["Weekend","Weekend"]];
 
   // One field set drives both posting and editing. A role with a licence,
-  // specialty and description scores and reads far better than a bare title —
+  // specialty and description scores and reads far better than a bare title â€”
   // the licence and specialty are what the matching engine ranks on, and the
   // description is what a candidate reads before applying.
   function jobFields(j = {}){
@@ -2934,7 +2936,7 @@
     if (!v) return;
     try {
       await post(`/api/jobs?employer_id=${encodeURIComponent(S.employer.employer_id)}`, jobBody(v));
-      toast(`"${v.title}" is open — source candidates against it now.`, {title:"Job order created"});
+      toast(`"${v.title}" is open â€” source candidates against it now.`, {title:"Job order created"});
       loadEmployer();
       loadJobs();
     } catch(e) { toast(e.message, {title:"Could not post job", kind:"err"}); }
@@ -2969,11 +2971,11 @@
     } catch(e) { toast(e.message || "That did not work.", {title:"Could not close order", kind:"err"}); }
   }
 
-  // Full role detail — what a candidate reads before applying, and what a
+  // Full role detail â€” what a candidate reads before applying, and what a
   // recruiter opens to check a posting. Rows across the app link here.
   async function openJobDetail(jobId){
     $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card job-detail-card">
-      <div class="dlg-body">${loading("Loading role…")}</div></div></div>`;
+      <div class="dlg-body">${loading("Loading roleâ€¦")}</div></div></div>`;
     let job;
     try { job = await get(`/api/jobs/${jobId}`); }
     catch(e) { $("#modal-root").innerHTML = ""; return toast(e.message || "Could not load the role.", {kind:"err"}); }
@@ -2982,7 +2984,7 @@
     const loc = [job.city, job.state_code].filter(Boolean).join(", ") || "Location flexible";
     const pay = job.pay_rate_max
       ? (job.pay_rate_min && job.pay_rate_min !== job.pay_rate_max
-          ? `$${Math.round(job.pay_rate_min)}–$${Math.round(job.pay_rate_max)}/hr`
+          ? `$${Math.round(job.pay_rate_min)}â€“$${Math.round(job.pay_rate_max)}/hr`
           : `$${Math.round(job.pay_rate_max)}/hr`)
       : "Pay not listed";
     const facts = [
@@ -3044,7 +3046,7 @@
       if (!p || !p.available){ box.innerHTML = ""; return; }
       const ot = p.overtime || {};
       const caNote = ot.mode === "california"
-        ? `<div class="jd-pay-ca"><i class="fas fa-scale-balanced"></i>Includes California daily overtime — ${ot.straight_hours}h regular + ${ot.ot_hours}h at 1.5×${ot.dt_hours ? ` + ${ot.dt_hours}h at 2×` : ""}.</div>`
+        ? `<div class="jd-pay-ca"><i class="fas fa-scale-balanced"></i>Includes California daily overtime â€” ${ot.straight_hours}h regular + ${ot.ot_hours}h at 1.5Ã—${ot.dt_hours ? ` + ${ot.dt_hours}h at 2Ã—` : ""}.</div>`
         : "";
       box.innerHTML = `<div class="jd-pay-card">
         <div class="jd-pay-head"><i class="fas fa-money-bill-trend-up"></i>Estimated take-home
@@ -3068,7 +3070,7 @@
            + "recruiter who posted it.",
       submit: "Send",
       fields: [{name:"body", label:"Your message", type:"textarea", required:true, wide:true,
-                placeholder:"Hi — I'm interested in this role and wanted to ask…"}],
+                placeholder:"Hi â€” I'm interested in this role and wanted to askâ€¦"}],
     });
     if (!v) return;
     try {
@@ -3079,7 +3081,7 @@
   }
   async function applyJob(id){
     // A candidate applies with their profile + resume, so make sure they exist
-    // and let them add a note — applying used to fire silently with nothing.
+    // and let them add a note â€” applying used to fire silently with nothing.
     if (!S.profile){
       toast("Add your details before applying to roles.", {title:"Complete your profile", kind:"err"});
       return showPage("profile");
@@ -3087,7 +3089,7 @@
     const job = (S.jobsById && S.jobsById.get(id)) || null;
     const hasResume = !!S.profile.resume_url;
     const v = await formDialog({
-      title: job ? `Apply — ${job.title}` : "Apply to this role",
+      title: job ? `Apply â€” ${job.title}` : "Apply to this role",
       intro: hasResume
         ? "Your profile and resume on file are sent with this application. Add a note if you'd like."
         : "Your profile is sent with this application. Upload a resume first (Resume tab) so the employer sees your full background.",
@@ -3100,7 +3102,7 @@
     if (!v) return;
     try {
       await post(`/api/jobs/${id}/apply`, {cover_letter: v.cover_letter || null});
-      toast("The employer has your application — track it under My Applications.",
+      toast("The employer has your application â€” track it under My Applications.",
             {title:"Application submitted"});
       loadDashboard();
       if ($("#page-applications").classList.contains("active")) loadApplications();
@@ -3120,7 +3122,7 @@
       // which ones, so the person can see the work it saved them.
       const filled = Object.keys(out.contact_updated || {});
       $("#resume-drop span").textContent = filled.length
-        ? `Uploaded — filled in ${filled.join(", ").replace(/_/g, " ")} from your resume.`
+        ? `Uploaded â€” filled in ${filled.join(", ").replace(/_/g, " ")} from your resume.`
         : "Resume uploaded.";
       if ($("#page-profile").classList.contains("active")) loadProfile();
     } catch(e) { toast(e.message || "The file could not be uploaded.",
@@ -3131,16 +3133,16 @@
     const ini = (r.name || "?").split(/\s+/).map(w => w[0] || "").join("").slice(0, 2).toUpperCase();
     const lines = arr => (arr && arr.length) ? `<div class="rz-lines">${arr.map(x => `<p>${esc(x)}</p>`).join("")}</div>` : `<div class="rz-empty">Not listed on this resume.</div>`;
     const fact = (label, val) => val ? `<div class="rz-fact"><span>${label}</span><b>${esc(val)}</b></div>` : "";
-    // Enriched, structured data (no identity in it — safe even when name withheld).
+    // Enriched, structured data (no identity in it â€” safe even when name withheld).
     const avail = r.available_date ? new Date(r.available_date).toLocaleDateString(undefined,{month:"short",year:"numeric"}) : "";
     const licBlock = (r.licenses && r.licenses.length) ? `<h5>Verified licenses</h5>
       <div class="rz-lic">${r.licenses.map(l => `<span class="rz-lic-chip${l.compact ? " compact" : ""}">${esc(l.type)}<b>${esc(l.state)}</b>${l.compact ? `<i class="fas fa-shield-halved" title="Compact / multistate license"></i>` : ""}${l.expiry ? `<em>exp ${esc(l.expiry.slice(0,7))}</em>` : ""}</span>`).join("")}</div>
-      ${r.has_compact ? `<p class="rz-compact-note"><i class="fas fa-shield-halved"></i>Holds a compact / multistate license — eligible to practice in ~40 states.</p>` : ""}` : "";
+      ${r.has_compact ? `<p class="rz-compact-note"><i class="fas fa-shield-halved"></i>Holds a compact / multistate license â€” eligible to practice in ~40 states.</p>` : ""}` : "";
     const workStruct = (r.work_history && r.work_history.length) ? `<div class="rz-jobs">${r.work_history.map(w => `
       <div class="rz-job"><div class="rz-job-top"><b>${esc(w.title || "Role")}</b>${w.type ? `<span class="rz-job-type">${esc(w.type)}</span>` : ""}</div>
-        <div class="rz-job-sub">${esc([w.employer, w.specialty, w.location].filter(Boolean).join("  ·  "))}</div>
-        ${(w.start || w.end) ? `<div class="rz-job-dates">${esc(w.start || "?")} – ${esc(w.end || "present")}</div>` : ""}</div>`).join("")}</div>` : "";
-    const eduStruct = (r.education && r.education.length) ? `<div class="rz-edu">${r.education.map(e => `<div class="rz-edu-item"><b>${esc([e.degree, e.field].filter(Boolean).join(", ") || e.institution || "—")}</b>${(e.institution || e.year) ? `<span>${esc([e.institution, e.year].filter(Boolean).join("  ·  "))}</span>` : ""}</div>`).join("")}</div>` : "";
+        <div class="rz-job-sub">${esc([w.employer, w.specialty, w.location].filter(Boolean).join("  Â·  "))}</div>
+        ${(w.start || w.end) ? `<div class="rz-job-dates">${esc(w.start || "?")} â€“ ${esc(w.end || "present")}</div>` : ""}</div>`).join("")}</div>` : "";
+    const eduStruct = (r.education && r.education.length) ? `<div class="rz-edu">${r.education.map(e => `<div class="rz-edu-item"><b>${esc([e.degree, e.field].filter(Boolean).join(", ") || e.institution || "â€”")}</b>${(e.institution || e.year) ? `<span>${esc([e.institution, e.year].filter(Boolean).join("  Â·  "))}</span>` : ""}</div>`).join("")}</div>` : "";
     const overview = `
       <div class="rz-facts">
         ${fact("Focus", r.role)}
@@ -3183,7 +3185,7 @@
       <div class="rz-head">
         <div class="rz-avatar">${esc(ini)}</div>
         <div class="rz-id"><div class="rz-name">${esc(r.name)}${r.npi_number ? `<span class="provider-npi">NPI ${esc(r.npi_number)}</span>` : ""}${r.withheld ? `<i class="fas fa-lock name-lock" title="Reveal contact to see the full name"></i>` : ""}</div>
-          <div class="rz-sub">${esc([r.role, r.location].filter(Boolean).join("  ·  ")) || "Healthcare provider"}</div></div>
+          <div class="rz-sub">${esc([r.role, r.location].filter(Boolean).join("  Â·  ")) || "Healthcare provider"}</div></div>
         ${r.can_download
           ? `<button class="btn small rz-download" data-download-resume="${esc(r.download_url)}" data-resume-name="${esc(r.name || "resume")}" title="Download the original resume file"><i class="fas fa-download"></i>Download</button>`
           : (r.has_resume_file
@@ -3193,7 +3195,7 @@
       </div>
       <div class="rz-ai" id="rz-ai-summary">
         <div class="rz-ai-head"><i class="fas fa-wand-magic-sparkles"></i>AI Summary</div>
-        <div class="rz-ai-body"><span class="copilot-dots"><i></i><i></i><i></i></span> Generating a recruiter briefing…</div>
+        <div class="rz-ai-body"><span class="copilot-dots"><i></i><i></i><i></i></span> Generating a recruiter briefingâ€¦</div>
       </div>
       <div class="rz-tabs">${sections.map((t, i) => `<button class="rz-tab${i === 0 ? " active" : ""}" data-rz="${t[0]}">${t[1]}</button>`).join("")}</div>
       <div class="rz-doc">
@@ -3238,9 +3240,9 @@
     $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card resume-modal"><div class="modal-head"><strong>Resume</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div><div class="modal-body">${loading("Loading resume...")}</div></div></div>`;
     try {
       // The server already withholds the name (and scrubs it from the body)
-      // when the profile hasn't been released — `withheld` just tells the UI.
+      // when the profile hasn't been released â€” `withheld` just tells the UI.
       const r = await get(`/api/profiles/${id}/resume`);
-      $("#modal-root .modal-head strong").textContent = r.name ? `${r.name} — Resume` : "Resume";
+      $("#modal-root .modal-head strong").textContent = r.name ? `${r.name} â€” Resume` : "Resume";
       $("#modal-root .modal-body").innerHTML = renderResume(r);
       wireResumeNav();
       loadResumeSummary(id);
@@ -3248,11 +3250,11 @@
   }
   // Download the original resume file. The endpoint requires a bearer token and
   // re-checks that the contact was revealed, so we fetch it (not a plain link),
-  // then hand the browser a blob to save — works for both local and S3 storage.
+  // then hand the browser a blob to save â€” works for both local and S3 storage.
   async function downloadResume(url, name, btn){
     if (!url) return;
     const original = btn ? btn.innerHTML : "";
-    if (btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span>Downloading…'; }
+    if (btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span>Downloadingâ€¦'; }
     try {
       const res = await fetch(url, {headers:{Authorization:"Bearer " + token()}});
       if (!res.ok){
@@ -3289,7 +3291,7 @@
               ? `<div class="rz-ai-chips">${s.highlights.map(h => `<span class="rz-ai-chip">${esc(h)}</span>`).join("")}</div>`
               : "");
       } else {
-        card.remove();   // not enriched yet, or AI unavailable — hide the card
+        card.remove();   // not enriched yet, or AI unavailable â€” hide the card
       }
     } catch(e) { card.remove(); }
   }
@@ -3301,7 +3303,7 @@
       S.providerCards.set(id, {...S.providerCards.get(id), ...released});
     }
     // The cached page still holds the masked row, and renderProviderPage
-    // re-renders from it — merge the newly released name/contact in, or the
+    // re-renders from it â€” merge the newly released name/contact in, or the
     // row would keep showing initials until the next fetch.
     if (S.providerLastData) {
       const items = S.providerLastData.items || [];
@@ -3318,7 +3320,7 @@
     const original = btn ? btn.innerHTML : "";
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner sm"></span>Revealing…';
+      btn.innerHTML = '<span class="spinner sm"></span>Revealingâ€¦';
     }
     try {
       const released = await post(`/api/profiles/${id}/contact-release`, {});
@@ -3329,7 +3331,7 @@
         btn.disabled = false;
         btn.innerHTML = original;
       }
-      // 402 means the balance ran out — say so plainly rather than "failed".
+      // 402 means the balance ran out â€” say so plainly rather than "failed".
       if (e.status === 402){
         toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"});
         refreshCredits();
@@ -3435,14 +3437,14 @@
   async function aiSearch(message){
     message = (message || "").trim();
     if (!message || S.aiBusy) return;
-    // A query typed from the hero (no results on screen yet — e.g. right after
+    // A query typed from the hero (no results on screen yet â€” e.g. right after
     // "New search") is a fresh search: never inherit a previous conversation's
     // filters. Refinement only applies once results are already showing.
     const fresh = !$("#page-ai").classList.contains("has-results")
                || !$("#ai-thread").children.length;
     if (fresh) S.aiContext = null;
     S.aiBusy = true;
-    $("#page-ai").classList.add("has-results");   // collapse hero → compact top bar
+    $("#page-ai").classList.add("has-results");   // collapse hero â†’ compact top bar
     $("#ai-input").value = "";
     const thread = $("#ai-thread");
     const turn = document.createElement("div");
@@ -3455,10 +3457,10 @@
     const body = turn.querySelector(".ai-answer-body");
     try {
       // Send the previous turn's filters so a follow-up refines instead of
-      // restarting ("RN nurses" → then "only in California").
+      // restarting ("RN nurses" â†’ then "only in California").
       const r = await post("/api/profiles/copilot", {message, context: S.aiContext || null});
       S.aiContext = r.filters || {};   // carry forward for the next refinement
-      $("#ai-input").placeholder = "Refine your search — e.g. only in California, with 10+ years";
+      $("#ai-input").placeholder = "Refine your search â€” e.g. only in California, with 10+ years";
       body.textContent = r.answer || "Here's what I found.";
       const items = r.items || [];
       items.forEach(p => {
@@ -3482,7 +3484,7 @@
     } catch(e) {
       body.textContent = e.status === 403
         ? "AI Search is available to recruiter accounts."
-        : "Sorry — I couldn't complete that search. Please try again.";
+        : "Sorry â€” I couldn't complete that search. Please try again.";
     } finally {
       S.aiBusy = false;
       $("#ai-input").focus();
@@ -3512,14 +3514,14 @@
     const unit = j.pay_unit === "hourly" ? "/hr" : (j.pay_unit === "weekly" ? "/wk" : "");
     const lo = j.pay_rate_min, hi = j.pay_rate_max;
     return (lo && Math.round(lo) !== Math.round(hi))
-      ? `$${Math.round(lo)}–$${Math.round(hi)}${unit}`
+      ? `$${Math.round(lo)}â€“$${Math.round(hi)}${unit}`
       : `$${Math.round(hi)}${unit}`;
   }
   function jaiJobCard(j){
     const loc = [j.city, j.state_code].filter(Boolean).join(", ") || "Flexible";
     const type = (j.job_type || "").replace("_", " ");
-    const seats = (j.openings || 1) > 1 ? ` · ${j.openings} openings` : "";
-    const sub = [j.specialty || j.profession_type, loc, type].filter(Boolean).join(" · ");
+    const seats = (j.openings || 1) > 1 ? ` Â· ${j.openings} openings` : "";
+    const sub = [j.specialty || j.profession_type, loc, type].filter(Boolean).join(" Â· ");
     const pay = jaiPay(j);
     return `<div class="jai-job">
       <div class="jai-job-main">
@@ -3551,7 +3553,7 @@
     try {
       const r = await post("/api/jobs/copilot", {message, context: S.jaiContext || null});
       S.jaiContext = r.filters || {};
-      $("#jai-input").placeholder = "Refine — e.g. only nights, under $2,600, or add California";
+      $("#jai-input").placeholder = "Refine â€” e.g. only nights, under $2,600, or add California";
       body.textContent = r.answer || "Here's what I found.";
       const items = r.items || [];
       items.forEach(j => S.jobsById.set(j.job_id, j));
@@ -3569,7 +3571,7 @@
         }
       }
     } catch(e) {
-      body.textContent = "Sorry — I couldn't complete that search. Please try again.";
+      body.textContent = "Sorry â€” I couldn't complete that search. Please try again.";
     } finally {
       S.jaiBusy = false;
       $("#jai-input").focus();
@@ -3631,7 +3633,7 @@
   }
   async function extDownload(){
     const btn = $("#ext-download"), orig = btn.innerHTML;
-    btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span>Preparing…';
+    btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span>Preparingâ€¦';
     try {
       const res = await fetch("/api/extension/download", {headers:{Authorization:"Bearer " + token()}});
       if (!res.ok) throw new Error("download failed");
@@ -3640,7 +3642,7 @@
       a.href = url; a.download = "medhunt-capture-extension.zip";
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       $("#ext-download-hint").textContent = "Downloaded. Unzip it, then load it in your browser (step 2).";
-    } catch(e) { $("#ext-download-hint").textContent = "Download failed — please try again."; }
+    } catch(e) { $("#ext-download-hint").textContent = "Download failed â€” please try again."; }
     finally { btn.disabled = false; btn.innerHTML = orig; }
   }
   function wireExtension(){
@@ -3738,27 +3740,27 @@
     const vals = Object.values(d.gsa.monthly || {});
     const flat = vals.length && Math.max(...vals) === Math.min(...vals);
     if (flat)
-      return `<p class="calc-rate-note flat"><i class="fas fa-circle-info"></i>${esc(d.gsa.city)}'s GSA lodging is <b>${payMoney(d.gsa.lodging)}/night every month</b> — so changing the travel dates won't change the stipend for this location. Seasonal cities (e.g. Aspen, CO) do.</p>`;
+      return `<p class="calc-rate-note flat"><i class="fas fa-circle-info"></i>${esc(d.gsa.city)}'s GSA lodging is <b>${payMoney(d.gsa.lodging)}/night every month</b> â€” so changing the travel dates won't change the stipend for this location. Seasonal cities (e.g. Aspen, CO) do.</p>`;
     return `<p class="calc-rate-note season"><i class="fas fa-calendar-check"></i>Seasonal rate for these dates: <b>${payMoney(sl.daily)}/night</b> lodging (${esc((sl.months || []).join(", "))}), used in place of the annual maximum.</p>`;
   }
   function overtimeNote(d){
     const ot = d.breakdown && d.breakdown.overtime;
     if (!ot || ot.mode !== "california") return "";
     const parts = [`${ot.straight_hours}h regular`];
-    if (ot.ot_hours) parts.push(`${ot.ot_hours}h at 1.5×`);
-    if (ot.dt_hours) parts.push(`${ot.dt_hours}h at 2×`);
+    if (ot.ot_hours) parts.push(`${ot.ot_hours}h at 1.5Ã—`);
+    if (ot.dt_hours) parts.push(`${ot.dt_hours}h at 2Ã—`);
     return `<p class="calc-rate-note ca"><i class="fas fa-scale-balanced"></i>California overtime `
          + `applied (${ot.shift_length}h shifts): <b>${parts.join(" + ")}</b> per week. `
-         + `CA pays 1.5× after 8h/day and 2× after 12h/day, unlike the federal weekly-only rule.</p>`;
+         + `CA pays 1.5Ã— after 8h/day and 2Ã— after 12h/day, unlike the federal weekly-only rule.</p>`;
   }
   function gsaTripTotal(p){
     return `<div class="gsa-trip">
       <div class="gsa-trip-head"><i class="fas fa-building-columns"></i>
-        <span>Max GSA per-diem · ${esc(String(p.start))} to ${esc(String(p.end))}</span>
+        <span>Max GSA per-diem Â· ${esc(String(p.start))} to ${esc(String(p.end))}</span>
         <b>${payMoney(p.per_diem_total)}</b></div>
       <div class="gsa-trip-rows">
-        <span>Lodging — ${p.nights} night${p.nights === 1 ? "" : "s"}</span><b>${payMoney(p.lodging_total)}</b>
-        <span>Meals &amp; incidentals — ${p.days} day${p.days === 1 ? "" : "s"} <em>(first & last at 75%)</em></span><b>${payMoney(p.mie_total)}</b>
+        <span>Lodging â€” ${p.nights} night${p.nights === 1 ? "" : "s"}</span><b>${payMoney(p.lodging_total)}</b>
+        <span>Meals &amp; incidentals â€” ${p.days} day${p.days === 1 ? "" : "s"} <em>(first & last at 75%)</em></span><b>${payMoney(p.mie_total)}</b>
       </div>
       <p class="gsa-trip-foot"><i class="fas fa-circle-check"></i>Matches the official gsa.gov per-diem calculator for these dates.</p>
     </div>`;
@@ -3771,9 +3773,9 @@
     box.innerHTML = `<div class="calc-rate-card">
         <div class="calc-rate-head"><div><i class="fas fa-location-dot"></i>
           <strong>${esc(d.gsa.city)}, ${esc(d.gsa.state_code)}</strong></div>
-          <span class="calc-source ${live ? "live" : "estimate"}">${esc(source)} · FY${esc(d.gsa.fiscal_year)}</span></div>
+          <span class="calc-source ${live ? "live" : "estimate"}">${esc(source)} Â· FY${esc(d.gsa.fiscal_year)}</span></div>
         <div class="calc-rate-grid">
-          <div><span>Lodging</span><b>${payMoney((d.breakdown && d.breakdown.seasonal_lodging) ? d.breakdown.seasonal_lodging.daily : d.gsa.lodging)}</b><small>${(d.breakdown && d.breakdown.seasonal_lodging) ? "per night · your dates" : "per night"}</small></div>
+          <div><span>Lodging</span><b>${payMoney((d.breakdown && d.breakdown.seasonal_lodging) ? d.breakdown.seasonal_lodging.daily : d.gsa.lodging)}</b><small>${(d.breakdown && d.breakdown.seasonal_lodging) ? "per night Â· your dates" : "per night"}</small></div>
           <div><span>Meals &amp; incidentals</span><b>${payMoney(d.gsa.mie)}</b><small>per day</small></div>
           <div><span>Weekly tax-free</span><b>${payMoney((d.breakdown && d.breakdown.weekly_tax_free_total != null) ? d.breakdown.weekly_tax_free_total : d.gsa.weekly_max_tax_free)}</b><small>per week</small></div>
         </div>
@@ -3806,7 +3808,7 @@
     try {
       const inputs = collectPayInputs();
       button.disabled = true;
-      button.innerHTML = '<span class="spinner sm"></span>Calculating…';
+      button.innerHTML = '<span class="spinner sm"></span>Calculatingâ€¦';
       $("#pay-calc-results").innerHTML = loading("Looking up the location and calculating both packages...");
       const result = await post("/api/gsa/pay-package/calculate", inputs);
       S.payInputs = inputs;
@@ -3830,7 +3832,7 @@
       title:"Save pay comparison", submit:"Save comparison",
       intro:"Give this package a recognizable name for your recruiter workspace.",
       fields:[{name:"label", label:"Comparison name", required:true, wide:true,
-               value:`${S.payPackage.gsa.city}, ${S.payPackage.gsa.state_code} · ${S.payInputs.contract_weeks} weeks`}],
+               value:`${S.payPackage.gsa.city}, ${S.payPackage.gsa.state_code} Â· ${S.payInputs.contract_weeks} weeks`}],
     });
     if (!values) return;
     try {
@@ -3847,7 +3849,7 @@
   async function loadSavedPayPackages(){
     const box = $("#pay-calc-saved");
     if (!box || !isRecruiter()) return;
-    box.innerHTML = '<div class="calc-saved-empty"><span class="spinner sm dark"></span>Loading saved comparisons…</div>';
+    box.innerHTML = '<div class="calc-saved-empty"><span class="spinner sm dark"></span>Loading saved comparisonsâ€¦</div>';
     try {
       const rows = await get("/api/gsa/pay-package/saved");
       box.innerHTML = rows.length ? rows.slice(0, 8).map(row => {
@@ -3855,7 +3857,7 @@
         const when = row.created_at ? new Date(row.created_at).toLocaleDateString([], {month:"short", day:"numeric", year:"numeric"}) : "";
         return `<article class="calc-saved-row"><div class="calc-saved-icon"><i class="fas fa-calculator"></i></div>
           <div><strong>${esc(row.label || "Saved pay package")}</strong>
-            <span>${esc([gsa.city, gsa.state_code].filter(Boolean).join(", ") || "Location not recorded")} · ${esc(when)}</span></div>
+            <span>${esc([gsa.city, gsa.state_code].filter(Boolean).join(", ") || "Location not recorded")} Â· ${esc(when)}</span></div>
           <div class="calc-saved-value"><b>${payMoney(pd.est_weekly_net)}</b><span>est. weekly take-home</span></div></article>`;
       }).join("") : '<div class="calc-saved-empty"><i class="fas fa-bookmark"></i>No comparisons saved yet.</div>';
     } catch(e) {
@@ -3876,9 +3878,9 @@
     box.innerHTML = `<div class="calc-rate-card">
         <div class="calc-rate-head"><div><i class="fas fa-location-dot"></i>
           <strong>${esc(d.gsa.city)}, ${esc(d.gsa.state_code)}</strong></div>
-          <span class="calc-source ${live ? "live" : "estimate"}">${esc(source)} · FY${esc(d.gsa.fiscal_year)}</span></div>
+          <span class="calc-source ${live ? "live" : "estimate"}">${esc(source)} Â· FY${esc(d.gsa.fiscal_year)}</span></div>
         <div class="calc-rate-grid">
-          <div><span>Lodging</span><b>${payMoney((d.breakdown && d.breakdown.seasonal_lodging) ? d.breakdown.seasonal_lodging.daily : d.gsa.lodging)}</b><small>${(d.breakdown && d.breakdown.seasonal_lodging) ? "tax-free / night · your dates" : "tax-free / night"}</small></div>
+          <div><span>Lodging</span><b>${payMoney((d.breakdown && d.breakdown.seasonal_lodging) ? d.breakdown.seasonal_lodging.daily : d.gsa.lodging)}</b><small>${(d.breakdown && d.breakdown.seasonal_lodging) ? "tax-free / night Â· your dates" : "tax-free / night"}</small></div>
           <div><span>Meals &amp; incidentals</span><b>${payMoney(d.gsa.mie)}</b><small>tax-free / day</small></div>
           <div><span>Weekly tax-free</span><b>${payMoney((d.breakdown && d.breakdown.weekly_tax_free_total != null) ? d.breakdown.weekly_tax_free_total : d.gsa.weekly_max_tax_free)}</b><small>per week</small></div>
         </div>
@@ -3893,7 +3895,7 @@
         <div><span>Take-home difference over the contract (per-diem vs straight W2)</span>
           <b>${advantage >= 0 ? "+" : ""}${payMoney(advantage)}</b></div>
       </div>
-      <p class="calc-hint" style="margin-top:14px"><i class="fas fa-circle-info"></i>The tax-free portion applies only if you keep a qualifying tax home away from the assignment. Confirm your eligibility — this is not tax advice.</p>`;
+      <p class="calc-hint" style="margin-top:14px"><i class="fas fa-circle-info"></i>The tax-free portion applies only if you keep a qualifying tax home away from the assignment. Confirm your eligibility â€” this is not tax advice.</p>`;
   }
   async function calcPayTools(e){
     if (e) e.preventDefault();
@@ -3915,14 +3917,14 @@
     if (ts) inputs.travel_start = ts;
     if (te) inputs.travel_end = te;
     const btn = $("#pt-submit"), orig = btn.innerHTML;
-    btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span>Calculating…';
+    btn.disabled = true; btn.innerHTML = '<span class="spinner sm"></span>Calculatingâ€¦';
     $("#pt-results").innerHTML = loading("Looking up local rates and estimating your take-home...");
     try {
       const result = await post("/api/gsa/pay-package/calculate", inputs);
       renderPayTools(result);
     } catch(err) {
       const msg = err.status === 422
-        ? "Check the package rate and hours — those numbers don't produce a valid estimate."
+        ? "Check the package rate and hours â€” those numbers don't produce a valid estimate."
         : (err.message || "Could not calculate.");
       error.textContent = msg;
       $("#pt-results").innerHTML = errorState("Could not estimate this package", msg);
@@ -3944,7 +3946,7 @@
     const wkStr = Number.isInteger(wkR) ? String(wkR) : wkR.toFixed(1);
     const contract = parseFloat($(weeksSel).value) || 0;
     if (contract && days !== contract * 7){
-      note.innerHTML = `<i class="fas fa-circle-info"></i>These dates span <b>${wkStr} weeks</b> (${days} days) — but the contract length is set to <b>${contract} weeks</b> (${contract * 7} days). Adjust one so they match.`;
+      note.innerHTML = `<i class="fas fa-circle-info"></i>These dates span <b>${wkStr} weeks</b> (${days} days) â€” but the contract length is set to <b>${contract} weeks</b> (${contract * 7} days). Adjust one so they match.`;
       note.className = "calc-dates-note warn";
     } else {
       note.innerHTML = `<i class="fas fa-circle-check"></i>These dates span <b>${wkStr} weeks</b> (${days} days).`;
@@ -3985,7 +3987,7 @@
   }
 
   function wire(){
-    // Landing → sign-in, and back. Any element with data-auth-open opens the
+    // Landing â†’ sign-in, and back. Any element with data-auth-open opens the
     // auth screen in the requested mode.
     $$("[data-auth-open]").forEach(b => b.addEventListener("click", e => {
       e.preventDefault();
@@ -4060,19 +4062,19 @@
     // Verification gate (only reached when email delivery is on).
     const vCont = $("#verify-continue");
     if (vCont) vCont.onclick = async () => {
-      verifyMsg("Checking…", "");
+      verifyMsg("Checkingâ€¦", "");
       const ok = await loadMe();
       if (ok === true) {
         if (await acceptStashedInvite()) await loadMe();
         enterAppPages();
       }
-      else if (ok === "pending") verifyMsg("Not verified yet — open the link in your email, then try again.", "err");
+      else if (ok === "pending") verifyMsg("Not verified yet â€” open the link in your email, then try again.", "err");
       else { setToken(""); setRefresh(""); location.reload(); }
     };
     const vResend = $("#verify-resend");
     if (vResend) vResend.onclick = async () => {
-      verifyMsg("Sending…", "");
-      try { await post("/api/auth/email/request-verification", {}); verifyMsg("Sent — check your inbox.", "ok"); }
+      verifyMsg("Sendingâ€¦", "");
+      try { await post("/api/auth/email/request-verification", {}); verifyMsg("Sent â€” check your inbox.", "ok"); }
       catch(e) { verifyMsg(e.message || "Could not resend the email.", "err"); }
     };
     const vSignout = $("#verify-signout");
@@ -4170,7 +4172,7 @@
       if (jDel) adminDeleteJob(jDel.dataset.adminJobDelete);
       if (e.target.closest("[data-close-modal]") || e.target.classList.contains("modal")) $("#modal-root").innerHTML = "";
     });
-    // Admin: role dropdown change → update the user's role.
+    // Admin: role dropdown change â†’ update the user's role.
     document.body.addEventListener("change", e => {
       const rs = e.target.closest("[data-admin-role]");
       if (rs) adminUpdateUser(rs.dataset.adminRole, {role: rs.value});
@@ -4411,7 +4413,7 @@
           <div class="modal-head"><strong>${esc(title)}</strong>
             <button class="icon-btn" data-dlg-x><i class="fas fa-xmark"></i></button></div>
           <div class="dlg-body"><dl class="dlg-facts">${rows.map(([k, v]) =>
-            `<dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "—" : String(v))}</dd>`
+            `<dt>${esc(k)}</dt><dd>${esc(v == null || v === "" ? "â€”" : String(v))}</dd>`
           ).join("")}</dl></div>
           <div class="dlg-foot"><span class="spacer"></span>
             <button type="button" class="btn primary" data-dlg-x>Close</button></div>
@@ -4464,7 +4466,7 @@
       if (!el) return;
       el.textContent = d.unread > 99 ? "99+" : String(d.unread || "");
       el.classList.toggle("hidden", !d.unread);
-    } catch(e) { /* badge is cosmetic — never break the page for it */ }
+    } catch(e) { /* badge is cosmetic â€” never break the page for it */ }
   }
 
   function threadItem(t){
@@ -4517,7 +4519,7 @@
       const total = S.threads.reduce((n,t) => n + (t.unread_count || 0), 0);
       const sub = $("#messages-sub");
       if (sub) sub.textContent = S.threads.length
-        ? `${S.threads.length} conversation${S.threads.length === 1 ? "" : "s"}${total ? ` · ${total} unread` : ""}`
+        ? `${S.threads.length} conversation${S.threads.length === 1 ? "" : "s"}${total ? ` Â· ${total} unread` : ""}`
         : "Conversations";
       refreshUnreadBadge();
     } catch(e) {
@@ -4541,7 +4543,7 @@
       }
       return `${sep}<div class="msg-row ${mine ? "me" : "them"}">
         <div><div class="msg-bubble">${esc(m.body || "")}</div>
-        <div class="msg-meta">${esc(shortTime(m.created_at))}${mine && m.is_read ? " · Read" : ""}</div></div>
+        <div class="msg-meta">${esc(shortTime(m.created_at))}${mine && m.is_read ? " Â· Read" : ""}</div></div>
       </div>`;
     }).join("");
     const older = detail.has_more
@@ -4549,7 +4551,7 @@
            (detail.messages[0] || {}).message_id || ""}">Load earlier messages</button>`
       : "";
     box.innerHTML = (older ? `<div class="msg-older-wrap">${older}</div>` : "")
-                  + (html || `<div class="msg-system">No messages yet — say hello.</div>`);
+                  + (html || `<div class="msg-system">No messages yet â€” say hello.</div>`);
     box.scrollTop = box.scrollHeight;
     const btn = $("#msg-older");
     if (btn) btn.onclick = () => loadOlderMessages(btn.dataset.before);
@@ -4561,7 +4563,7 @@
   // is checked first: almost every profile is an imported resume with no
   // account, and offering a button that always fails is worse than none.
   async function emailCandidate(profileId){
-    // The candidate has no MedHunt account — reach them by email instead.
+    // The candidate has no MedHunt account â€” reach them by email instead.
     const card = S.providerCards.get(profileId);
     if (card && !card.is_released && !S.releasedContacts.has(profileId)){
       return toast("Reveal this candidate's contact first, then you can email them.",
@@ -4576,14 +4578,14 @@
         {name:"subject", label:"Subject", required:true,
          placeholder:"An opportunity that fits your background"},
         {name:"body", label:"Message", type:"textarea", required:true, wide:true,
-         placeholder:"Hi — I'm recruiting for a role that looks like a strong match for your experience…"},
+         placeholder:"Hi â€” I'm recruiting for a role that looks like a strong match for your experienceâ€¦"},
       ],
     });
     if (!v) return;
     try {
       await post("/api/messages/email-outreach",
                  {profile_id: profileId, subject: v.subject, body: v.body});
-      toast("Your email is on its way — replies land in your inbox.", {title:"Email sent"});
+      toast("Your email is on its way â€” replies land in your inbox.", {title:"Email sent"});
     } catch(e){
       if (e.status === 402)
         toast("Reveal this candidate's contact first, then you can email them.",
@@ -4594,7 +4596,7 @@
   async function messageCandidate(profileId){
     try {
       const check = await get(`/api/messages/can-message/${profileId}`);
-      // No in-app account → fall back to the email bridge (cold outreach).
+      // No in-app account â†’ fall back to the email bridge (cold outreach).
       if (!check.can_message) return emailCandidate(profileId);
       if (check.thread_id){
         showPage("messages");
@@ -4606,7 +4608,7 @@
         submit: "Send",
         fields: [{name:"body", label:"First message", type:"textarea", required:true,
                   wide:true,
-                  placeholder:"Hi — I'm recruiting for a role that looks like a fit…"}],
+                  placeholder:"Hi â€” I'm recruiting for a role that looks like a fitâ€¦"}],
       });
       if (!v) return;
       const thread = await post("/api/messages/threads",
@@ -4750,7 +4752,7 @@
       const done = a.stage_index != null && i <= a.stage_index;
       return `<span class="app-step ${a.is_closed && i === 0 ? "closed" : done ? "done" : ""}">${esc(s)}</span>`;
     }).join("");
-    const where = [a.facility, a.location].filter(Boolean).join(" · ");
+    const where = [a.facility, a.location].filter(Boolean).join(" Â· ");
     return `<div class="app-card">
       <div class="app-head">
         <h3>${esc(a.title)}</h3>
@@ -4759,8 +4761,8 @@
         ${!a.is_closed ? `<button class="btn small" data-withdraw="${a.application_id}">Withdraw</button>` : ""}
       </div>
       <div class="app-meta">${esc(where || "Location not listed")}
-        ${a.pay_rate_max ? ` · $${Math.round(a.pay_rate_max)}/hr` : ""}
-        · applied ${esc(shortTime(a.applied_at))}</div>
+        ${a.pay_rate_max ? ` Â· $${Math.round(a.pay_rate_max)}/hr` : ""}
+        Â· applied ${esc(shortTime(a.applied_at))}</div>
       ${a.is_closed ? "" : `<div class="app-steps">${steps}</div>`}
     </div>`;
   }
@@ -4773,8 +4775,8 @@
       const d = await get("/api/applications/mine/detail");
       const n = d.items.length;
       $("#apps-sub").textContent = n
-        ? `${n} application${n === 1 ? "" : "s"} · ` +
-          Object.entries(d.by_status).map(([s,c]) => `${c} ${s}`).join(" · ")
+        ? `${n} application${n === 1 ? "" : "s"} Â· ` +
+          Object.entries(d.by_status).map(([s,c]) => `${c} ${s}`).join(" Â· ")
         : "Where each application stands";
       box.innerHTML = n ? d.items.map(appCard).join("")
         : `<div class="match-empty"><i class="fas fa-list-check"></i><h3>No applications yet</h3>
@@ -4791,7 +4793,7 @@
     } catch(e) { box.innerHTML = errorState("Could not load your applications"); }
   }
 
-  // Jobs the professional bookmarked — previously savable but with nowhere to
+  // Jobs the professional bookmarked â€” previously savable but with nowhere to
   // see them. Shown beneath the applications list on the same page.
   async function loadSavedJobs(){
     const box = $("#saved-jobs");
@@ -4807,15 +4809,15 @@
              <tbody>${jobs.map(j => `<tr>
                <td><div class="cell-name"><button class="linklike" data-jobview="${esc(j.job_id)}">${esc(j.title)}</button></div>
                    <div class="cell-sub">${esc(j.specialty || j.profession_type || "")}</div></td>
-               <td>${j.job_type ? `<span class="badge accent">${esc(j.job_type)}</span>` : `<span class="cell-none">—</span>`}</td>
-               <td>${esc([j.city, j.state_code].filter(Boolean).join(", ") || "—")}</td>
-               <td>${j.pay_rate_max ? `<strong>$${Math.round(j.pay_rate_max)}/hr</strong>` : "—"}</td>
+               <td>${j.job_type ? `<span class="badge accent">${esc(j.job_type)}</span>` : `<span class="cell-none">â€”</span>`}</td>
+               <td>${esc([j.city, j.state_code].filter(Boolean).join(", ") || "â€”")}</td>
+               <td>${j.pay_rate_max ? `<strong>$${Math.round(j.pay_rate_max)}/hr</strong>` : "â€”"}</td>
                <td class="td-actions">
                  <button class="btn small primary" data-apply="${esc(j.job_id)}">Apply</button>
                  <button class="btn small" data-unsave="${esc(j.job_id)}" title="Remove from saved"><i class="fas fa-bookmark"></i></button>
                </td>
              </tr>`).join("")}</tbody></table></div>`
-        : "";   // nothing saved — stay quiet; the applications area owns the empty state
+        : "";   // nothing saved â€” stay quiet; the applications area owns the empty state
       $$("#saved-jobs [data-unsave]").forEach(b => b.onclick = async () => {
         try { await del(`/api/jobs/${b.dataset.unsave}/save`); loadSavedJobs(); loadDashboard(); }
         catch(e) { toast(e.message || "That did not work.", {title:"Something went wrong", kind:"err"}); }
@@ -4881,16 +4883,16 @@
   // --- Submissions (recruiter) ---------------------------------------------
   function subRow(s){
     const margin = s.margin != null
-      ? `<span class="margin-pos">$${s.margin.toFixed(0)}</span>` : `<span class="cell-none">—</span>`;
+      ? `<span class="margin-pos">$${s.margin.toFixed(0)}</span>` : `<span class="cell-none">â€”</span>`;
     return `<tr>
       <td><div class="cell-name">${esc(s.candidate)}</div>
-          <div class="cell-sub">${esc([s.profession_type, s.specialty].filter(Boolean).join(" · "))}</div></td>
-      <td>${esc(s.job_title || "—")}<div class="cell-sub">${esc(s.facility || "")}</div></td>
+          <div class="cell-sub">${esc([s.profession_type, s.specialty].filter(Boolean).join(" Â· "))}</div></td>
+      <td>${esc(s.job_title || "â€”")}<div class="cell-sub">${esc(s.facility || "")}</div></td>
       <td><select class="stage-select" data-sub-status="${s.submission_id}">
         ${(S.subStatuses || []).map(x => `<option value="${x}"${s.status === x ? " selected" : ""}>${x.replace("_"," ")}</option>`).join("")}
       </select></td>
-      <td class="rate">${s.bill_rate ? `$${s.bill_rate.toFixed(0)}` : "—"}</td>
-      <td class="rate">${s.pay_rate ? `$${s.pay_rate.toFixed(0)}` : "—"}</td>
+      <td class="rate">${s.bill_rate ? `$${s.bill_rate.toFixed(0)}` : "â€”"}</td>
+      <td class="rate">${s.pay_rate ? `$${s.pay_rate.toFixed(0)}` : "â€”"}</td>
       <td class="rate">${margin}</td>
       <td>${esc(s.submitted_by || "")}<div class="cell-sub">${esc(shortTime(s.submitted_at))}</div></td>
       <td class="td-actions"><button class="btn small" data-sub-del="${s.submission_id}"><i class="fas fa-xmark"></i></button></td>
@@ -4904,9 +4906,9 @@
       S.subStatuses = d.statuses || [];
       const n = d.items.length;
       $("#subs-sub").textContent = n
-        ? `${n} submission${n === 1 ? "" : "s"} · ` +
-          Object.entries(d.by_status).map(([s,c]) => `${c} ${s.replace("_"," ")}`).join(" · ")
-          + (d.team_size > 1 ? ` · shared across ${d.team_size} recruiters` : "")
+        ? `${n} submission${n === 1 ? "" : "s"} Â· ` +
+          Object.entries(d.by_status).map(([s,c]) => `${c} ${s.replace("_"," ")}`).join(" Â· ")
+          + (d.team_size > 1 ? ` Â· shared across ${d.team_size} recruiters` : "")
         : "Candidates put forward to client facilities";
       box.innerHTML = n ? `<div class="table-wrap"><table class="table">
           <thead><tr><th>Candidate</th><th>Role</th><th>Status</th><th>Bill</th><th>Pay</th><th>Margin</th><th>Submitted</th><th></th></tr></thead>
@@ -4930,7 +4932,7 @@
   }
   async function submitCandidate(profileId){
     if (!S.clients) { try { S.clients = (await get("/api/clients")).items || []; } catch(e) { S.clients = []; } }
-    const clientOptions = [["", "— No client / type a facility below —"],
+    const clientOptions = [["", "â€” No client / type a facility below â€”"],
       ...S.clients.map(c => [c.client_id, c.name + (c.location ? ` (${c.location})` : "")])];
     const v = await formDialog({
       title: "Submit to a client",
@@ -4960,14 +4962,14 @@
 
   // --- Clients (agency book of business) -----------------------------------
   function clientRow(c){
-    const contact = [c.contact_name, c.contact_email, c.contact_phone].filter(Boolean).join(" · ");
+    const contact = [c.contact_name, c.contact_email, c.contact_phone].filter(Boolean).join(" Â· ");
     return `<tr class="${c.is_active ? "" : "row-muted"}">
       <td><div class="cell-name"><button class="linklike" data-client-view="${esc(c.client_id)}">${esc(c.name)}</button></div>
           ${c.placed ? `<div class="cell-sub">${c.placed} placed</div>` : ""}</td>
-      <td>${c.facility_type ? `<span class="badge">${esc(c.facility_type)}</span>` : `<span class="cell-none">—</span>`}</td>
-      <td>${esc(c.location || "—")}</td>
-      <td class="cell-sub">${esc(contact || "—")}</td>
-      <td>${c.default_bill_rate ? `<strong>$${Math.round(c.default_bill_rate)}/hr</strong>` : "—"}</td>
+      <td>${c.facility_type ? `<span class="badge">${esc(c.facility_type)}</span>` : `<span class="cell-none">â€”</span>`}</td>
+      <td>${esc(c.location || "â€”")}</td>
+      <td class="cell-sub">${esc(contact || "â€”")}</td>
+      <td>${c.default_bill_rate ? `<strong>$${Math.round(c.default_bill_rate)}/hr</strong>` : "â€”"}</td>
       <td>${c.submissions || 0}</td>
       <td class="td-actions">
         <button class="btn small" data-client-edit="${esc(c.client_id)}" title="Edit"><i class="fas fa-pen"></i></button>
@@ -5000,11 +5002,11 @@
   function clientFields(c = {}){
     return [
       {name:"name", label:"Client name", required:true, wide:true, value:c.name || "", placeholder:"St. David's Medical Center"},
-      {name:"facility_type", label:"Type", value:c.facility_type || "", placeholder:"Hospital, SNF, Clinic…"},
+      {name:"facility_type", label:"Type", value:c.facility_type || "", placeholder:"Hospital, SNF, Clinicâ€¦"},
       {name:"city", label:"City", value:c.city || ""},
       {name:"state_code", label:"State", value:c.state_code || "", max:2},
       {name:"default_bill_rate", label:"Default bill rate ($/hr)", type:"number", step:"1", value:c.default_bill_rate ?? ""},
-      {name:"website_url", label:"Website", value:c.website_url || "", placeholder:"https://…"},
+      {name:"website_url", label:"Website", value:c.website_url || "", placeholder:"https://â€¦"},
       {name:"contact_name", label:"Contact name", value:c.contact_name || ""},
       {name:"contact_email", label:"Contact email", type:"email", value:c.contact_email || ""},
       {name:"contact_phone", label:"Contact phone", value:c.contact_phone || ""},
@@ -5078,9 +5080,9 @@
             <tbody>${subs.map(s => `<tr>
               <td>${esc(s.candidate)}</td>
               <td><span class="badge">${esc(s.status.replace("_", " "))}</span></td>
-              <td>${s.bill_rate ? `$${Math.round(s.bill_rate)}` : "—"}</td>
-              <td>${s.pay_rate ? `$${Math.round(s.pay_rate)}` : "—"}</td>
-              <td>${s.margin != null ? `<span class="margin-pos">$${Math.round(s.margin)}</span>` : "—"}</td>
+              <td>${s.bill_rate ? `$${Math.round(s.bill_rate)}` : "â€”"}</td>
+              <td>${s.pay_rate ? `$${Math.round(s.pay_rate)}` : "â€”"}</td>
+              <td>${s.margin != null ? `<span class="margin-pos">$${Math.round(s.margin)}</span>` : "â€”"}</td>
             </tr>`).join("")}</tbody></table></div>`
           : `<p class="muted" style="font-size:13px">No submissions to this client yet.</p>`}</div>`;
       $("#client-back").onclick = loadClients;
@@ -5098,18 +5100,18 @@
       const totalMargin = items.reduce((a, s) => a + (s.margin || 0), 0);
       $("#placements-sub").textContent = items.length
         ? `${items.length} placement${items.length === 1 ? "" : "s"}`
-          + (totalMargin ? ` · $${Math.round(totalMargin)}/hr total margin` : "")
+          + (totalMargin ? ` Â· $${Math.round(totalMargin)}/hr total margin` : "")
         : "Candidates placed with clients";
       box.innerHTML = items.length
         ? `<div class="table-wrap"><table class="table">
             <thead><tr><th>Candidate</th><th>Client</th><th>Bill</th><th>Pay</th><th>Margin</th><th>Placed</th></tr></thead>
             <tbody>${items.map(s => `<tr>
               <td><div class="cell-name">${esc(s.candidate)}</div>
-                  <div class="cell-sub">${esc([s.profession_type, s.specialty].filter(Boolean).join(" · "))}</div></td>
-              <td>${esc(s.facility || "—")}</td>
-              <td>${s.bill_rate ? `$${Math.round(s.bill_rate)}/hr` : "—"}</td>
-              <td>${s.pay_rate ? `$${Math.round(s.pay_rate)}/hr` : "—"}</td>
-              <td>${s.margin != null ? `<span class="margin-pos">$${Math.round(s.margin)}/hr</span>` : "—"}</td>
+                  <div class="cell-sub">${esc([s.profession_type, s.specialty].filter(Boolean).join(" Â· "))}</div></td>
+              <td>${esc(s.facility || "â€”")}</td>
+              <td>${s.bill_rate ? `$${Math.round(s.bill_rate)}/hr` : "â€”"}</td>
+              <td>${s.pay_rate ? `$${Math.round(s.pay_rate)}/hr` : "â€”"}</td>
+              <td>${s.margin != null ? `<span class="margin-pos">$${Math.round(s.margin)}/hr</span>` : "â€”"}</td>
               <td>${esc(shortTime(s.status_updated_at || s.submitted_at))}</td>
             </tr>`).join("")}</tbody></table></div>`
         : `<div class="match-empty"><i class="fas fa-user-check"></i><h3>No placements yet</h3>
@@ -5130,7 +5132,7 @@
           html += `<div class="privacy-wrap">
             <h3>Your privacy</h3>
             <p>Recruiters can search this directory, but your name and contact details
-               stay hidden until one deliberately releases your profile — which is
+               stay hidden until one deliberately releases your profile â€” which is
                recorded.${p.times_contact_released
                  ? ` Your details have been released <b>${p.times_contact_released}</b> time${p.times_contact_released === 1 ? "" : "s"}.`
                  : " Nobody has released your details yet."}</p>
@@ -5149,7 +5151,7 @@
     // Deleting the account is available to everyone.
     html += `<div class="privacy-wrap danger-zone">
       <h3>Delete account</h3>
-      <p>Permanently close your account and erase your personal details — your
+      <p>Permanently close your account and erase your personal details â€” your
          profile, contact information and resume. This cannot be undone.</p>
       <div class="privacy-actions"><span class="spacer"></span>
         <button class="btn danger small" id="account-delete"><i class="fas fa-trash"></i>Delete my account</button>
@@ -5164,7 +5166,7 @@
       if (!await confirmDialog({
         title: "Remove yourself from the directory",
         body: "Your email, phone and resume are erased and "
-            + "recruiters stop seeing you in search. Your account stays open — "
+            + "recruiters stop seeing you in search. Your account stays open â€” "
             + "you can list yourself again later.",
         confirm: "Erase my details", danger: true})) return;
       try { const r = await post("/api/privacy/me/delist", {});
@@ -5218,7 +5220,7 @@
   const ACTION_LABELS = {reveal_contact:"Reveal a candidate's contact"};
   async function refreshCredits(){
     if (!token()) return;
-    // Credits pay for revealing candidate contacts — a recruiter-only action.
+    // Credits pay for revealing candidate contacts â€” a recruiter-only action.
     // A healthcare professional has no use for a balance, so hide it entirely.
     if (!isRecruiter()){
       const chip = $("#credit-chip");
@@ -5235,7 +5237,7 @@
       chip.classList.toggle("low", c.balance <= 5);
       chip.title = c.balance <= 5
         ? `Only ${c.balance} credits left` : `${c.balance} credits remaining`;
-    } catch(e) { /* the chip is informational — never block the app for it */ }
+    } catch(e) { /* the chip is informational â€” never block the app for it */ }
   }
   async function loadCredits(){
     const box = $("#credits-body");
@@ -5248,7 +5250,7 @@
       S.credits = c;
       $("#credits-sub").textContent = c.enabled
         ? `${c.lifetime_spent} spent of ${c.lifetime_granted} granted`
-        : "Credits are currently switched off — nothing is being charged.";
+        : "Credits are currently switched off â€” nothing is being charged.";
       const money = cents => `$${Math.round(cents / 100)}`;
       const packSection = `
         <div class="an-section"><h2>Buy credits</h2>
@@ -5262,7 +5264,7 @@
                   <button class="btn primary full" data-buy="${esc(p.pack_id)}">Buy</button>
                 </div>`).join("")}</div>
               <p class="merge-hint">Secure checkout by Stripe. Credits land in your balance the moment payment completes.</p>`
-            : `<p class="muted" style="font-size:13px">Self-service purchasing isn't switched on yet — ask your administrator to top up your balance for now.</p>`}
+            : `<p class="muted" style="font-size:13px">Self-service purchasing isn't switched on yet â€” ask your administrator to top up your balance for now.</p>`}
         </div>`;
       box.innerHTML = `
         <div class="credit-hero"><b>${c.balance}</b><span>credits remaining</span></div>
@@ -5294,14 +5296,14 @@
     } catch(e) { box.innerHTML = errorState("Could not load credits"); }
   }
   async function buyCredits(packId, btn){
-    if (btn){ btn.disabled = true; btn.textContent = "Starting…"; }
+    if (btn){ btn.disabled = true; btn.textContent = "Startingâ€¦"; }
     try {
       const r = await post("/api/credits/checkout", {pack_id: packId});
       if (r.url) { location.href = r.url; return; }   // hand off to Stripe
       throw new Error("No checkout URL");
     } catch(e) {
       if (btn){ btn.disabled = false; btn.textContent = "Buy"; }
-      toast(e.status === 503 ? "Purchasing isn't set up yet — ask your administrator to top you up."
+      toast(e.status === 503 ? "Purchasing isn't set up yet â€” ask your administrator to top you up."
           : (e.message || "Could not start checkout."), {title:"Checkout unavailable", kind:"err"});
     }
   }
@@ -5311,13 +5313,13 @@
     const purchase = params.get("purchase");
     if (!purchase) return;
     if (purchase === "success"){
-      toast("Payment received — your credits will appear here in a moment.",
+      toast("Payment received â€” your credits will appear here in a moment.",
             {title:"Thanks for your purchase", ms:7000});
       // The webhook grants a beat after the redirect; refresh once it's landed.
       setTimeout(() => { refreshCredits();
         if ($("#page-credits").classList.contains("active")) loadCredits(); }, 2500);
     } else if (purchase === "cancel"){
-      toast("Checkout cancelled — no charge was made.", {kind:"info"});
+      toast("Checkout cancelled â€” no charge was made.", {kind:"info"});
     }
     params.delete("purchase");   // don't re-toast on refresh
     const qs = params.toString();
@@ -5356,7 +5358,7 @@
         <div><b>No mail provider connected.</b> Campaigns run end to end and record
         every send, but nothing is delivered. Set <code>email_enabled</code> and
         <code>sendgrid_api_key</code> (plus a verified sending domain) to send for real.</div></div>`;
-      $("#outreach-sub").textContent = `${camps.items.length} campaign${camps.items.length === 1 ? "" : "s"} · ${S.templates.length} template${S.templates.length === 1 ? "" : "s"}`;
+      $("#outreach-sub").textContent = `${camps.items.length} campaign${camps.items.length === 1 ? "" : "s"} Â· ${S.templates.length} template${S.templates.length === 1 ? "" : "s"}`;
       box.innerHTML = `
         <div class="an-section"><h2>Templates</h2>
           ${S.templates.length
@@ -5366,7 +5368,7 @@
           <div class="merge-hint">Merge fields: ${(tmpls.merge_fields || []).map(f => `<code>{{${f}}}</code>`).join(" ")}</div>
         </div>
         <div class="an-section"><h2>Starter templates</h2>
-          <p class="muted" style="font-size:13px;margin:0 0 12px">Proven outreach messages — click <b>Use</b> to add one to your templates, then tweak it.</p>
+          <p class="muted" style="font-size:13px;margin:0 0 12px">Proven outreach messages â€” click <b>Use</b> to add one to your templates, then tweak it.</p>
           <div class="starter-grid">
             ${BUILTIN_TEMPLATES.map((t, i) => `<div class="starter-card">
               <div class="starter-name">${esc(t.name)}</div>
@@ -5437,7 +5439,7 @@
        "Best,"].join("\n")},
     {name: "Travel contract offer",
      desc: "Pitch a specific travel assignment with pay.",
-     subject: "13-week {{specialty}} travel contract — great pay",
+     subject: "13-week {{specialty}} travel contract â€” great pay",
      body: ["Hi {{first_name}},", "",
        "I have a 13-week {{specialty}} travel contract opening up near {{city}} with "
        + "competitive weekly pay plus a housing stipend. Given your experience, I can "
@@ -5446,7 +5448,7 @@
        "Thanks,"].join("\n")},
     {name: "Gentle follow-up",
      desc: "Second touch when your first note went quiet.",
-     subject: "Following up — {{specialty}} roles",
+     subject: "Following up â€” {{specialty}} roles",
      body: ["Hi {{first_name}},", "",
        "Just floating this back to the top of your inbox. I'm still working on {{specialty}} "
        + "roles near {{city}} and would love to share what's open.", "",
@@ -5456,8 +5458,8 @@
      desc: "For clinicians who can work across states.",
      subject: "Multi-state {{specialty}} opportunities",
      body: ["Hi {{first_name}},", "",
-       "If you hold a compact license, I have {{specialty}} roles across several states — "
-       + "including some well beyond {{city}} — with quick starts and strong pay.", "",
+       "If you hold a compact license, I have {{specialty}} roles across several states â€” "
+       + "including some well beyond {{city}} â€” with quick starts and strong pay.", "",
        "Would you like me to line up options that match where you'd want to go next?", "",
        "Thanks,"].join("\n")},
     {name: "Re-engage past candidate",
@@ -5474,16 +5476,16 @@
       try { S.pools = (await get("/api/pools")).items || []; } catch(e) { S.pools = []; }
     }
     if (!S.pools.length)
-      return toast("Create a talent pool first — a campaign sends to a pool.", {kind:"err"});
+      return toast("Create a talent pool first â€” a campaign sends to a pool.", {kind:"err"});
     if (!S.templates.length) return toast("Create a template first.", {kind:"err"});
     const v = await formDialog({
       title: "New campaign",
-      intro: "Only candidates whose contact you have released can be emailed — the "
+      intro: "Only candidates whose contact you have released can be emailed â€” the "
            + "rest are skipped automatically.",
       submit: "Build campaign",
       fields: [
         {name:"name", label:"Campaign name", required:true, wide:true,
-         value:S.pools[0].name + " — " + S.templates[0].name},
+         value:S.pools[0].name + " â€” " + S.templates[0].name},
         {name:"pool_id", label:"Send to pool", type:"select",
          options:S.pools.map(p => [p.pool_id, p.name + " (" + p.member_count + ")"])},
         {name:"template_id", label:"Template", type:"select",
@@ -5510,7 +5512,7 @@
       const r = await post(`/api/outreach/campaigns/${id}/send`, {});
       if (r.simulated) {
         toast(`${r.would_send} recipient${r.would_send === 1 ? "" : "s"} ready to send. `
-              + "Nothing was delivered — no email provider is connected yet.",
+              + "Nothing was delivered â€” no email provider is connected yet.",
               {title:"Preview only", kind:"info", ms:8000});
       } else {
         toast(`Sent ${r.sent}, skipped ${r.skipped}, failed ${r.failed}.`,
@@ -5523,7 +5525,7 @@
     try {
       const d = await get(`/api/outreach/campaigns/${id}`);
       const reasons = Object.entries(d.skip_reasons || {})
-        .map(([r,n]) => `${n} ${r}`).join(" · ") || "none";
+        .map(([r,n]) => `${n} ${r}`).join(" Â· ") || "none";
       await infoDialog(d.name, [
         ["Subject", d.subject],
         ["Recipients", `${d.total}`],
@@ -5536,10 +5538,10 @@
   }
 
   // --- Analytics -----------------------------------------------------------
-  // Validated categorical palette (dataviz skill reference order — passes the
+  // Validated categorical palette (dataviz skill reference order â€” passes the
   // adjacent-pair CVD gates in light mode). Fixed order, never cycled.
   const VIZ_CAT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-  // Blue ordinal ramp for ordered funnel stages (steps 250→700; light end ≥2:1).
+  // Blue ordinal ramp for ordered funnel stages (steps 250â†’700; light end â‰¥2:1).
   const VIZ_FUNNEL = ["#86b6ef", "#5598e7", "#3987e5", "#256abf", "#184f95", "#0d366b"];
   const POOL_STAGE_ORDER = ["sourced", "contacted", "screening", "submitted", "hired", "rejected"];
   const STAGE_COLORS = Object.fromEntries(POOL_STAGE_ORDER.map((s, i) => [s, VIZ_CAT[i % VIZ_CAT.length]]));
@@ -5648,10 +5650,10 @@
         : emptyState("No extension activity in this period", "Try a longer period or different filters.", "fa-calendar-days")}
       <div class="viz-grid extension-detail-grid">
         ${vizCard("Platform activity", sourceBody, "checks and enrichments by platform")}
-        ${vizCard("User activity", members.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Checks</th><th>Enrichments</th><th>Unique candidates</th><th>Last used</th></tr></thead><tbody>${members.map(m => `<tr><td><div class="cell-name">${esc(m.name || m.email || "Team member")}</div><div class="cell-sub">${esc(m.email || "")}</div></td><td>${Number(m.checks).toLocaleString()}</td><td>${Number(m.enriched).toLocaleString()}</td><td>${Number(m.candidates_enriched).toLocaleString()}</td><td>${m.last_used_at ? esc(shortTime(m.last_used_at)) : "—"}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No extension use yet", "User activity will appear here.", "fa-users"), "who used MedHunt and when")}
+        ${vizCard("User activity", members.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Checks</th><th>Enrichments</th><th>Unique candidates</th><th>Last used</th></tr></thead><tbody>${members.map(m => `<tr><td><div class="cell-name">${esc(m.name || m.email || "Team member")}</div><div class="cell-sub">${esc(m.email || "")}</div></td><td>${Number(m.checks).toLocaleString()}</td><td>${Number(m.enriched).toLocaleString()}</td><td>${Number(m.candidates_enriched).toLocaleString()}</td><td>${m.last_used_at ? esc(shortTime(m.last_used_at)) : "â€”"}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No extension use yet", "User activity will appear here.", "fa-users"), "who used MedHunt and when")}
       </div>
       <div class="team-head extension-detail-head"><h3>Extension event log</h3><span class="team-note">${Number(ext.activity_total || 0).toLocaleString()} events</span></div>
-      ${activity.length ? `<p class="extension-scroll-hint">Scroll sideways to see the full event details.</p><div class="table-wrap extension-event-table" tabindex="0" aria-label="Extension event log; scroll sideways for more columns"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Platform</th><th>Provider</th><th>Outcome</th><th>API response</th><th>Run ID</th><th>Event ID</th><th>Date &amp; time</th></tr></thead><tbody>${activity.map(a => `<tr><td><div class="cell-name">${esc(a.user_name || "Team member")}</div><div class="cell-sub">${esc(a.user_email || "")}</div></td><td>${a.candidate_name ? `<div class="cell-name">${esc(a.candidate_name)}</div>` : ""}<div class="cell-sub">${esc(a.candidate_id || "—")}</div></td><td>${esc(a.platform || a.source || "Unknown")}</td><td>${esc(a.provider || "—")}</td><td><span class="badge${a.enriched ? " accent" : ""}">${esc(a.status || (a.enriched ? "Enriched" : "Attempted"))}</span></td><td>${a.provider === "quick_sourcer" ? `<button class="btn small" data-extension-response="${esc(a.event_id)}">View response</button>` : "—"}</td><td><span class="event-ref" title="${esc(a.run_id || "—")}">${esc(a.run_id || "—")}</span></td><td><span class="event-ref" title="${esc(a.event_id || "—")}">${esc(a.event_id || "—")}</span></td><td>${a.used_at ? esc(new Date(a.used_at).toLocaleString()) : "—"}</td></tr>`).join("")}</tbody></table></div>`
+      ${activity.length ? `<p class="extension-scroll-hint">Scroll sideways to see the full event details.</p><div class="table-wrap extension-event-table" tabindex="0" aria-label="Extension event log; scroll sideways for more columns"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Platform</th><th>Provider</th><th>Outcome</th><th>API response</th><th>Run ID</th><th>Event ID</th><th>Date &amp; time</th></tr></thead><tbody>${activity.map(a => `<tr><td><div class="cell-name">${esc(a.user_name || "Team member")}</div><div class="cell-sub">${esc(a.user_email || "")}</div></td><td>${a.candidate_name ? `<div class="cell-name">${esc(a.candidate_name)}</div>` : ""}<div class="cell-sub">${esc(a.candidate_id || "â€”")}</div></td><td>${esc(a.platform || a.source || "Unknown")}</td><td>${esc(a.provider || "â€”")}</td><td><span class="badge${a.enriched ? " accent" : ""}">${esc(a.status || (a.enriched ? "Enriched" : "Attempted"))}</span></td><td>${a.provider === "quick_sourcer" ? `<button class="btn small" data-extension-response="${esc(a.event_id)}">View response</button>` : "â€”"}</td><td><span class="event-ref" title="${esc(a.run_id || "â€”")}">${esc(a.run_id || "â€”")}</span></td><td><span class="event-ref" title="${esc(a.event_id || "â€”")}">${esc(a.event_id || "â€”")}</span></td><td>${a.used_at ? esc(new Date(a.used_at).toLocaleString()) : "â€”"}</td></tr>`).join("")}</tbody></table></div>`
         : emptyState("No events match these filters", "Try a different period or filter.", "fa-list")}
       ${pageCount > 1 ? `<div class="extension-pages"><button class="btn small" data-extension-page="${ext.activity_page - 1}"${ext.activity_page <= 1 ? " disabled" : ""}>Previous</button><span>Page ${ext.activity_page} of ${pageCount}</span><button class="btn small" data-extension-page="${ext.activity_page + 1}"${ext.activity_page >= pageCount ? " disabled" : ""}>Next</button></div>` : ""}
     </div>`;
@@ -5719,7 +5721,7 @@
       const technicalStatus = raw.http_status ? `HTTP ${esc(raw.http_status)}` : raw.exception ? esc(raw.exception) : "Saved response";
       adminModal("Quick Sourcer lookup details", `<div class="lookup-response">
         <div class="lookup-response-summary" role="status">
-          <span class="lookup-response-eyebrow">${esc(data.lookup_status || "Lookup")} · ${technicalStatus}</span>
+          <span class="lookup-response-eyebrow">${esc(data.lookup_status || "Lookup")} Â· ${technicalStatus}</span>
           <h3>${esc(summary.title)}</h3>
           <p>${esc(summary.explanation)}</p>
           ${summary.action ? `<p class="lookup-response-action">${esc(summary.action)}</p>` : ""}
@@ -5756,11 +5758,11 @@
       <div class="table-wrap"><table class="table">
         <thead><tr><th>Contact</th><th>Stage</th><th>Sent</th><th>Received</th><th>Reply rate</th><th>Last activity</th></tr></thead>
         <tbody>${rows.slice(0, 25).map(c => `<tr>
-          <td><div class="cell-name">${esc(c.candidate || "—")}</div></td>
-          <td>${c.ats_stage ? `<span class="badge">${esc(c.ats_stage)}</span>` : `<span class="cell-none">—</span>`}</td>
+          <td><div class="cell-name">${esc(c.candidate || "â€”")}</div></td>
+          <td>${c.ats_stage ? `<span class="badge">${esc(c.ats_stage)}</span>` : `<span class="cell-none">â€”</span>`}</td>
           <td>${c.messages_sent}</td><td>${c.messages_received}</td>
           <td>${Math.round((c.response_rate || 0) * 100)}%</td>
-          <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "—"}</td>
+          <td>${c.last_message_at ? esc(shortTime(c.last_message_at)) : "â€”"}</td>
         </tr>`).join("")}</tbody></table></div></div>` : "";
   }
   function renderSourcingAnalytics(d){
@@ -5824,7 +5826,7 @@
       }
       // Market = real supply/demand (impressive, populated); sourcing = this
       // recruiter's own activity. The application funnel is intentionally not
-      // shown — with no submissions/applications yet it would be all zeros.
+      // shown â€” with no submissions/applications yet it would be all zeros.
       const convoPromise = get("/api/analytics/conversations").catch(() => null);
       const extPromise = extensionAnalyticsRequest(activeOrgId);
       let partialMarket = null, partialSourcing = null;
@@ -5844,7 +5846,7 @@
         if (!cards.length) return;
         box.innerHTML = `<div class="an-section"><h2>At a glance</h2><div class="an-grid">${cards.join("")}</div></div>`
           + (partialSourcing ? renderSourcingAnalytics(partialSourcing) : "")
-          + `<div class="an-section"><h2>Talent market</h2>${loading("Loading market figures…")}</div>`;
+          + `<div class="an-section"><h2>Talent market</h2>${loading("Loading market figuresâ€¦")}</div>`;
       };
       const marketPromise = get("/api/analytics/market");
       const sourcingPromise = get("/api/analytics/sourcing?days=30&include_directory=false");
@@ -5887,7 +5889,7 @@
         ? hbars(mk.demand_state.map(x => ({label: x.label, value: x.count})))
         : emptyState("No open roles yet", "", "fa-map-location-dot");
       // Two circular charts on top (reach + specialty mix), two bar sets below
-      // (supply + state) — a balanced, scannable 2×2.
+      // (supply + state) â€” a balanced, scannable 2Ã—2.
       const marketGrid = `<div class="viz-grid">
         ${vizCard("Directory reach", reachBody, "reachable share")}
         ${vizCard("Open roles by specialty", specBody, `${mk.jobs_active} live roles`)}
@@ -5911,7 +5913,7 @@
           $("#analytics-conversations").innerHTML = renderAnalyticsConversations(convo);
         }
       });
-      $("#analytics-sub").textContent = `${cn(P.listable)} providers · ${mk.jobs_active} open roles · last ${d.window_days} days`;
+      $("#analytics-sub").textContent = `${cn(P.listable)} providers Â· ${mk.jobs_active} open roles Â· last ${d.window_days} days`;
       box.onchange = event => {
         const field = event.target.dataset.extensionFilter;
         if (!field) return;
@@ -5948,9 +5950,9 @@
   }
   function describeSearch(p){
     const bits = [p.q, p.license_title, p.specialty, p.state_code, p.city,
-                  p.resume_status === "with_resume" ? "with résumé" :
-                  p.resume_status === "without_resume" ? "without résumé" : ""];
-    return bits.filter(Boolean).join(" · ") || "all providers";
+                  p.resume_status === "with_resume" ? "with rÃ©sumÃ©" :
+                  p.resume_status === "without_resume" ? "without rÃ©sumÃ©" : ""];
+    return bits.filter(Boolean).join(" Â· ") || "all providers";
   }
   function renderSavedChips(){
     const box = $("#saved-chips"); if (!box) return;
@@ -6012,7 +6014,7 @@
                        {title:"Could not save search", kind:"err"}); }
   }
   // Re-count every saved search; growth since the last check becomes a
-  // notification. This is what makes the Notifications page live — and it runs
+  // notification. This is what makes the Notifications page live â€” and it runs
   // for professionals (job alerts) as well as recruiters (candidate alerts),
   // on app load, since there is no scheduler yet.
   async function checkSavedSearches(){
@@ -6196,7 +6198,7 @@
     const original = button ? button.innerHTML : "";
     if (button) {
       button.disabled = true;
-      button.innerHTML = '<span class="spinner sm"></span>Revealing…';
+      button.innerHTML = '<span class="spinner sm"></span>Revealingâ€¦';
     }
     try {
       const result = await post("/api/profiles/contact-release/bulk", {profile_ids:ids});
@@ -6248,7 +6250,7 @@
       city:c.city, state_code:c.state_code, years_experience:c.years_experience,
       has_email:true, has_phone:true
     });
-    const loc = c.location || "—";
+    const loc = c.location || "â€”";
     return `<tr data-row="${c.profile_id}">
       <td><span class="match-rank">#${c.rank}</span></td>
       <td>
@@ -6262,7 +6264,7 @@
       </td>
       <td>${scoreCell(c)}</td>
       <td><div class="match-reason">${esc(c.match_reason || "")}</div></td>
-      <td>${c.years_experience ? `${esc(c.years_experience)} yrs` : `<span class="cell-none">—</span>`}</td>
+      <td>${c.years_experience ? `${esc(c.years_experience)} yrs` : `<span class="cell-none">â€”</span>`}</td>
       <td>${esc(loc)}</td>
       <td class="td-actions">
         <button class="btn small" data-resume="${c.profile_id}" title="View resume"><i class="fas fa-file-lines"></i></button>
@@ -6284,9 +6286,9 @@
     const job = (S.jobsById && S.jobsById.get(jobId)) || null;
     showPage("applicants");
     $("#applicants-title").textContent = job ? job.title : "Applicants";
-    $("#applicants-sub").textContent = "Loading applicants…";
+    $("#applicants-sub").textContent = "Loading applicantsâ€¦";
     const box = $("#applicants-body");
-    box.innerHTML = loading("Loading applicants…");
+    box.innerHTML = loading("Loading applicantsâ€¦");
     try {
       const d = await get(`/api/jobs/${jobId}/applicants`);
       renderApplicants(d);
@@ -6303,8 +6305,8 @@
     const items = d.items || [];
     if (d.job) $("#applicants-title").textContent = d.job.title;
     $("#applicants-sub").textContent = items.length
-      ? `${items.length} applicant${items.length === 1 ? "" : "s"} · ` +
-        Object.entries(d.by_status).map(([s,c]) => `${c} ${APPLICANT_STATUS_LABEL[s] || s}`).join(" · ")
+      ? `${items.length} applicant${items.length === 1 ? "" : "s"} Â· ` +
+        Object.entries(d.by_status).map(([s,c]) => `${c} ${APPLICANT_STATUS_LABEL[s] || s}`).join(" Â· ")
       : "No applicants yet";
     if (!items.length){
       box.innerHTML = `<div class="match-empty"><i class="fas fa-inbox"></i>
@@ -6334,7 +6336,7 @@
   function applicantCard(a){
     const meta = [a.profession_type, a.specialty,
                   a.years_experience != null ? `${a.years_experience} yrs` : "",
-                  a.location].filter(Boolean).join(" · ");
+                  a.location].filter(Boolean).join(" Â· ");
     const contact = [
       a.email ? `<a href="mailto:${esc(a.email)}"><i class="fas fa-envelope"></i>${esc(a.email)}</a>` : "",
       a.phone ? `<a href="tel:${esc(a.phone)}"><i class="fas fa-phone"></i>${esc(a.phone)}</a>` : "",
@@ -6418,7 +6420,7 @@
       try { S.pools = (await get("/api/pools")).items || []; } catch(e) { S.pools = []; }
     }
     // Picking a pool by typing its number in a list was the worst of the
-    // prompt flows — this is a dropdown of real pools, with "new" as an option.
+    // prompt flows â€” this is a dropdown of real pools, with "new" as an option.
     const options = [...S.pools.map(p => [p.pool_id, p.name + " (" + p.member_count + ")"]),
                      ["__new__", "+ Create a new pool"]];
     const v = await formDialog({
@@ -6476,7 +6478,7 @@
       if (seq !== S.poolsReq) return;   // a newer load already rendered
       S.pools = d.items || [];
       $("#pools-sub").textContent = S.pools.length
-        ? `${S.pools.length} pool${S.pools.length === 1 ? "" : "s"} · ${S.pools.reduce((n,p) => n + p.member_count, 0)} candidates shortlisted`
+        ? `${S.pools.length} pool${S.pools.length === 1 ? "" : "s"} Â· ${S.pools.reduce((n,p) => n + p.member_count, 0)} candidates shortlisted`
         : "Shortlist candidates, track them through your pipeline, and export for outreach.";
       box.innerHTML = S.pools.length
         ? `<div class="pool-grid">${S.pools.map(poolCard).join("")}</div>`
@@ -6513,14 +6515,14 @@
         </div>
       </td>
       <td><span class="badge accent">${esc(short(m.profession_type || "Pro", 24))}</span></td>
-      <td>${loc ? esc(loc) : `<span class="cell-none">—</span>`}</td>
+      <td>${loc ? esc(loc) : `<span class="cell-none">â€”</span>`}</td>
       <td>
         <select class="stage-select" data-stage-for="${m.profile_id}">
           ${ATS_STAGES.map(s => `<option value="${s}"${m.stage === s ? " selected" : ""}>${s[0].toUpperCase()+s.slice(1)}</option>`).join("")}
         </select>
       </td>
       <td>
-        <span class="pool-note">${esc(m.note || "—")}</span>
+        <span class="pool-note">${esc(m.note || "â€”")}</span>
         <button class="pool-note-edit" data-note-for="${m.profile_id}" title="Edit note"><i class="fas fa-pen"></i></button>
       </td>
       <td class="td-actions">
@@ -6542,16 +6544,16 @@
         {name:"subject", label:"Subject", required:true,
          placeholder:"A role that fits your background"},
         {name:"body", label:"Message", type:"textarea", required:true, wide:true,
-         placeholder:"Hi — I'm reaching out about an opportunity that matches your experience…"},
+         placeholder:"Hi â€” I'm reaching out about an opportunity that matches your experienceâ€¦"},
       ],
     });
     if (!v) return;
     try {
       const r = await post(`/api/pools/${poolId}/email`, {subject: v.subject, body: v.body});
       const parts = [`${r.sent} sent`];
-      if (r.skipped_not_revealed) parts.push(`${r.skipped_not_revealed} skipped — reveal contact first`);
-      if (r.skipped_no_email) parts.push(`${r.skipped_no_email} skipped — no email`);
-      toast(parts.join(" · "), {title:"Pool emailed", ms:6500});
+      if (r.skipped_not_revealed) parts.push(`${r.skipped_not_revealed} skipped â€” reveal contact first`);
+      if (r.skipped_no_email) parts.push(`${r.skipped_no_email} skipped â€” no email`);
+      toast(parts.join(" Â· "), {title:"Pool emailed", ms:6500});
     } catch(e){ toast(e.message || "Could not email the pool.", {kind:"err"}); }
   }
   async function openPool(poolId, stage=""){
@@ -6580,7 +6582,7 @@
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Candidate</th><th>License</th><th>Location</th><th>Stage</th><th>Note</th><th></th></tr></thead>
           <tbody>${(d.items || []).map(poolMemberRow).join("")
-            || `<tr class="row-state"><td colspan="6">${loading(stage ? "No candidates at this stage." : "No candidates in this pool yet — add them from the Providers directory.")}</td></tr>`}</tbody>
+            || `<tr class="row-state"><td colspan="6">${loading(stage ? "No candidates at this stage." : "No candidates in this pool yet â€” add them from the Providers directory.")}</td></tr>`}</tbody>
         </table></div>`;
       $("#pool-back").onclick = loadPools;
       $("#pool-export").onclick = e => { e.preventDefault(); exportPool(poolId); };
@@ -6632,12 +6634,12 @@
 
   async function createPool(){
     // Offer the agency's open job orders so a pool says which role it's for.
-    const jobOpts = [["", "— Not tied to a specific role —"]];
+    const jobOpts = [["", "â€” Not tied to a specific role â€”"]];
     try {
       const d = await get(employerDashboardPath());
       (d.jobs || []).filter(j => j.status === "active").forEach(j =>
-        jobOpts.push([j.job_id, j.title + (j.city ? ` — ${j.city}${j.state_code ? ", " + j.state_code : ""}` : "")]));
-    } catch(e) { /* no org yet — pool can still be created untied */ }
+        jobOpts.push([j.job_id, j.title + (j.city ? ` â€” ${j.city}${j.state_code ? ", " + j.state_code : ""}` : "")]));
+    } catch(e) { /* no org yet â€” pool can still be created untied */ }
     const v = await formDialog({
       title: "New talent pool",
       intro: "A shortlist you can move through stages, export, and email as a campaign. "
@@ -6645,7 +6647,7 @@
       submit: "Create pool",
       fields: [
         {name:"name", label:"Pool name", required:true, wide:true,
-         placeholder:"ICU travel RNs — Q3"},
+         placeholder:"ICU travel RNs â€” Q3"},
         {name:"job_id", label:"Sourcing for (job order)", type:"select", options: jobOpts, wide:true},
         {name:"description", label:"Description", hint:"optional", wide:true},
         {name:"visibility", label:"Who can work it", type:"select",
@@ -6663,7 +6665,7 @@
             {title:"Could not save pool", kind:"err"}); }
   }
 
-  // Repaint the Save/Saved pills from local state — no network, so an
+  // Repaint the Save/Saved pills from local state â€” no network, so an
   // optimistic save shows instantly and never waits on a round trip.
   function paintPoolButtons(){
     $$("[data-pool-save]").forEach(b => {
@@ -6702,7 +6704,7 @@
           <i class="fas ${inPools.has(p.pool_id) ? "fa-check" : "fa-plus"}"></i>${esc(p.name)}
         </button>`).join("") || `<div class="pool-menu-head" style="font-weight:400;text-transform:none">No pools yet.</div>`}
       <div class="sep"></div>
-      <button data-new-pool="1"><i class="fas fa-folder-plus"></i>New pool…</button>`;
+      <button data-new-pool="1"><i class="fas fa-folder-plus"></i>New poolâ€¦</button>`;
     document.body.appendChild(menu);
     const r = btn.getBoundingClientRect();
     menu.style.top = `${Math.min(r.bottom + 6 + window.scrollY, window.scrollY + innerHeight - menu.offsetHeight - 10)}px`;
