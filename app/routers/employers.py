@@ -937,6 +937,27 @@ def list_invites(employer_id: str, user: CurrentUser, db: DbSession):
         filters.append(TeamInvite.team_id.in_(team_access.managed_team_ids(db, employer, user)))
     invs = db.scalars(select(TeamInvite).where(*filters)
         .order_by(TeamInvite.created_at.desc())).all()
+    # A member can already have joined through the existing-user flow while an
+    # older invite row remains pending. Reconcile that stale row so the UI
+    # reflects actual organization membership. Compare normalized emails for
+    # legacy rows created before invite emails were canonicalized.
+    pending_emails = {i.email.strip().lower() for i in invs if i.email}
+    if pending_emails:
+        members = db.execute(
+            select(User.email).join(
+                EmployerMember, EmployerMember.user_id == User.user_id
+            ).where(
+                EmployerMember.employer_id == employer_id,
+                func.lower(func.trim(User.email)).in_(pending_emails),
+            )
+        ).scalars().all()
+        member_emails = {email.strip().lower() for email in members if email}
+        for invite in invs:
+            if invite.email and invite.email.strip().lower() in member_emails:
+                invite.status = "accepted"
+        if member_emails:
+            db.commit()
+        invs = [i for i in invs if i.status == "pending"]
     return {"items": [{"invite_id": i.invite_id, "email": i.email, "role": i.role,
                        "team_id": i.team_id,
                        "created_at": i.created_at, "expires_at": i.expires_at} for i in invs]}

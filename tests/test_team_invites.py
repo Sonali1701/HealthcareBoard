@@ -90,6 +90,23 @@ class TeamInviteAcceptanceTests(unittest.TestCase):
         pending = employers.list_invites(self.org.employer_id, self.owner, self.db)
         self.assertEqual(pending["items"], [])
 
+    def test_pending_invite_is_reconciled_when_user_is_already_a_member(self):
+        invite = self._invite()
+        # Existing-user invitations can add a member independently of the
+        # token acceptance flow, leaving a stale pending invitation behind.
+        self.db.add(EmployerMember(
+            employer_id=self.org.employer_id,
+            user_id=self.invitee.user_id,
+            member_role="recruiter",
+        ))
+        invite.email = self.invitee.email.upper()
+        self.db.commit()
+
+        pending = employers.list_invites(self.org.employer_id, self.owner, self.db)
+
+        self.assertEqual(pending["items"], [])
+        self.assertEqual(invite.status, "accepted")
+
     def test_owner_can_see_team_extension_usage_details(self):
         self._invite()
         employers.accept_invite(
