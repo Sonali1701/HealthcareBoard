@@ -14,6 +14,11 @@ from app.routers import provider_directory
 
 
 class ProviderDirectoryContactRouteTests(unittest.TestCase):
+    def test_directory_lookup_request_rejects_more_than_twenty(self):
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            provider_directory.DirectoryContactLookupRequest(npis=[f"{i:010d}" for i in range(21)])
+
     def setUp(self):
         self.core_engine = create_engine("sqlite://")
         Base.metadata.create_all(self.core_engine)

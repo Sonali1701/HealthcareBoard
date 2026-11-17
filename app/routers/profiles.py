@@ -5,6 +5,7 @@ import io
 import json
 import re
 import time
+from difflib import get_close_matches
 from collections import OrderedDict
 from html import escape, unescape
 from typing import Optional
@@ -1596,7 +1597,7 @@ _STOP_TOKENS = {
     "need","want","candidates","candidate","providers","provider","people","someone",
     "please","give","more","than","over","least","at","least","min","minimum","under",
     "less","below","years","year","yrs","experience","exp","located","based","around",
-    "some","find","up","having",
+    "some","find","up","having","then","use","using","i","my","your",
     # Refinement / filler words, so a follow-up like "only profiles based in CA"
     # doesn't turn "only"/"profiles" into required search keywords.
     "only","just","profile","profiles","filter","narrow","refine","results","result",
@@ -1932,6 +1933,30 @@ def _copilot_filters(raw: dict) -> dict:
 # wrongly zero out results, so they're dropped from the query and surfaced to
 # the recruiter ("couldn't filter by …") instead of silently ignored.
 _SOFT_TERMS = {"bilingual", "remote", "weekend", "night", "nights", "prn"}
+_ORIGIN_COUNTRIES = {
+    "mexico", "canada", "india", "pakistan", "bangladesh", "nepal",
+    "philippines", "china", "japan", "korea", "vietnam", "thailand",
+    "brazil", "colombia", "argentina", "venezuela", "cuba", "haiti",
+    "nigeria", "kenya", "egypt", "ghana", "ethiopia", "iran", "iraq",
+    "germany", "france", "italy", "spain", "portugal", "poland",
+    "australia", "new zealand", "united kingdom", "uk", "england",
+}
+
+
+def _without_unsupported_origin(message: str) -> tuple[str, bool]:
+    """Keep a country of origin from becoming a required specialty keyword."""
+    origin = re.search(r"\bfrom\s+([a-z]+(?:\s+[a-z]+)?)\b", message, re.IGNORECASE)
+    if not origin:
+        return message, False
+    words = origin.group(1).lower().split()
+    for width in (2, 1):
+        if len(words) < width:
+            continue
+        place = " ".join(words[:width])
+        if place in _ORIGIN_COUNTRIES or get_close_matches(place, _ORIGIN_COUNTRIES, n=1, cutoff=.78):
+            end = origin.start(1) + len(place)
+            return message[:origin.start()] + " " + message[end:], True
+    return message, False
 # Pure filler that carries no search value as a required keyword: generic words,
 # role words already captured as category/license, and seniority descriptors the
 # LLM should map to experience (so "new grad RN" filters on ≤1yr, not a literal
@@ -2062,14 +2087,15 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
     # Deterministic rules own explicit structured facts, while the model helps
     # normalize fuzzy specialty wording. Rules also keep search working if the
     # model is unavailable or out of quota.
-    rule_delta = _copilot_rule_filters(message)
+    parsed_message, origin_unsupported = _without_unsupported_origin(message)
+    rule_delta = _copilot_rule_filters(parsed_message)
     llm_delta: dict = {}
     if settings.llm_enabled and settings.llm_api_key and settings.llm_model:
         from ..clean_names_llm import _llm
         try:
             # Interactive path: one attempt, short timeout — never make the
             # recruiter wait on retries if the key is down or out of quota.
-            raw = _llm(message, system=_COPILOT_SYSTEM, instr=_COPILOT_INSTR,
+            raw = _llm(parsed_message, system=_COPILOT_SYSTEM, instr=_COPILOT_INSTR,
                        max_chars=600, retries=1, timeout=8)
             llm_delta = _copilot_filters(raw or {})
         except Exception:  # noqa: BLE001
@@ -2101,6 +2127,8 @@ def copilot_search(body: CopilotQuery, user: CurrentUser, db: DbSession):
     # would wrongly zero out an otherwise-good search — and note them instead.
     raw_tokens = [t for t in (filters.get("q") or "").split() if len(t) >= 2]
     soft = [t for t in raw_tokens if t in _SOFT_TERMS]
+    if origin_unsupported:
+        soft.append("country of origin")
     if re.search(r"\b(compact|multi[\s-]?state|enlc|nlc)\b", message, re.IGNORECASE):
         soft.append("compact-license status")
     if re.search(r"\btravel(?:ed|ing)?\s+(?:experience|assignments?|history|nurs(?:e|ing))\b",
@@ -2913,8 +2941,8 @@ def _enqueue_contact_lookups(db, user, profile_ids: list[str],
         raise HTTPException(status_code=503,
                             detail="Contact lookup is not switched on for this deployment.")
     ids = list(dict.fromkeys(profile_ids))
-    if not ids or len(ids) > 50:
-        raise HTTPException(status_code=422, detail="Select between 1 and 50 candidates.")
+    if not ids or len(ids) > 20:
+        raise HTTPException(status_code=422, detail="Select between 1 and 20 candidates.")
     from ..services import team_access
     employer_id = team_access.lookup_organization_id(db, user, employer_id)
     profiles = {p.profile_id: p for p in db.scalars(

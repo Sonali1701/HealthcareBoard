@@ -379,7 +379,8 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict,
     name_parts = " ".join(str(candidate.get("name") or "").split()).split()
     if not name_parts:
         raise MedhuntCeipalError("Candidate name is required by Ceipal.")
-    email = next((value for value in _values(candidate.get("emails")) if _email_key(value)), "")
+    real_email = next((value for value in _values(candidate.get("emails")) if _email_key(value)), "")
+    email = real_email or "no email"
     phone = next((value for value in _values(candidate.get("wireless_phones")) if _phone_key(value)), "")
     if not phone:
         phone = next((value for value in _values(candidate.get("phones")) if _phone_key(value)), "")
@@ -400,8 +401,6 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict,
         fields["standard_fields.country"] = country_id
     if state_id:
         fields["standard_fields.state"] = state_id
-    if not email:
-        raise MedhuntCeipalError("Ceipal applicant creation requires an email address.")
     # CEIPAL v1 accepts ordinary form fields. Quoted JSON scalars with trailing
     # commas (as in the documentation's generated curl example) are rejected
     # as an invalid email by the live API.
@@ -451,6 +450,10 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict,
         if applicant_id:
             return applicant_id
         if response.status_code == 201 and str(body.get("success")) == "1":
+            if not real_email:
+                # CEIPAL acknowledged creation. There is no unique email to
+                # read back, so keep its successful acknowledgement as the result.
+                return ""
             # The live endpoint acknowledges creation without an applicant ID.
             # Read by exact email to confirm the write and obtain the ID.
             existing = _find_existing_applicant(client, token, {"emails": [email]}, configuration)
@@ -467,14 +470,16 @@ def upload_candidate(candidate: dict, configuration: dict | None = None) -> dict
         raise MedhuntCeipalError("Ceipal applicant integration is not configured.")
     with httpx.Client(timeout=45.0) as client, _LOCK:
         token = _token(client, configuration)
-        existing = _find_existing_applicant(client, token, candidate, configuration)
+        existing = (_find_existing_applicant(client, token, candidate, configuration)
+                    if any(_email_key(value) for value in _values(candidate.get("emails")))
+                    else None)
         if existing:
             return existing
         applicant_id = _create_applicant(client, token, candidate, configuration)
         return {
             "state": "uploaded_to_ceipal",
             "blocked": False,
-            "checked": True,
+            "checked": bool(any(_email_key(value) for value in _values(candidate.get("emails")))),
             "applicant_id": applicant_id,
             "resume_submitted": bool(candidate.get("resume_content_base64")),
         }

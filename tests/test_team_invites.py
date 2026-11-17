@@ -20,6 +20,21 @@ from app.security import sha256
 
 
 class TeamInviteAcceptanceTests(unittest.TestCase):
+    def test_owner_can_pause_and_restore_member_extension_access(self):
+        self.db.add(EmployerMember(employer_id=self.org.employer_id,
+                                   user_id=self.invitee.user_id, member_role="recruiter"))
+        self.invitee.capture_token = "existing-extension-token"
+        self.db.commit()
+        paused = employers.set_member_extension_access(
+            self.org.employer_id, self.invitee.user_id,
+            employers.MemberExtensionAccessUpdate(enabled=False), self.owner, self.db)
+        self.assertFalse(paused["enabled"])
+        self.assertIsNone(self.invitee.capture_token)
+        restored = employers.set_member_extension_access(
+            self.org.employer_id, self.invitee.user_id,
+            employers.MemberExtensionAccessUpdate(enabled=True), self.owner, self.db)
+        self.assertTrue(restored["enabled"])
+
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:", future=True)
         import app.models  # noqa: F401

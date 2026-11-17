@@ -33,6 +33,21 @@ class FakePostgresSession:
 
 
 class MedhuntCeipalDuplicateTests(unittest.TestCase):
+    def test_phone_only_candidate_sends_no_email_placeholder(self):
+        class FakeCreateClient:
+            def __init__(self):
+                self.form = None
+
+            def post(self, *_args, **kwargs):
+                self.form = kwargs["data"]
+                return httpx.Response(201, json={"success": 1})
+
+        client = FakeCreateClient()
+        self.assertEqual(medhunt_ceipal._create_applicant(client, "token", {
+            "name": "Jamie Candidate", "phones": ["4155550199"],
+        }), "")
+        self.assertEqual(client.form["standard_fields.email"], "no email")
+
     def test_auth_accepts_ceipal_xml_token(self):
         class FakeAuthClient:
             def post(self, *_args, **_kwargs):

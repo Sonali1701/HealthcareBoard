@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, Enum, String, UniqueConstraint, false
+from sqlalchemy import JSON, Boolean, Enum, String, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base, TZDateTime, created_col, updated_col, uuid_fk, uuid_pk
@@ -29,6 +29,9 @@ class User(Base):
     # Long-lived personal token the browser extension uses to push captures to
     # /api/ingest/* as this recruiter (issued on the "Get the Extension" page).
     capture_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
+    medhunt_extension_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
     medhunt_ceipal_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )

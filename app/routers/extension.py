@@ -60,6 +60,8 @@ def _require_recruiter(user: CurrentUser) -> None:
     if user.role.value not in {"recruiter", "admin"}:
         raise HTTPException(status_code=403,
                             detail="The capture extension is available to recruiter accounts.")
+    if not user.medhunt_extension_enabled:
+        raise HTTPException(status_code=403, detail="Your organization has paused extension access.")
 
 
 def _ensure_token(db, user: User) -> str:
@@ -1059,7 +1061,7 @@ def request_medhunt_code(body: MedhuntCodeRequest, request: Request, db: DbSessi
     code = f"{secrets.randbelow(1_000_000):06d}"
     user_id = user.user_id if user else secrets.token_hex(18)
     challenge, challenge_id = _login_challenge(email, user_id, code)
-    if user:
+    if user and user.medhunt_extension_enabled:
         db.add(EmailVerificationToken(
             user_id=user.user_id,
             token_hash=sha256(f"{MEDHUNT_LOGIN_PURPOSE}:{challenge_id}"),
@@ -1091,7 +1093,7 @@ def verify_medhunt_code(body: MedhuntCodeVerify, request: Request, db: DbSession
     if not hmac.compare_digest(expected, str(payload.get("code_hash") or "")):
         raise HTTPException(status_code=401, detail="Invalid or expired sign-in code")
     user = _medhunt_user(db, email)
-    if not user or payload.get("sub") != user.user_id:
+    if not user or not user.medhunt_extension_enabled or payload.get("sub") != user.user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired sign-in code")
     challenge_id = str(payload.get("jti") or "")
     record = db.scalar(select(EmailVerificationToken).where(

@@ -567,6 +567,7 @@ def list_members(employer_id: str, user: CurrentUser, db: DbSession):
             "role_label": org_roles.ROLE_LABELS.get(role, role),
             "is_owner": is_owner,
             "ats_destination": "ceipal" if u and u.medhunt_ceipal_enabled else "nexus",
+            "medhunt_extension_enabled": bool(u.medhunt_extension_enabled) if u else False,
             "quick_sourcer_limit_override": m.quick_sourcer_limit_override,
             "teams": sorted(teams_by_user.get(m.user_id, []), key=lambda item: item["team_name"].lower()),
             "messaging_status": permissions_by_user.get(
@@ -767,6 +768,42 @@ def set_member_role(employer_id: str, member_user_id: str, body: MemberRoleUpdat
     db.commit()
     return {"user_id": member_user_id, "member_role": role,
             "role_label": org_roles.ROLE_LABELS.get(role, role)}
+
+
+class MemberExtensionAccessUpdate(BaseModel):
+    enabled: bool
+
+
+@router.patch("/{employer_id}/members/{member_user_id}/extension-access")
+def set_member_extension_access(employer_id: str, member_user_id: str,
+                                body: MemberExtensionAccessUpdate,
+                                user: CurrentUser, db: DbSession):
+    employer = db.get(Employer, employer_id)
+    if not employer:
+        raise HTTPException(404, "Organization not found")
+    if org_roles.role_of(db, employer, user) not in {"owner", "admin"}:
+        raise HTTPException(403, "Only an organization owner or admin can manage extension access")
+    if member_user_id == employer.owner_user_id and not body.enabled:
+        raise HTTPException(400, "The organization owner must keep extension access")
+    if member_user_id not in team_access.organization_member_ids(db, employer):
+        raise HTTPException(404, "This user is not an organization member")
+    target = db.get(User, member_user_id)
+    if not target or target.deleted_at is not None:
+        raise HTTPException(404, "User not found")
+    if org_roles.role_of(db, employer, user) == "admin" and target.user_id != user.user_id:
+        target_role = org_roles.role_of(db, employer, target)
+        if target_role in {"owner", "admin"}:
+            raise HTTPException(403, "Admins cannot change another admin's access")
+    if target.medhunt_extension_enabled != body.enabled:
+        target.medhunt_extension_enabled = body.enabled
+        if not body.enabled:
+            target.capture_token = None  # Revoke every existing installation token.
+        db.add(AuditLog(actor_user_id=user.user_id,
+                        action="medhunt_extension_access_changed",
+                        entity_type="user", entity_id=target.user_id,
+                        meta={"employer_id": employer_id, "enabled": body.enabled}))
+        db.commit()
+    return {"user_id": target.user_id, "enabled": bool(target.medhunt_extension_enabled)}
 
 
 @router.patch("/{employer_id}/members/{member_user_id}/quick-sourcer-limit")

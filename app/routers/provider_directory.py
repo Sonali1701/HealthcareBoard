@@ -176,7 +176,7 @@ def _search_credential(q: str | None) -> tuple[str, ...]:
 
 
 class DirectoryContactLookupRequest(BaseModel):
-    npis: list[str] = Field(min_length=1, max_length=50)
+    npis: list[str] = Field(min_length=1, max_length=20)
 
 
 def _contact_lookup_payload(job: ProviderDirectoryContactLookupJob) -> dict:
@@ -468,7 +468,7 @@ def enqueue_directory_contact_lookups(
     body: DirectoryContactLookupRequest, user: CurrentUser, db: DbSession,
     employer_id: str | None = None,
 ):
-    """Queue up to 50 contact searches using server-verified NPI directory data."""
+    """Queue up to 20 contact searches using server-verified NPI directory data."""
     _authorize(user)
     if not quick_sourcer.available():
         raise HTTPException(status_code=503, detail="Contact lookup is not switched on for this deployment.")

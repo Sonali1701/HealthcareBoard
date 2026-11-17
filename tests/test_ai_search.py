@@ -17,11 +17,23 @@ from app.routers.profiles import (
     _copilot_filters,
     _copilot_rule_filters,
     _merge_copilot_filters,
+    _without_unsupported_origin,
     copilot_search,
 )
 
 
 class ProviderAiParsingTests(unittest.TestCase):
+    def test_country_of_origin_does_not_pollute_follow_up_location(self):
+        first, unsupported = _without_unsupported_origin("I want the MD from maxico")
+        self.assertTrue(unsupported)
+        initial = _copilot_rule_filters(first)
+        self.assertEqual(initial.get("license_title"), "MD")
+        self.assertNotIn("q", initial)
+        follow_up = _merge_copilot_filters(initial, _copilot_rule_filters(
+            "then use location california"))
+        self.assertEqual(follow_up.get("state_code"), "CA")
+        self.assertNotIn("q", follow_up)
+
     def test_llm_key_follows_selected_provider(self):
         openai = Settings(llm_base_url="https://api.openai.com/v1",
                           llm_api_key="openai-test", gemini_api_key="gemini-test")

@@ -2212,6 +2212,7 @@
         ${canSelectMembers ? `<td><input type="checkbox" aria-label="Select ${esc(m.email || m.name || "team member")} for bulk actions" data-org-member-select="${esc(m.user_id)}"${S.selectedMedhuntCreditUsers.has(m.user_id) ? " checked" : ""}></td>` : ""}
         <td><div class="cell-name">${esc(m.name || m.email || "Teammate")}</div><div class="cell-sub">${esc(m.email || "")}</div></td>
         <td>${roleCell(m)}</td>
+        ${["owner","admin"].includes(myRole) ? `<td><select class="tm-role" data-member-extension="${esc(m.user_id)}" ${m.is_owner || (myRole === "admin" && m.member_role === "admin") ? "disabled" : ""} aria-label="Extension access for ${esc(m.email || m.name || "member")}"><option value="enabled"${m.medhunt_extension_enabled ? " selected" : ""}>Allowed</option><option value="disabled"${!m.medhunt_extension_enabled ? " selected" : ""}>Paused</option></select></td>` : ""}
         <td><span class="badge">${esc(teamNames)}</span>
           ${m.can_manage_member ? `<button class="btn ghost small" data-member-teams="${esc(m.user_id)}" data-member-email="${esc(m.email || m.name || "member")}"><i class="fas fa-people-group"></i>Manage</button>` : ""}</td>
         ${qsLimitCell}
@@ -2324,7 +2325,7 @@
             <button class="btn ghost small" id="medhunt-credit-bulk-set"><i class="fas fa-equals"></i>Set balance</button>
           </div>` : ""}
           <div class="table-wrap"><table class="table">
-            <thead><tr>${canSelectMembers ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th><th>Team</th>${perms.settings ? "<th>Quick Sourcer limit</th><th>Candidate ATS</th>" : ""}${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_members ? "<th>Zoom messaging</th>" : ""}<th class="th-actions"></th></tr></thead>
+            <thead><tr>${canSelectMembers ? "<th><span class='sr-only'>Select</span></th>" : ""}<th>Member</th><th>Role</th>${["owner","admin"].includes(myRole) ? "<th>Extension access</th>" : ""}<th>Team</th>${perms.settings ? "<th>Quick Sourcer limit</th><th>Candidate ATS</th>" : ""}${perms.medhunt_credits ? "<th>Extension enrichment credits</th>" : ""}${perms.manage_members ? "<th>Zoom messaging</th>" : ""}<th class="th-actions"></th></tr></thead>
             <tbody>${memberRows}</tbody></table></div>
           ${invites.length ? `<div class="team-head" style="margin-top:20px"><h2>Pending invitations</h2></div>
             <div class="table-wrap"><table class="table"><thead><tr><th>Email</th><th>Role</th><th class="th-actions"></th></tr></thead>
@@ -2359,6 +2360,7 @@
       $$("#orgadmin-panel [data-member-remove]").forEach(b => b.onclick = () => removeTeammate(b.dataset.memberRemove));
       $$("#orgadmin-panel [data-invite-revoke]").forEach(b => b.onclick = () => revokeInvite(b.dataset.inviteRevoke));
       $$("#orgadmin-panel [data-member-role]").forEach(s => s.onchange = () => setMemberRole(s.dataset.memberRole, s.value));
+      $$("#orgadmin-panel [data-member-extension]").forEach(s => s.onchange = () => setMemberExtensionAccess(s.dataset.memberExtension, s.value === "enabled", emp.employer_id));
       $$("#orgadmin-panel [data-member-qs-limit-save]").forEach(b => b.onclick = () =>
         setMemberQuickSourcerLimit(b.dataset.memberQsLimitSave));
       $$("#orgadmin-panel [data-member-ats]").forEach(s => s.onchange = () => setMemberAtsRoute(
@@ -2486,6 +2488,17 @@
       toast(`${label} connection saved.`, {title:"ATS integrations"});
       await loadOrgAdmin();
     } catch(e){ toast(e.message || `Could not connect ${label}.`, {title:"ATS integrations", kind:"err"}); }
+  }
+
+  async function setMemberExtensionAccess(userId, enabled, employerId){
+    try {
+      await patch(`/api/employers/${encodeURIComponent(employerId)}/members/${encodeURIComponent(userId)}/extension-access`, {enabled});
+      toast(enabled ? "Extension access enabled. The member can sign in again." : "Extension access paused. Existing sign-ins were revoked.", {title:"Extension access"});
+      await loadOrgAdmin();
+    } catch(e){
+      toast(e.message || "Could not update extension access.", {title:"Extension access", kind:"err"});
+      await loadOrgAdmin();
+    }
   }
 
   async function setMemberAtsRoute(userId, provider, employerId){
@@ -6172,7 +6185,7 @@
   async function lookupDirectoryContact(npi){ return queueDirectoryContactLookups([npi]); }
   async function queueDirectoryContactLookups(npis){
     npis = [...new Set(npis || [])];
-    if (!npis.length || npis.length > 50) return toast("Select between 1 and 50 providers.", {kind:"err"});
+    if (!npis.length || npis.length > 20) return toast("Select between 1 and 20 providers.", {kind:"err"});
     npis.forEach(npi => {
       S.directoryContacts.set(npi, {status:"queued"});
       const row = S.providerLastData && S.providerLastData.items.find(p => p.npi === npi);
@@ -6229,7 +6242,7 @@
   async function bulkLookupDirectoryContacts(){
     const npis = eligibleDirectoryLookupNpis();
     if (!npis.length) return toast("Select providers that do not have a completed contact lookup.", {kind:"err"});
-    if (npis.length > 50) return toast("Find contacts supports up to 50 providers at a time.", {kind:"err"});
+    if (npis.length > 20) return toast("Find contacts supports up to 20 providers at a time.", {kind:"err"});
     const ok = await confirmDialog({
       title:`Find contacts for ${npis.length} providers?`,
       body:"Searches run in a queue. Each successful match uses one reveal credit; searches that find nothing are free.",
@@ -6260,7 +6273,7 @@
   async function bulkLookupContacts(){
     const ids = eligibleLookupIds();
     if (!ids.length) return toast("Select candidates with no contact details.", {kind:"err"});
-    if (ids.length > 50) return toast("Find contacts supports up to 50 candidates at a time.", {kind:"err"});
+    if (ids.length > 20) return toast("Find contacts supports up to 20 candidates at a time.", {kind:"err"});
     const ok = await confirmDialog({
       title:`Find contacts for ${ids.length} candidates?`,
       body:`The searches will run in a queue. Each successful match uses one reveal credit; searches that find nothing are free. They may take several minutes if the queue is busy.`,

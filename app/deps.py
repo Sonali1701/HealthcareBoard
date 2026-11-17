@@ -98,10 +98,14 @@ def get_ingest_user(
     It remains valid until the user or an administrator rotates it.
     """
     if token:
-        return get_current_user(request=request, db=db, token=token)
+        user = get_current_user(request=request, db=db, token=token)
+        if user.medhunt_extension_enabled:
+            return user
+        raise HTTPException(status_code=403, detail="Your organization has paused extension access")
     if x_capture_token:
         user = db.scalar(select(User).where(User.capture_token == x_capture_token))
-        if user and user.deleted_at is None and user.status == UserStatus.active:
+        if (user and user.deleted_at is None and user.status == UserStatus.active
+                and user.medhunt_extension_enabled):
             return user
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

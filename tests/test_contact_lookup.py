@@ -43,6 +43,14 @@ MATCH = qs.ContactMatch(
 
 
 class ContactLookupTests(unittest.TestCase):
+    def test_website_lookup_batch_rejects_more_than_twenty(self):
+        from app.routers.profiles import _enqueue_contact_lookups
+        from fastapi import HTTPException
+        with mock.patch.object(qs, "available", return_value=True):
+            with self.assertRaises(HTTPException) as caught:
+                _enqueue_contact_lookups(self.db, self.user, [str(i) for i in range(21)])
+        self.assertEqual(caught.exception.status_code, 422)
+
     def setUp(self):
         # StaticPool: every session must land on the SAME in-memory database,
         # or the request handler opens a second connection and finds no tables.

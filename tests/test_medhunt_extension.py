@@ -37,6 +37,15 @@ def medhunt_service_request() -> Request:
 
 
 class MedhuntExtensionAuthTests(unittest.TestCase):
+    @patch("app.routers.extension.send_medhunt_login_code", return_value=True)
+    def test_paused_extension_access_does_not_send_sign_in_code(self, send):
+        self.user.medhunt_extension_enabled = False
+        self.db.commit()
+        extension.request_medhunt_code(
+            extension.MedhuntCodeRequest(email=self.user.email),
+            request(), self.db, None)
+        send.assert_not_called()
+
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:", future=True)
         import app.models  # noqa: F401
