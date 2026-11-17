@@ -2915,22 +2915,8 @@ def _enqueue_contact_lookups(db, user, profile_ids: list[str],
     ids = list(dict.fromkeys(profile_ids))
     if not ids or len(ids) > 50:
         raise HTTPException(status_code=422, detail="Select between 1 and 50 candidates.")
-    if employer_id:
-        from ..models import Employer
-        from ..services import org_roles
-        employer = db.get(Employer, employer_id)
-        if not employer or org_roles.role_of(db, employer, user) is None:
-            raise HTTPException(status_code=403, detail="Not a member of this organisation")
-    else:
-        # Older clients do not send an organization. Attribute their lookups
-        # only when there is exactly one possible organization.
-        from ..models import Employer, EmployerMember
-        org_ids = set(db.scalars(select(Employer.employer_id).where(
-            Employer.owner_user_id == user.user_id)).all())
-        org_ids.update(db.scalars(select(EmployerMember.employer_id).where(
-            EmployerMember.user_id == user.user_id)).all())
-        if len(org_ids) == 1:
-            employer_id = org_ids.pop()
+    from ..services import team_access
+    employer_id = team_access.lookup_organization_id(db, user, employer_id)
     profiles = {p.profile_id: p for p in db.scalars(
         select(Profile).where(Profile.profile_id.in_(ids))).all()}
     if len(profiles) != len(ids):

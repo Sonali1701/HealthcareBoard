@@ -5644,7 +5644,7 @@
       <div class="team-head extension-detail-head"><h3>Team member activity</h3></div>
       ${members.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Lookups</th><th>Found</th><th>Not found</th><th>Failed</th></tr></thead><tbody>${members.map(m => `<tr><td>${esc(m.email || "Former member")}</td><td>${Number(m.lookups)}</td><td>${Number(m.found)}</td><td>${Number(m.not_found)}</td><td>${Number(m.failed)}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No team activity", "Website searches will appear here.", "fa-users")}
       <div class="team-head extension-detail-head"><h3>Lookup history</h3><span class="team-note">${Number(data.activity_total || 0).toLocaleString()} requests</span></div>
-      ${activity.length ? `<p class="extension-scroll-hint">Scroll sideways to see every detail.</p><div class="table-wrap extension-event-table" tabindex="0" aria-label="Website lookup history"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Result</th><th>Source</th><th>Details</th><th>Credits</th><th>Requested</th></tr></thead><tbody>${activity.map(a => `<tr><td>${esc(a.member_email)}</td><td><div class="cell-name">${esc(a.candidate_name)}</div><div class="cell-sub">${esc(a.profile_id)}</div></td><td><span class="badge${a.outcome === "found" ? " accent" : ""}">${esc((a.outcome || "unknown").replaceAll("_", " "))}</span></td><td>${esc(a.source || "—")}</td><td>${esc(a.detail || "—")}</td><td>${Number(a.credits_charged || 0)}</td><td>${a.created_at ? esc(new Date(a.created_at).toLocaleString()) : "—"}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No lookup history matches", "Try another date or team member.", "fa-list")}
+      ${activity.length ? `<p class="extension-scroll-hint">Scroll sideways to see every detail.</p><div class="table-wrap extension-event-table" tabindex="0" aria-label="Website lookup history"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Result</th><th>Source</th><th>Details</th><th>Credits</th><th>Requested</th></tr></thead><tbody>${activity.map(a => `<tr><td>${esc(a.member_email)}</td><td><div class="cell-name">${esc(a.candidate_name)}</div><div class="cell-sub">${esc(a.directory || "MedHunt profiles")} · ${esc(a.npi || a.profile_id || "—")}</div></td><td><span class="badge${a.outcome === "found" ? " accent" : ""}">${esc((a.outcome || "unknown").replaceAll("_", " "))}</span></td><td>${esc(a.source || "—")}</td><td>${esc(a.detail || "—")}</td><td>${Number(a.credits_charged || 0)}</td><td>${a.created_at ? esc(new Date(a.created_at).toLocaleString()) : "—"}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No lookup history matches", "Try another date or team member.", "fa-list")}
       ${pages > 1 ? `<div class="extension-pages"><button class="btn small" data-website-page="${data.activity_page - 1}"${data.activity_page <= 1 ? " disabled" : ""}>Previous</button><span>Page ${data.activity_page} of ${pages}</span><button class="btn small" data-website-page="${data.activity_page + 1}"${data.activity_page >= pages ? " disabled" : ""}>Next</button></div>` : ""}
     </div>`;
   }
@@ -6179,7 +6179,10 @@
       if (row) renderProviderPage(S.providerLastData);
     });
     try {
-      const queued = await post("/api/provider-directory/contacts/lookup", {npis});
+      const employerId = S.employer && S.employer.employer_id;
+      const queuePath = "/api/provider-directory/contacts/lookup"
+        + (employerId ? `?employer_id=${encodeURIComponent(employerId)}` : "");
+      const queued = await post(queuePath, {npis});
       const jobs = queued.jobs || [];
       if (!jobs.length) throw new Error("No contact searches were queued.");
       jobs.forEach(job => S.directoryContacts.set(job.npi, job));

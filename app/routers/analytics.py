@@ -27,6 +27,7 @@ from ..models import (
     MessageThread,
     Offer,
     Profile,
+    ProviderDirectoryContactLookupJob,
     User,
 )
 from ..models.enums import ApplicationStatus, JobStatus, OfferStatus
@@ -97,6 +98,8 @@ def website_contact_lookups(
     member_ids = team_access.organization_member_ids(db, employer)
     member_ids.update(db.scalars(select(ContactLookupJob.requester_user_id).where(
         ContactLookupJob.employer_id == employer_id)).all())
+    member_ids.update(db.scalars(select(ProviderDirectoryContactLookupJob.requester_user_id).where(
+        ProviderDirectoryContactLookupJob.employer_id == employer_id)).all())
     if member_id and member_id not in member_ids:
         raise HTTPException(status_code=403, detail="Not a member of this organization")
     since = (datetime.combine(date_from, datetime.min.time(), timezone.utc)
@@ -105,16 +108,17 @@ def website_contact_lookups(
              if date_to else utcnow() - timedelta(days=days))
     until = (datetime.combine(date_to + timedelta(days=1), datetime.min.time(), timezone.utc)
              if date_to else None)
-    conditions = [ContactLookupJob.employer_id == employer_id,
-                  ContactLookupJob.created_at >= since]
-    if until:
-        conditions.append(ContactLookupJob.created_at < until)
-    if member_id:
-        conditions.append(ContactLookupJob.requester_user_id == member_id)
-    jobs = db.scalars(select(ContactLookupJob).where(*conditions)
-                      .order_by(ContactLookupJob.created_at.desc(), ContactLookupJob.job_id.desc())).all()
+    jobs = []
+    for model in (ContactLookupJob, ProviderDirectoryContactLookupJob):
+        conditions = [model.employer_id == employer_id, model.created_at >= since]
+        if until:
+            conditions.append(model.created_at < until)
+        if member_id:
+            conditions.append(model.requester_user_id == member_id)
+        jobs.extend(db.scalars(select(model).where(*conditions)).all())
+    jobs.sort(key=lambda job: (job.created_at, job.job_id), reverse=True)
 
-    def result(job: ContactLookupJob) -> str:
+    def result(job) -> str:
         if job.status == "completed":
             return "found" if job.found else "not_found"
         return job.status
@@ -150,7 +154,7 @@ def website_contact_lookups(
         if status in member:
             member[status] += 1
     page_jobs = jobs[(page - 1) * page_size:page * page_size]
-    candidate_ids = {job.profile_id for job in page_jobs}
+    candidate_ids = {job.profile_id for job in page_jobs if isinstance(job, ContactLookupJob)}
     candidates = {p.profile_id: " ".join(filter(None, (p.first_name, p.last_name)))
                   for p in db.scalars(select(Profile).where(Profile.profile_id.in_(candidate_ids)))}
     return {
@@ -166,8 +170,12 @@ def website_contact_lookups(
         "activity": [{"job_id": job.job_id,
                       "member_email": users[job.requester_user_id].email
                       if job.requester_user_id in users else "Former member",
-                      "candidate_name": candidates.get(job.profile_id) or "Candidate",
-                      "profile_id": job.profile_id, "outcome": result(job),
+                      "candidate_name": (candidates.get(job.profile_id) or "Candidate")
+                      if isinstance(job, ContactLookupJob) else job.lookup_name,
+                      "profile_id": job.profile_id if isinstance(job, ContactLookupJob) else None,
+                      "npi": job.npi if isinstance(job, ProviderDirectoryContactLookupJob) else None,
+                      "directory": "NPI directory" if isinstance(job, ProviderDirectoryContactLookupJob)
+                      else "MedHunt profiles", "outcome": result(job),
                       "source": job.source, "detail": job.detail,
                       "credits_charged": job.credits_charged or 0,
                       "created_at": job.created_at, "updated_at": job.updated_at}

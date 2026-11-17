@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import ProviderDirectoryContactLookupJob
+from app.models import Employer, ProviderDirectoryContactLookupJob, User, UserRole, UserStatus
 from app.routers import provider_directory
 
 
@@ -30,8 +30,14 @@ class ProviderDirectoryContactRouteTests(unittest.TestCase):
                 VALUES ('1234567890', 'JANE', NULL, 'DOE', 'AUSTIN', 'TX', 'ACTIVE')
             """))
         self.db = Session(self.core_engine)
-        self.user = SimpleNamespace(user_id="recruiter-1", role=SimpleNamespace(value="recruiter"))
-        self.other_user = SimpleNamespace(user_id="recruiter-2", role=SimpleNamespace(value="recruiter"))
+        self.user = User(user_id="recruiter-1", email="recruiter@example.com",
+                         password_hash="x", role=UserRole.recruiter, status=UserStatus.active)
+        self.other_user = User(user_id="recruiter-2", email="other@example.com",
+                               password_hash="x", role=UserRole.recruiter, status=UserStatus.active)
+        self.db.add_all([self.user, self.other_user])
+        self.org = Employer(owner_user_id=self.user.user_id, org_name="Test Agency")
+        self.db.add(self.org)
+        self.db.commit()
 
     def tearDown(self):
         self.db.close()
@@ -42,13 +48,20 @@ class ProviderDirectoryContactRouteTests(unittest.TestCase):
         request = provider_directory.DirectoryContactLookupRequest(npis=["1234567890"])
         with patch.object(provider_directory, "_engine", self.directory_engine), \
              patch.object(provider_directory.quick_sourcer, "available", return_value=True):
-            first = provider_directory.enqueue_directory_contact_lookups(request, self.user, self.db)
-            second = provider_directory.enqueue_directory_contact_lookups(request, self.user, self.db)
+            first = provider_directory.enqueue_directory_contact_lookups(
+                request, self.user, self.db, employer_id=self.org.employer_id)
+            second = provider_directory.enqueue_directory_contact_lookups(
+                request, self.user, self.db, employer_id=self.org.employer_id)
             self.assertEqual(first["jobs"][0]["job_id"], second["jobs"][0]["job_id"])
             self.assertEqual(first["jobs"][0]["status"], "queued")
             self.assertNotIn("email", first["jobs"][0])
 
             job = self.db.get(ProviderDirectoryContactLookupJob, first["jobs"][0]["job_id"])
+            self.assertEqual(job.employer_id, self.org.employer_id)
+            with self.assertRaises(HTTPException) as denied:
+                provider_directory.enqueue_directory_contact_lookups(
+                    request, self.other_user, self.db, employer_id=self.org.employer_id)
+            self.assertEqual(denied.exception.status_code, 403)
             job.status = "completed"
             job.found = True
             job.email = "jane@example.com"

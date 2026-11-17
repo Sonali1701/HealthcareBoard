@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from ..config import settings
 from ..deps import CurrentUser, DbSession
 from ..models import ProviderDirectoryContactLookupJob
-from ..services import quick_sourcer
+from ..services import quick_sourcer, team_access
 
 router = APIRouter(prefix="/api/provider-directory", tags=["provider-directory"])
 _ZIP = re.compile(r"^\d{5}$")
@@ -466,11 +466,13 @@ def provider_directory_facets(user: CurrentUser):
 @router.post("/contacts/lookup")
 def enqueue_directory_contact_lookups(
     body: DirectoryContactLookupRequest, user: CurrentUser, db: DbSession,
+    employer_id: str | None = None,
 ):
     """Queue up to 50 contact searches using server-verified NPI directory data."""
     _authorize(user)
     if not quick_sourcer.available():
         raise HTTPException(status_code=503, detail="Contact lookup is not switched on for this deployment.")
+    employer_id = team_access.lookup_organization_id(db, user, employer_id)
     npis = list(dict.fromkeys(str(npi).strip() for npi in body.npis))
     if any(not re.fullmatch(r"\d{10}", npi) for npi in npis):
         raise HTTPException(status_code=422, detail="Each NPI must contain 10 digits.")
@@ -501,6 +503,8 @@ def enqueue_directory_contact_lookups(
     for npi in npis:
         prior = prior_by_npi.get(npi)
         if prior:
+            if employer_id and prior.employer_id is None and prior.status in {"queued", "processing"}:
+                prior.employer_id = employer_id
             jobs.append(prior)
             continue
         p = provider_by_npi[npi]
@@ -511,7 +515,8 @@ def enqueue_directory_contact_lookups(
             raise HTTPException(status_code=400, detail=f"Provider {npi} needs a first and last name for lookup.")
         location = ", ".join(str(v).strip() for v in (p["city"], p["state_code"]) if v and str(v).strip())
         job = ProviderDirectoryContactLookupJob(
-            requester_user_id=user.user_id, npi=npi, lookup_name=name,
+            requester_user_id=user.user_id, employer_id=employer_id,
+            npi=npi, lookup_name=name,
             lookup_location=location or None, status="queued",
         )
         db.add(job)

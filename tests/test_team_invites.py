@@ -11,7 +11,8 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base, utcnow
 from app.models import (
     AuditLog, ContactLookupJob, Employer, EmployerMember, OrganizationTeam,
-    OrganizationTeamMember, Profile, TeamInvite, User, UserRole, UserStatus,
+    OrganizationTeamMember, Profile, ProviderDirectoryContactLookupJob,
+    TeamInvite, User, UserRole, UserStatus,
 )
 from app.routers import analytics, employers, profiles
 from app.routers.extension import MEDHUNT_ATTEMPT_ACTION, MEDHUNT_ENRICHED_ACTION
@@ -215,6 +216,11 @@ class TeamInviteAcceptanceTests(unittest.TestCase):
                              employer_id=self.org.employer_id,
                              profile_id=candidate.profile_id, status="failed",
                              detail="Timed out"),
+            ProviderDirectoryContactLookupJob(
+                requester_user_id=self.invitee.user_id,
+                employer_id=self.org.employer_id, npi="1234567890",
+                lookup_name="Jordan Lee", status="completed", found=True,
+                source="quick_sourcer", credits_charged=1),
             ContactLookupJob(requester_user_id=other.user_id,
                              employer_id=other_org.employer_id,
                              profile_id=candidate.profile_id, status="completed", found=True),
@@ -225,16 +231,19 @@ class TeamInviteAcceptanceTests(unittest.TestCase):
 
         report = analytics.website_contact_lookups(
             self.owner, self.db, self.org.employer_id)
-        self.assertEqual(report["summary"]["lookups"], 2)
-        self.assertEqual(report["summary"]["found"], 1)
+        self.assertEqual(report["summary"]["lookups"], 3)
+        self.assertEqual(report["summary"]["found"], 2)
         self.assertEqual(report["summary"]["failed"], 1)
-        self.assertEqual(report["summary"]["credits_charged"], 1)
+        self.assertEqual(report["summary"]["credits_charged"], 2)
         self.assertEqual({row["email"] for row in report["members"]},
                          {self.owner.email, self.invitee.email})
-        self.assertEqual(report["daily"][0]["lookups"], 2)
-        self.assertEqual(report["activity_total"], 2)
-        self.assertEqual(len(report["activity"]), 2)
-        self.assertEqual(report["activity"][0]["candidate_name"], "Alex Rivera")
+        self.assertEqual(report["daily"][0]["lookups"], 3)
+        self.assertEqual(report["activity_total"], 3)
+        self.assertEqual(len(report["activity"]), 3)
+        self.assertEqual({item["candidate_name"] for item in report["activity"]},
+                         {"Alex Rivera", "Jordan Lee"})
+        self.assertEqual(next(item for item in report["activity"] if item["npi"])["directory"],
+                         "NPI directory")
 
         admin_report = analytics.website_contact_lookups(
             admin, self.db, self.org.employer_id, outcome="failed",
@@ -245,7 +254,7 @@ class TeamInviteAcceptanceTests(unittest.TestCase):
         dated = analytics.website_contact_lookups(
             self.owner, self.db, self.org.employer_id,
             date_from=today, date_to=today)
-        self.assertEqual(dated["summary"]["lookups"], 2)
+        self.assertEqual(dated["summary"]["lookups"], 3)
         with self.assertRaises(HTTPException) as denied:
             analytics.website_contact_lookups(self.invitee, self.db, self.org.employer_id)
         self.assertEqual(denied.exception.status_code, 403)

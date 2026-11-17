@@ -14,10 +14,12 @@ class ProviderDirectoryContactLookupJob(Base):
     __table_args__ = (
         Index("ix_directory_contact_lookup_queue", "status", "created_at"),
         Index("ix_directory_contact_lookup_owner_npi", "requester_user_id", "npi", "created_at"),
+        Index("ix_directory_contact_lookup_org_created", "employer_id", "created_at"),
     )
 
     job_id: Mapped[str] = uuid_pk()
     requester_user_id: Mapped[str] = uuid_fk("users.user_id")
+    employer_id: Mapped[str | None] = uuid_fk("employers.employer_id", nullable=True)
     npi: Mapped[str] = mapped_column(String(10), nullable=False)
     lookup_name: Mapped[str] = mapped_column(String(240), nullable=False)
     lookup_location: Mapped[str | None] = mapped_column(String(160))

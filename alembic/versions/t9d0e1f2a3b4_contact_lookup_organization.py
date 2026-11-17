@@ -11,28 +11,31 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    if not inspector.has_table("contact_lookup_jobs"):
-        from app.models import ContactLookupJob
-        ContactLookupJob.__table__.create(bind=bind, checkfirst=True)
-        return
-    if "employer_id" not in {column["name"] for column in inspector.get_columns("contact_lookup_jobs")}:
-        op.add_column("contact_lookup_jobs", sa.Column(
-            "employer_id", sa.String(36), sa.ForeignKey("employers.employer_id"), nullable=True))
-    if "ix_contact_lookup_jobs_org_created" not in {
-        index["name"] for index in inspector.get_indexes("contact_lookup_jobs")
-    }:
-        op.create_index("ix_contact_lookup_jobs_org_created", "contact_lookup_jobs",
-                        ["employer_id", "created_at"])
+    from app.models import ContactLookupJob, ProviderDirectoryContactLookupJob
+    for model, index_name in (
+        (ContactLookupJob, "ix_contact_lookup_jobs_org_created"),
+        (ProviderDirectoryContactLookupJob, "ix_directory_contact_lookup_org_created"),
+    ):
+        table_name = model.__tablename__
+        inspector = sa.inspect(bind)
+        if not inspector.has_table(table_name):
+            model.__table__.create(bind=bind, checkfirst=True)
+            continue
+        if "employer_id" not in {column["name"] for column in inspector.get_columns(table_name)}:
+            op.add_column(table_name, sa.Column("employer_id", sa.String(36), nullable=True))
+        if index_name not in {index["name"] for index in inspector.get_indexes(table_name)}:
+            op.create_index(index_name, table_name, ["employer_id", "created_at"])
 
 
 def downgrade() -> None:
-    inspector = sa.inspect(op.get_bind())
-    if not inspector.has_table("contact_lookup_jobs"):
-        return
-    if "ix_contact_lookup_jobs_org_created" in {
-        index["name"] for index in inspector.get_indexes("contact_lookup_jobs")
-    }:
-        op.drop_index("ix_contact_lookup_jobs_org_created", table_name="contact_lookup_jobs")
-    if "employer_id" in {column["name"] for column in inspector.get_columns("contact_lookup_jobs")}:
-        op.drop_column("contact_lookup_jobs", "employer_id")
+    for table_name, index_name in (
+        ("contact_lookup_jobs", "ix_contact_lookup_jobs_org_created"),
+        ("provider_directory_contact_lookup_jobs", "ix_directory_contact_lookup_org_created"),
+    ):
+        inspector = sa.inspect(op.get_bind())
+        if not inspector.has_table(table_name):
+            continue
+        if index_name in {index["name"] for index in inspector.get_indexes(table_name)}:
+            op.drop_index(index_name, table_name=table_name)
+        if "employer_id" in {column["name"] for column in inspector.get_columns(table_name)}:
+            op.drop_column(table_name, "employer_id")

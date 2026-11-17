@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from sqlalchemy import or_, select
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from ..models import (
@@ -26,6 +27,21 @@ def organization_member_ids(db: Session, employer: Employer) -> set[str]:
     )).all())
     ids.add(employer.owner_user_id)
     return ids
+
+
+def lookup_organization_id(db: Session, user: User,
+                           employer_id: str | None = None) -> str | None:
+    """Resolve the organization for a website lookup without guessing across teams."""
+    if employer_id:
+        employer = db.get(Employer, employer_id)
+        if not employer or org_roles.role_of(db, employer, user) is None:
+            raise HTTPException(status_code=403, detail="Not a member of this organisation")
+        return employer_id
+    org_ids = set(db.scalars(select(Employer.employer_id).where(
+        Employer.owner_user_id == user.user_id)).all())
+    org_ids.update(db.scalars(select(EmployerMember.employer_id).where(
+        EmployerMember.user_id == user.user_id)).all())
+    return next(iter(org_ids)) if len(org_ids) == 1 else None
 
 
 def accessible_team_ids(db: Session, employer: Employer, user: User) -> set[str]:
