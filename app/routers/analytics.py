@@ -19,6 +19,7 @@ from ..models import (
     AnalyticsMarketSnapshot,
     AuditLog,
     CreditAccount,
+    ContactLookupJob,
     Employer,
     EmployerMember,
     JobPosting,
@@ -67,6 +68,111 @@ def _employer_ids_for(db: DbSession, user: CurrentUser) -> list[str]:
         select(EmployerMember.employer_id).where(EmployerMember.user_id == user.user_id)
     ).all()
     return list({*owned, *member})
+
+
+@router.get("/website-contact-lookups")
+def website_contact_lookups(
+    user: CurrentUser,
+    db: DbSession,
+    employer_id: str,
+    days: int = 30,
+    member_id: str | None = None,
+    outcome: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = 1,
+    page_size: int = 50,
+):
+    """Organization-scoped website Find Contact history for owners and admins."""
+    employer = db.get(Employer, employer_id)
+    if not employer or org_roles.role_of(db, employer, user) not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Only organization owners and admins can view this report")
+    if days < 1 or days > 365 or page < 1 or page_size < 1 or page_size > 100:
+        raise HTTPException(status_code=422, detail="Invalid report period or page")
+    if date_from and date_to and (date_from > date_to or (date_to - date_from).days > 366):
+        raise HTTPException(status_code=422, detail="Choose a date range of at most 366 days")
+    if outcome and outcome not in {"found", "not_found", "failed", "queued", "processing"}:
+        raise HTTPException(status_code=422, detail="Invalid lookup result")
+
+    member_ids = team_access.organization_member_ids(db, employer)
+    member_ids.update(db.scalars(select(ContactLookupJob.requester_user_id).where(
+        ContactLookupJob.employer_id == employer_id)).all())
+    if member_id and member_id not in member_ids:
+        raise HTTPException(status_code=403, detail="Not a member of this organization")
+    since = (datetime.combine(date_from, datetime.min.time(), timezone.utc)
+             if date_from else datetime.combine(date_to - timedelta(days=days - 1),
+                                                datetime.min.time(), timezone.utc)
+             if date_to else utcnow() - timedelta(days=days))
+    until = (datetime.combine(date_to + timedelta(days=1), datetime.min.time(), timezone.utc)
+             if date_to else None)
+    conditions = [ContactLookupJob.employer_id == employer_id,
+                  ContactLookupJob.created_at >= since]
+    if until:
+        conditions.append(ContactLookupJob.created_at < until)
+    if member_id:
+        conditions.append(ContactLookupJob.requester_user_id == member_id)
+    jobs = db.scalars(select(ContactLookupJob).where(*conditions)
+                      .order_by(ContactLookupJob.created_at.desc(), ContactLookupJob.job_id.desc())).all()
+
+    def result(job: ContactLookupJob) -> str:
+        if job.status == "completed":
+            return "found" if job.found else "not_found"
+        return job.status
+
+    if outcome:
+        jobs = [job for job in jobs if result(job) == outcome]
+    users = {u.user_id: u for u in db.scalars(select(User).where(User.user_id.in_(member_ids)))}
+    profiles = {p.user_id: p for p in db.scalars(
+        select(Profile).where(Profile.user_id.in_(member_ids)))}
+    options = [{"user_id": uid,
+                "name": (f"{profiles[uid].first_name or ''} {profiles[uid].last_name or ''}".strip()
+                         if uid in profiles else None),
+                "email": users[uid].email if uid in users else None}
+               for uid in member_ids]
+    options.sort(key=lambda row: (row["name"] or row["email"] or "").casefold())
+    counts = Counter(result(job) for job in jobs)
+    daily: dict[str, dict] = {}
+    by_member: dict[str, dict] = {}
+    for job in jobs:
+        status = result(job)
+        day = job.created_at.date().isoformat()
+        day_row = daily.setdefault(day, {"date": day, "lookups": 0, "found": 0,
+                                         "not_found": 0, "failed": 0})
+        day_row["lookups"] += 1
+        if status in day_row:
+            day_row[status] += 1
+        member = by_member.setdefault(job.requester_user_id, {
+            "user_id": job.requester_user_id,
+            "email": users[job.requester_user_id].email if job.requester_user_id in users else None,
+            "lookups": 0, "found": 0, "not_found": 0, "failed": 0,
+        })
+        member["lookups"] += 1
+        if status in member:
+            member[status] += 1
+    page_jobs = jobs[(page - 1) * page_size:page * page_size]
+    candidate_ids = {job.profile_id for job in page_jobs}
+    candidates = {p.profile_id: " ".join(filter(None, (p.first_name, p.last_name)))
+                  for p in db.scalars(select(Profile).where(Profile.profile_id.in_(candidate_ids)))}
+    return {
+        "organization": {"employer_id": employer_id, "org_name": employer.org_name},
+        "member_options": options,
+        "summary": {"lookups": len(jobs), "found": counts["found"],
+                    "not_found": counts["not_found"], "failed": counts["failed"],
+                    "waiting": counts["queued"] + counts["processing"],
+                    "credits_charged": sum(job.credits_charged or 0 for job in jobs)},
+        "daily": [daily[day] for day in sorted(daily, reverse=True)],
+        "members": sorted(by_member.values(), key=lambda row: (-row["lookups"], row["email"] or "")),
+        "activity_total": len(jobs), "activity_page": page, "activity_page_size": page_size,
+        "activity": [{"job_id": job.job_id,
+                      "member_email": users[job.requester_user_id].email
+                      if job.requester_user_id in users else "Former member",
+                      "candidate_name": candidates.get(job.profile_id) or "Candidate",
+                      "profile_id": job.profile_id, "outcome": result(job),
+                      "source": job.source, "detail": job.detail,
+                      "credits_charged": job.credits_charged or 0,
+                      "created_at": job.created_at, "updated_at": job.updated_at}
+                     for job in page_jobs],
+    }
 
 
 @router.get("/medhunt")

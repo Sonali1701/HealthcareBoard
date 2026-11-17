@@ -382,7 +382,7 @@
     if (id === "pools") loadPools();
     if (id === "employer") loadEmployer();
     if (id === "orgadmin") loadOrgAdmin();
-    if (id === "analytics") loadAnalytics();
+    if (id === "analytics") { loadAnalytics(); loadWebsiteLookupReport(); }
     if (id === "calculator") loadPayCalculator();
     if (id === "outreach") loadOutreach();
     if (id === "credits") loadCredits();
@@ -3357,7 +3357,10 @@
     if (!ids || !ids.length) return;
     ids.forEach(id => setLookupButton(id, "Queued?", true));
     try {
-      const queued = await post("/api/profiles/contact-lookup-queue", {profile_ids:ids});
+      const employerId = S.employer && S.employer.employer_id;
+      const queuePath = "/api/profiles/contact-lookup-queue"
+        + (employerId ? `?employer_id=${encodeURIComponent(employerId)}` : "");
+      const queued = await post(queuePath, {profile_ids:ids});
       const jobs = queued.jobs || [];
       if (!jobs.length) throw new Error("No contact searches were queued.");
       jobs.forEach(job => setLookupButton(job.profile_id,
@@ -5614,6 +5617,78 @@
                         ["interview","Interview"],["offer","Offer"],["hired","Hired"]];
 
   const extensionAnalyticsFilters = {days:30, date_from:"", date_to:"", member_id:"", platform:"", provider:"", outcome:"", page:1, orgId:null};
+  const websiteLookupFilters = {days:30, date_from:"", date_to:"", member_id:"", outcome:"", page:1, orgId:null};
+  let _websiteLookupReq = 0;
+  function renderWebsiteLookupReport(data){
+    const f = websiteLookupFilters, s = data.summary || {};
+    const option = (value, label, selected) => `<option value="${esc(value)}"${String(value) === String(selected) ? " selected" : ""}>${esc(label)}</option>`;
+    const daily = data.daily || [], members = data.members || [], activity = data.activity || [];
+    const pages = Math.max(1, Math.ceil((data.activity_total || 0) / (data.activity_page_size || 50)));
+    return `<div class="an-section"><h2>Website Find Contact report</h2>
+      <p class="team-note">${esc(data.organization?.org_name || "Your organization")} · Website searches by your team. This report includes lookups linked to this organization after this update. Dates below use UTC.</p>
+      <div class="extension-filters">
+        <label>Period<select class="input" data-website-filter="days">${[7,30,90,365].map(n => option(n, `Last ${n} days`, f.days)).join("")}</select></label>
+        <label>From (UTC)<input class="input" type="date" data-website-filter="date_from" value="${esc(f.date_from)}"></label>
+        <label>To (UTC)<input class="input" type="date" data-website-filter="date_to" value="${esc(f.date_to)}"></label>
+        <label>Team member<select class="input" data-website-filter="member_id">${option("", "All members", f.member_id)}${(data.member_options || []).map(m => option(m.user_id, m.name || m.email || "Team member", f.member_id)).join("")}</select></label>
+        <label>Result<select class="input" data-website-filter="outcome">${option("", "All results", f.outcome)}${[["found","Found"],["not_found","Not found"],["failed","Failed"],["queued","Queued"],["processing","Processing"]].map(([v,l]) => option(v,l,f.outcome)).join("")}</select></label>
+      </div>
+      ${(f.date_from || f.date_to) ? `<p class="team-note">Select both dates for an exact range. Clear both to use the rolling period.</p>` : ""}
+      <div class="an-grid">
+        ${stat(s.lookups || 0, "Lookups")}${stat(s.found || 0, "Found", "contact located", true)}
+        ${stat(s.not_found || 0, "Not found")}${stat(s.failed || 0, "Failed")}
+        ${stat(s.waiting || 0, "Waiting or running")}${stat(s.credits_charged || 0, "Credits charged")}
+      </div>
+      <div class="team-head extension-detail-head"><h3>Daily activity</h3><span class="team-note">${daily.length} active days</span></div>
+      ${daily.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Date (UTC)</th><th>Lookups</th><th>Found</th><th>Not found</th><th>Failed</th></tr></thead><tbody>${daily.map(d => `<tr><td>${esc(d.date)}</td><td>${Number(d.lookups)}</td><td>${Number(d.found)}</td><td>${Number(d.not_found)}</td><td>${Number(d.failed)}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No website lookups in this period", "Try a longer period or different filters.", "fa-calendar-days")}
+      <div class="team-head extension-detail-head"><h3>Team member activity</h3></div>
+      ${members.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Lookups</th><th>Found</th><th>Not found</th><th>Failed</th></tr></thead><tbody>${members.map(m => `<tr><td>${esc(m.email || "Former member")}</td><td>${Number(m.lookups)}</td><td>${Number(m.found)}</td><td>${Number(m.not_found)}</td><td>${Number(m.failed)}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No team activity", "Website searches will appear here.", "fa-users")}
+      <div class="team-head extension-detail-head"><h3>Lookup history</h3><span class="team-note">${Number(data.activity_total || 0).toLocaleString()} requests</span></div>
+      ${activity.length ? `<p class="extension-scroll-hint">Scroll sideways to see every detail.</p><div class="table-wrap extension-event-table" tabindex="0" aria-label="Website lookup history"><table class="table"><thead><tr><th>Member</th><th>Candidate</th><th>Result</th><th>Source</th><th>Details</th><th>Credits</th><th>Requested</th></tr></thead><tbody>${activity.map(a => `<tr><td>${esc(a.member_email)}</td><td><div class="cell-name">${esc(a.candidate_name)}</div><div class="cell-sub">${esc(a.profile_id)}</div></td><td><span class="badge${a.outcome === "found" ? " accent" : ""}">${esc((a.outcome || "unknown").replaceAll("_", " "))}</span></td><td>${esc(a.source || "—")}</td><td>${esc(a.detail || "—")}</td><td>${Number(a.credits_charged || 0)}</td><td>${a.created_at ? esc(new Date(a.created_at).toLocaleString()) : "—"}</td></tr>`).join("")}</tbody></table></div>` : emptyState("No lookup history matches", "Try another date or team member.", "fa-list")}
+      ${pages > 1 ? `<div class="extension-pages"><button class="btn small" data-website-page="${data.activity_page - 1}"${data.activity_page <= 1 ? " disabled" : ""}>Previous</button><span>Page ${data.activity_page} of ${pages}</span><button class="btn small" data-website-page="${data.activity_page + 1}"${data.activity_page >= pages ? " disabled" : ""}>Next</button></div>` : ""}
+    </div>`;
+  }
+  async function loadWebsiteLookupReport(){
+    const target = $("#website-lookups-report");
+    if (!target) return;
+    const request = ++_websiteLookupReq;
+    if (!target.innerHTML) target.innerHTML = loading("Loading website contact lookups...");
+    try {
+      let orgId = S.employer && S.employer.employer_id;
+      if (!orgId){
+        const dash = await get("/api/employers/me/dashboard?summary_only=true");
+        if (!orgId && dash.employer) S.employer = dash.employer;
+        orgId = dash.employer && dash.employer.employer_id;
+      }
+      if (request !== _websiteLookupReq) return;
+      if (!orgId){ target.innerHTML = ""; return; }
+      if (websiteLookupFilters.orgId !== orgId){
+        Object.assign(websiteLookupFilters, {orgId, member_id:"", outcome:"", page:1});
+      }
+      const f = websiteLookupFilters;
+      const params = new URLSearchParams({employer_id:orgId, days:String(f.days), page:String(f.page)});
+      for (const key of ["member_id","outcome","date_from","date_to"]) if (f[key]) params.set(key, f[key]);
+      const report = await get(`/api/analytics/website-contact-lookups?${params}`);
+      if (request !== _websiteLookupReq || !$("#page-analytics").classList.contains("active")) return;
+      target.innerHTML = renderWebsiteLookupReport(report);
+      target.onchange = event => {
+        const field = event.target.dataset.websiteFilter;
+        if (!field) return;
+        f[field] = field === "days" ? Number(event.target.value) : event.target.value;
+        f.page = 1;
+        loadWebsiteLookupReport();
+      };
+      target.onclick = event => {
+        const btn = event.target.closest("[data-website-page]");
+        if (!btn || btn.disabled) return;
+        f.page = Number(btn.dataset.websitePage);
+        loadWebsiteLookupReport();
+      };
+    } catch(e){
+      if (request !== _websiteLookupReq) return;
+      target.innerHTML = e.status === 403 ? "" : errorState("Could not load website lookup report", e.message || "");
+    }
+  }
   function renderExtensionAnalytics(ext){
     const ex = ext.summary || {}, members = ext.members || [], days = ext.daily || [];
     const activity = ext.activity || [], sources = ext.sources || [];
@@ -5818,6 +5893,10 @@
     box.setAttribute("aria-busy", "true");
     if (!hadContent) box.innerHTML = loading("Loading your activity...");
     try {
+      if (!S.employer && isRecruiter()) {
+        const dashboard = await get("/api/employers/me/dashboard?summary_only=true").catch(() => null);
+        if (dashboard?.employer) S.employer = dashboard.employer;
+      }
       const activeOrgId = S.employer && S.employer.employer_id || "";
       if (extensionAnalyticsFilters.orgId !== activeOrgId) {
         extensionAnalyticsFilters.orgId = activeOrgId;

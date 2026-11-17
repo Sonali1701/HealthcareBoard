@@ -14,10 +14,12 @@ class ContactLookupJob(Base):
     __table_args__ = (
         Index("ix_contact_lookup_jobs_queue", "status", "created_at"),
         Index("ix_contact_lookup_jobs_owner_profile", "requester_user_id", "profile_id"),
+        Index("ix_contact_lookup_jobs_org_created", "employer_id", "created_at"),
     )
 
     job_id: Mapped[str] = uuid_pk()
     requester_user_id: Mapped[str] = uuid_fk("users.user_id")
+    employer_id: Mapped[str | None] = uuid_fk("employers.employer_id", nullable=True)
     profile_id: Mapped[str] = uuid_fk("profiles.profile_id")
     status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False, index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 from datetime import timedelta
 
 from fastapi import HTTPException
@@ -9,10 +10,10 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, utcnow
 from app.models import (
-    AuditLog, Employer, EmployerMember, OrganizationTeam,
-    OrganizationTeamMember, TeamInvite, User, UserRole, UserStatus,
+    AuditLog, ContactLookupJob, Employer, EmployerMember, OrganizationTeam,
+    OrganizationTeamMember, Profile, TeamInvite, User, UserRole, UserStatus,
 )
-from app.routers import analytics, employers
+from app.routers import analytics, employers, profiles
 from app.routers.extension import MEDHUNT_ATTEMPT_ACTION, MEDHUNT_ENRICHED_ACTION
 from app.security import sha256
 
@@ -189,6 +190,85 @@ class TeamInviteAcceptanceTests(unittest.TestCase):
                 member_id=self.owner.user_id,
             )
         self.assertEqual(denied.exception.status_code, 403)
+
+    def test_website_lookup_report_is_organization_scoped_and_owner_admin_only(self):
+        admin = User(email="admin@example.com", password_hash="x",
+                     role=UserRole.recruiter, status=UserStatus.active)
+        other = User(email="other@example.com", password_hash="x",
+                     role=UserRole.recruiter, status=UserStatus.active)
+        candidate = Profile(first_name="Alex", last_name="Rivera")
+        self.db.add_all([admin, other, candidate])
+        self.db.flush()
+        other_org = Employer(owner_user_id=other.user_id, org_name="Other Agency")
+        self.db.add(other_org)
+        self.db.flush()
+        self.db.add_all([
+            EmployerMember(employer_id=self.org.employer_id,
+                           user_id=admin.user_id, member_role="admin"),
+            EmployerMember(employer_id=self.org.employer_id,
+                           user_id=self.invitee.user_id, member_role="recruiter"),
+            ContactLookupJob(requester_user_id=self.owner.user_id,
+                             employer_id=self.org.employer_id,
+                             profile_id=candidate.profile_id, status="completed",
+                             found=True, source="quick_sourcer", credits_charged=1),
+            ContactLookupJob(requester_user_id=self.invitee.user_id,
+                             employer_id=self.org.employer_id,
+                             profile_id=candidate.profile_id, status="failed",
+                             detail="Timed out"),
+            ContactLookupJob(requester_user_id=other.user_id,
+                             employer_id=other_org.employer_id,
+                             profile_id=candidate.profile_id, status="completed", found=True),
+            ContactLookupJob(requester_user_id=self.owner.user_id,
+                             profile_id=candidate.profile_id, status="not_found"),
+        ])
+        self.db.commit()
+
+        report = analytics.website_contact_lookups(
+            self.owner, self.db, self.org.employer_id)
+        self.assertEqual(report["summary"]["lookups"], 2)
+        self.assertEqual(report["summary"]["found"], 1)
+        self.assertEqual(report["summary"]["failed"], 1)
+        self.assertEqual(report["summary"]["credits_charged"], 1)
+        self.assertEqual({row["email"] for row in report["members"]},
+                         {self.owner.email, self.invitee.email})
+        self.assertEqual(report["daily"][0]["lookups"], 2)
+        self.assertEqual(report["activity_total"], 2)
+        self.assertEqual(len(report["activity"]), 2)
+        self.assertEqual(report["activity"][0]["candidate_name"], "Alex Rivera")
+
+        admin_report = analytics.website_contact_lookups(
+            admin, self.db, self.org.employer_id, outcome="failed",
+            member_id=self.invitee.user_id, page_size=1)
+        self.assertEqual(admin_report["summary"]["lookups"], 1)
+        self.assertEqual(admin_report["activity"][0]["detail"], "Timed out")
+        today = utcnow().date()
+        dated = analytics.website_contact_lookups(
+            self.owner, self.db, self.org.employer_id,
+            date_from=today, date_to=today)
+        self.assertEqual(dated["summary"]["lookups"], 2)
+        with self.assertRaises(HTTPException) as denied:
+            analytics.website_contact_lookups(self.invitee, self.db, self.org.employer_id)
+        self.assertEqual(denied.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as cross_org:
+            analytics.website_contact_lookups(self.owner, self.db, other_org.employer_id)
+        self.assertEqual(cross_org.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as cross_member:
+            analytics.website_contact_lookups(
+                self.owner, self.db, self.org.employer_id, member_id=other.user_id)
+        self.assertEqual(cross_member.exception.status_code, 403)
+
+    def test_website_lookup_queue_records_organization_and_checks_membership(self):
+        candidate = Profile(first_name="Sam", last_name="Taylor")
+        self.db.add(candidate)
+        self.db.commit()
+        with patch.object(profiles.quick_sourcer, "available", return_value=True):
+            jobs = profiles._enqueue_contact_lookups(
+                self.db, self.owner, [candidate.profile_id], self.org.employer_id)
+            self.assertEqual(jobs[0].employer_id, self.org.employer_id)
+            with self.assertRaises(HTTPException) as denied:
+                profiles._enqueue_contact_lookups(
+                    self.db, self.invitee, [candidate.profile_id], self.org.employer_id)
+            self.assertEqual(denied.exception.status_code, 403)
 
     def test_invite_cannot_be_claimed_by_a_different_email(self):
         invite = self._invite()
