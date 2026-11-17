@@ -33,6 +33,9 @@ class ProviderAiParsingTests(unittest.TestCase):
             "then use location california"))
         self.assertEqual(follow_up.get("state_code"), "CA")
         self.assertNotIn("q", follow_up)
+        state_query, state_unsupported = _without_unsupported_origin("MD from Indiana")
+        self.assertFalse(state_unsupported)
+        self.assertEqual(state_query, "MD from Indiana")
 
     def test_llm_key_follows_selected_provider(self):
         openai = Settings(llm_base_url="https://api.openai.com/v1",

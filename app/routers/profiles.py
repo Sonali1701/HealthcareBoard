@@ -1953,6 +1953,8 @@ def _without_unsupported_origin(message: str) -> tuple[str, bool]:
         if len(words) < width:
             continue
         place = " ".join(words[:width])
+        if place in _STATE_NAMES or place.upper() in _US_STATES:
+            continue
         if place in _ORIGIN_COUNTRIES or get_close_matches(place, _ORIGIN_COUNTRIES, n=1, cutoff=.78):
             end = origin.start(1) + len(place)
             return message[:origin.start()] + " " + message[end:], True
