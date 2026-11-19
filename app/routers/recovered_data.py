@@ -149,7 +149,8 @@ def _authorize(user: CurrentUser) -> None:
 
 
 def _conditions(q, category, specialty, state_code, zip_code, radius_mi, resume, contact, source):
-    clauses = []
+    # Rejected records have source evidence that makes them unsuitable for users.
+    clauses = ["review_status <> 'rejected'"]
     params = {}
     if category:
         clauses.append("job_category = :category")

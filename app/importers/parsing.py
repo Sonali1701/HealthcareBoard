@@ -69,7 +69,7 @@ US_STATES = {
 # Post-nominal credentials to strip from a name line / detect profession from.
 CREDENTIALS = [
     "MD", "DO", "MBBS", "MBChB", "DMD", "DDS", "DPM", "DPT", "PharmD", "PsyD",
-    "PhD", "MPH", "MSc", "MS", "MBA", "MHA", "MFA", "BFA", "BA", "BS",
+    "PhD", "MPH", "MSc", "MS", "MBA", "MCSD", "MHA", "MFA", "BFA", "BA", "BS",
     "RN", "BSN", "MSN", "NP",
     "FNP", "DNP", "PA", "PA-C", "FACP", "FAAP", "FACS", "FACC", "FAAD",
     "FACRO", "FASN", "FCAAAI", "FCAAI",
