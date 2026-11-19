@@ -3437,13 +3437,11 @@
     }
   }
   // --- AI Search (full-page natural-language candidate search) ------------
-  // Results render in the SAME table format as the Providers directory, reusing
-  // providerRow so columns, masking and the reveal control stay identical.
+  // Search the same NPI directory used by the Providers tab.
   const AI_TABLE_HEAD =
-    "<tr><th class=\"th-check\"></th><th>Provider</th><th>License</th><th>Category</th><th>Experience</th>"
-    + "<th>Location</th><th>Contact</th><th class=\"th-actions\"></th></tr>";
+    "<tr><th class=\"th-check\"></th><th>Provider</th><th>Credential</th><th>Specialty</th>"
+    + "<th>Taxonomy code</th><th>Location</th><th>NPI status</th><th>Contact</th></tr>";
   function aiResultsTable(items){
-    setTimeout(() => refreshPoolMembership(items.map(p => p.profile_id)), 0);
     return `<div class="table-wrap"><table class="table"><thead>${AI_TABLE_HEAD}</thead>`
       + `<tbody>${items.map(providerRow).join("")}</tbody></table></div>`;
   }
@@ -3481,25 +3479,20 @@
     try {
       // Send the previous turn's filters so a follow-up refines instead of
       // restarting ("RN nurses" → then "only in California").
-      const r = await post("/api/profiles/copilot", {message, context: S.aiContext || null});
+      const r = await post("/api/provider-directory/copilot", {message, context: S.aiContext || null});
       S.aiContext = r.filters || {};   // carry forward for the next refinement
       $("#ai-input").placeholder = "Refine your search — e.g. only in California, with 10+ years";
       body.textContent = r.answer || "Here's what I found.";
       const items = r.items || [];
-      items.forEach(p => {
-        S.providerCards.set(p.profile_id, p);
-        if (p.is_released && !S.releasedContacts.has(p.profile_id))
-          S.releasedContacts.set(p.profile_id, p);
-      });
       if (items.length){
         const results = document.createElement("div");
         results.className = "ai-results";
         results.innerHTML = aiResultsTable(items);
         turn.appendChild(results);
-        if ((r.total || 0) > items.length){
+        if (r.has_next && !r.filters?.specialty_text){
           const more = document.createElement("button");
           more.className = "ai-viewall";
-          more.innerHTML = `<i class="fas fa-table-list"></i>View all ${r.total.toLocaleString()} in the Providers directory`;
+          more.innerHTML = '<i class="fas fa-table-list"></i>View more in the Providers directory';
           more.onclick = () => copilotApplyToDirectory(r.filters || {});
           turn.appendChild(more);
         }
@@ -3620,7 +3613,7 @@
   function applyCopilotFilters(f){
     f = f || {};
     S.provider = {
-      q: f.q || "", specialty: f.specialty || "", zip: "", radius_mi: f.radius_mi != null ? String(f.radius_mi) : "25",
+      q: f.q || "", specialty: f.specialty || "", zip: f.zip || "", radius_mi: f.radius_mi != null ? String(f.radius_mi) : "25",
       state_code: f.state_code || ""
     };
   }

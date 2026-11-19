@@ -179,6 +179,99 @@ class DirectoryContactLookupRequest(BaseModel):
     npis: list[str] = Field(min_length=1, max_length=20)
 
 
+class DirectoryCopilotQuery(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    context: dict | None = None
+
+
+_AI_FILLER = frozenset({
+    "find", "show", "me", "providers", "provider", "people", "candidates",
+    "candidate", "in", "near", "from", "with", "who", "have", "has",
+    "the", "a", "an", "and", "of", "for", "only", "please", "search",
+    "year", "years", "experience", "experienced", "at", "least", "over",
+    "under", "within", "miles", "mile", "mi", "licensed", "license",
+    "specialist", "specialists", "clinician", "clinicians", "need", "want",
+    "looking", "doctors", "doctor", "physician", "physicians",
+})
+_AI_SPECIALTY_ALIASES = {"icu": "critical care", "er": "emergency"}
+_AI_QUERY_ALIASES = {
+    "cardiologist": "cardio", "cardiologists": "cardio",
+    "hematologist": "hematology", "hematologists": "hematology",
+    "oncologist": "oncology", "oncologists": "oncology",
+}
+
+
+def _copilot_directory_filters(message: str, context: dict | None = None) -> tuple[dict, list[str]]:
+    """Extract only fields the NPI directory can actually verify."""
+    from .profiles import _STATE_NAMES, _copilot_rule_filters
+
+    parsed = _copilot_rule_filters(message)
+    prior = context if isinstance(context, dict) else {}
+    filters = {key: prior[key] for key in ("q", "state_code", "zip", "radius_mi", "specialty_text")
+               if prior.get(key)}
+    if re.search(r"\b(new search|start over|reset|clear filters)\b", message, re.I):
+        filters.clear()
+    for key in ("state_code", "zip", "radius_mi"):
+        if parsed.get(key):
+            filters[key] = parsed[key]
+
+    lowered = message.casefold()
+    role = next((phrase for phrase in sorted(_ROLE_SEARCHES, key=len, reverse=True)
+                 if re.search(r"(?<!\w)" + re.escape(phrase) + r"s?(?!\w)", lowered)), None)
+    if role is None and re.search(r"\bnurses?\b", lowered):
+        role = "registered nurse"
+    credential = parsed.get("license_title")
+    if role:
+        filters["q"] = role
+    elif credential:
+        filters["q"] = credential
+    else:
+        if filters.get("state_code"):
+            for state_name, state_code in _STATE_NAMES.items():
+                if state_code == filters["state_code"]:
+                    lowered = re.sub(r"\b" + re.escape(state_name) + r"\b", " ", lowered)
+            lowered = re.sub(r"(?<!\w)" + re.escape(filters["state_code"].casefold()) +
+                             r"(?!\w)", " ", lowered)
+        terms = [_AI_QUERY_ALIASES.get(word, word)
+                 for word in re.findall(r"[a-z][a-z/-]+", lowered)
+                 if word not in _AI_FILLER and word not in {"nurses", "nurse"}]
+        if terms:
+            filters["q"] = " ".join(terms[:4])
+        elif "nurse" in lowered or "nurses" in lowered:
+            filters["q"] = "nurse"
+        elif re.search(r"\b(?:doctors?|physicians?)\b", lowered):
+            filters["q"] = "physician"
+
+    # A role can coexist with a specialty in natural language. The standard
+    # provider search has one text box, so apply the extra specialty here.
+    specialty_terms = []
+    if role:
+        remaining = re.sub(r"(?<!\w)" + re.escape(role) + r"s?(?!\w)", " ", lowered)
+        for state_name in sorted(_STATE_NAMES, key=len, reverse=True):
+            remaining = re.sub(r"\b" + re.escape(state_name) + r"\b", " ", remaining)
+        specialty_terms = [word for word in re.findall(r"[a-z][a-z/-]+", remaining)
+                           if word not in _AI_FILLER and word not in {"nurses", "nurse"}
+                           and word.upper() != filters.get("state_code")]
+    if specialty_terms:
+        filters["specialty_text"] = " ".join(
+            _AI_SPECIALTY_ALIASES.get(term, term) for term in specialty_terms[:3])
+    elif role:
+        filters.pop("specialty_text", None)
+
+    unsupported = []
+    if parsed.get("min_experience") is not None or parsed.get("max_experience") is not None:
+        unsupported.append("years of experience")
+    if parsed.get("contact_available"):
+        unsupported.append("contact availability")
+    if parsed.get("licensed_state") or parsed.get("compact"):
+        unsupported.append("license eligibility")
+    if parsed.get("travel_experience") or parsed.get("worked_at"):
+        unsupported.append("work history")
+    if parsed.get("city") and not filters.get("zip"):
+        unsupported.append("city distance (enter a ZIP for radius search)")
+    return filters, unsupported
+
+
 def _contact_lookup_payload(job: ProviderDirectoryContactLookupJob) -> dict:
     payload = {
         "job_id": job.job_id, "npi": job.npi, "status": job.status,
@@ -439,6 +532,76 @@ def search_provider_directory(
                 "has_next": has_next}
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="Provider directory is temporarily unavailable") from exc
+
+
+@router.post("/copilot")
+def copilot_provider_directory(body: DirectoryCopilotQuery, user: CurrentUser):
+    """Search current NPI providers with supported natural-language filters."""
+    _authorize(user)
+    filters, unsupported = _copilot_directory_filters(body.message, body.context)
+    q = str(filters.get("q") or "")[:120]
+    state = str(filters.get("state_code") or "").upper()
+    zip_code = str(filters.get("zip") or "")
+    specialty_text = str(filters.get("specialty_text") or "")[:80]
+    try:
+        radius = float(filters["radius_mi"]) if filters.get("radius_mi") else None
+    except (TypeError, ValueError):
+        radius = None
+    if not _STATE.fullmatch(state):
+        state = ""
+    if not _ZIP.fullmatch(zip_code):
+        zip_code = ""
+    if not zip_code:
+        radius = None
+    if radius is not None:
+        radius = max(5, min(250, radius))
+    specialty_text = re.sub(r"[^a-zA-Z /-]", "", specialty_text).strip()
+    # The workbook maps some specialty phrases (for example cardiology and
+    # internal medicine) to credential strings. In AI Search an unqualified
+    # specialty request should search the actual specialty column instead.
+    if (q and not specialty_text and not _search_role(q)
+            and _search_credential(q)
+            and re.sub(r"[^A-Z0-9]", "", q.upper()) not in _COMPACT_CREDENTIAL_SEARCHES
+            and q.casefold() not in _CREDENTIAL_PHRASES):
+        specialty_text, q = q, ""
+    filters = {"q": q, "state_code": state, "zip": zip_code,
+               "radius_mi": radius, "specialty_text": specialty_text}
+    filters = {key: value for key, value in filters.items() if value}
+    if not filters:
+        return {"answer": "Try a profession, specialty, state, or ZIP code.",
+                "filters": {}, "items": [], "total": 0, "has_next": False}
+    engine = _engine_or_503()
+    try:
+        with engine.connect() as conn:
+            center = None
+            if zip_code and radius is not None:
+                point = conn.execute(text(
+                    "SELECT lat, lng FROM zip_centroids WHERE zip = :zip"
+                ), {"zip": zip_code}).first()
+                center = (float(point.lat), float(point.lng)) if point else None
+            where, params = _conditions(
+                q=q or None, specialty=None, state_code=state or None,
+                zip_code=zip_code or None, radius_mi=radius, center=center,
+            )
+            if specialty_text:
+                where += " AND lower(p.specialty) LIKE :specialty_text"
+                params["specialty_text"] = "%" + specialty_text.casefold() + "%"
+            rows = conn.execute(text(f"""
+                SELECT npi, first_name, middle_name, last_name, credential,
+                       status, specialty, taxonomy_code, city, state_code, zip_code
+                FROM provider_directory p WHERE {where}
+                LIMIT 13
+            """), params).mappings().all()
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="Provider directory is temporarily unavailable") from exc
+    items = [dict(row) for row in rows[:12]]
+    note = (" I could not filter by " + ", ".join(unsupported) +
+            " because the directory does not hold verified values for those fields.") if unsupported else ""
+    answer = (f"Showing {len(items)} matching providers" +
+              (" (more available)." if len(rows) > 12 else ".") + note) if items else (
+                  "No providers matched those filters. Try a broader specialty or location." + note)
+    return {"answer": answer, "filters": filters, "items": items,
+            "total": len(items), "has_next": len(rows) > 12}
 
 
 @router.get("/facets")
