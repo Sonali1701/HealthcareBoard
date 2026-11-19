@@ -51,6 +51,7 @@ from .routers import (
     pools,
     privacy,
     provider_directory,
+    recovered_data,
     profiles,
     saved_searches,
     social,
@@ -97,12 +98,14 @@ async def lifespan(app: FastAPI):
     usage_task = None
     contact_lookup_task = None
     nexus_task = None
+    recovered_lookup_task = None
     if settings.weekly_usage_emails_enabled:
         from .services.weekly_usage_reports import scheduler
         usage_task = asyncio.create_task(scheduler())
     if settings.quick_sourcer_ready:
-        from .services.contact_lookup_queue import worker_loop
+        from .services.contact_lookup_queue import worker_loop, recovered_worker_loop
         contact_lookup_task = asyncio.create_task(worker_loop())
+        recovered_lookup_task = asyncio.create_task(recovered_worker_loop())
     from .services.nexus_contact_delivery import scheduler as nexus_scheduler
     nexus_task = asyncio.create_task(nexus_scheduler())
     try:
@@ -120,6 +123,10 @@ async def lifespan(app: FastAPI):
             contact_lookup_task.cancel()
             with suppress(asyncio.CancelledError):
                 await contact_lookup_task
+        if recovered_lookup_task:
+            recovered_lookup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await recovered_lookup_task
 
 
 app = FastAPI(
@@ -223,7 +230,7 @@ async def _handle_redirect(request: Request, exc: RedirectException):
 for module in (
     auth, profiles, employers, jobs, applications, social,
     messaging, notifications, matching, gsa, analytics, uploads,
-    integrations, admin_import, ingest, extension, pools, provider_directory, saved_searches,
+    integrations, admin_import, ingest, extension, pools, provider_directory, recovered_data, saved_searches,
     duplicates, outreach, credits, privacy, submissions, clients, admin,
 ):
     app.include_router(module.router)

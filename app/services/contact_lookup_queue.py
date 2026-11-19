@@ -16,7 +16,7 @@ from sqlalchemy import select, update
 from ..config import settings
 from ..database import SessionLocal, utcnow
 from ..models import (AuditLog, ContactLookupJob, Profile,
-                      ProviderDirectoryContactLookupJob, User)
+                      ProviderDirectoryContactLookupJob, RecoveredDataContactLookupJob, User)
 from . import quick_sourcer
 
 logger = logging.getLogger("healthboard.contact_lookup_queue")
@@ -370,3 +370,107 @@ async def _run_directory_one(job_id: str) -> None:
     except Exception:
         logger.exception("directory contact lookup failed (job_id=%s)", job_id)
         await asyncio.to_thread(_directory_failure, job_id, "The lookup failed unexpectedly. Try again.")
+
+def _claim_recovered_one() -> str | None:
+    now = utcnow()
+    with SessionLocal.begin() as db:
+        db.execute(update(RecoveredDataContactLookupJob).where(
+            RecoveredDataContactLookupJob.status == "processing",
+            RecoveredDataContactLookupJob.updated_at < now - STALE_AFTER,
+        ).values(status="queued", detail="Worker restarted; queued for retry.", updated_at=now))
+        job = db.scalar(select(RecoveredDataContactLookupJob)
+                        .where(RecoveredDataContactLookupJob.status == "queued")
+                        .order_by(RecoveredDataContactLookupJob.created_at,
+                                  RecoveredDataContactLookupJob.job_id)
+                        .with_for_update(skip_locked=True).limit(1))
+        if not job:
+            return None
+        job.status = "processing"
+        job.attempts += 1
+        job.detail = None
+        job.updated_at = now
+        return job.job_id
+
+
+def _recovered_context(job_id: str):
+    with SessionLocal() as db:
+        job = db.get(RecoveredDataContactLookupJob, job_id)
+        user = db.get(User, job.requester_user_id) if job else None
+        if not job or job.status != "processing" or not user:
+            return None
+        return job.lookup_name, job.lookup_location or "", user.user_id, job.source_record_key
+
+
+def _recovered_finish(job_id: str, match=None, detail: str | None = None) -> None:
+    from . import credits as credit_service
+    with SessionLocal.begin() as db:
+        job = db.get(RecoveredDataContactLookupJob, job_id)
+        user = db.get(User, job.requester_user_id) if job else None
+        if not job or not user:
+            return
+        if detail:
+            job.status = "failed"
+            job.found = False
+            job.detail = detail[:500]
+        elif not match or not match.found or not (match.email or match.phone):
+            job.status = "not_found"
+            job.found = False
+            job.detail = "No contact found this time. Try again later."
+        else:
+            charged = {"cost": 0, "balance": None}
+            if settings.credits_enabled:
+                from ..models import COST_REVEAL_CONTACT
+                charged = credit_service.charge(
+                    db, user.user_id, COST_REVEAL_CONTACT,
+                    entity_type="recovered_data", entity_id=job.source_record_key.split(":", 1)[1],
+                    idempotency_key=f"data-contact:{user.user_id}:{job.source_record_key}",
+                    note="Recovered data contact lookup",
+                )
+            job.status = "completed"
+            job.found = True
+            job.detail = None
+            job.email = match.email
+            job.phone = match.phone
+            job.credits_charged = int(charged.get("cost", 0) or 0)
+            job.credits_remaining = charged.get("balance")
+        job.source = match.source if match else None
+        job.updated_at = utcnow()
+        db.add(AuditLog(actor_user_id=user.user_id,
+                        action="recovered_data_contact_lookup",
+                        entity_type="recovered_data", entity_id=job.source_record_key.split(":", 1)[1],
+                        meta={"found": bool(job.found), "source": job.source,
+                              "email_found": bool(job.email), "phone_found": bool(job.phone)}))
+
+
+async def _run_recovered_one(job_id: str) -> None:
+    context = await asyncio.to_thread(_recovered_context, job_id)
+    if not context:
+        await asyncio.to_thread(_recovered_finish, job_id, detail="Record or user is unavailable.")
+        return
+    name, location, _user_id, _record_key = context
+    try:
+        match = await quick_sourcer.find(name, location or None)
+        await asyncio.to_thread(_recovered_finish, job_id, match)
+    except Exception as exc:
+        from .credits import InsufficientCredits
+        detail = (f"Contact found, but this account needs {exc.needed} credit and has {exc.balance}."
+                  if isinstance(exc, InsufficientCredits) else "The lookup failed. Try again.")
+        if not isinstance(exc, (InsufficientCredits, quick_sourcer.QuickSourcerError)):
+            logger.exception("recovered data contact lookup failed (job_id=%s)", job_id)
+        await asyncio.to_thread(_recovered_finish, job_id, detail=detail)
+
+
+async def recovered_worker_loop() -> None:
+    """Bounded persisted queue for the separate recovered Data directory."""
+    while True:
+        try:
+            job_id = await asyncio.to_thread(_claim_recovered_one)
+            if job_id:
+                await _run_recovered_one(job_id)
+            else:
+                await asyncio.sleep(POLL_SECONDS)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("recovered contact lookup queue poll failed")
+            await asyncio.sleep(2)

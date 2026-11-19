@@ -273,6 +273,7 @@
       -->
       <button class="nav-item recruiter-only" data-page="ai"><i class="fas fa-wand-magic-sparkles"></i>AI Search</button>
       <button class="nav-item recruiter-only" data-page="providers"><i class="fas fa-user-doctor"></i>Providers</button>
+      <button class="nav-item recruiter-only" data-page="data"><i class="fas fa-database"></i>Data</button>
       <button class="nav-item recruiter-only" data-page="pools"><i class="fas fa-layer-group"></i>Talent Pools</button>
       <button class="nav-item recruiter-only" data-page="outreach"><i class="fas fa-paper-plane"></i>Outreach</button>
       <button class="nav-item recruiter-only hidden" data-page="medhuntreplies"><i class="fas fa-comment-sms"></i>Candidate Replies</button>
@@ -442,6 +443,28 @@
         </table>
       </div>
       <div id="providers-pager" class="pager"></div>
+    </section>
+
+    <section id="page-data" class="page">
+      <div class="section-head"><div><h1>Data</h1><p id="data-count">Recovered candidate and license records</p></div></div>
+      <div class="filter-row data-filters">
+        <input id="data-q" class="input" placeholder="Search name, specialty, credential, NPI, city (3+ letters)" aria-label="Search data">
+        <select id="data-category" class="input" aria-label="Category"><option value="">Any category</option></select>
+        <input id="data-specialty" class="input" placeholder="Specialty" aria-label="Specialty">
+        <select id="data-state" class="input" aria-label="State"><option value="">Any state</option></select>
+        <input id="data-zip" class="input" inputmode="numeric" maxlength="5" placeholder="ZIP code" aria-label="ZIP code">
+        <select id="data-resume" class="input" aria-label="Resume status"><option value="">Any resume status</option><option value="with">Has resume</option><option value="without">No resume</option></select>
+        <select id="data-contact" class="input" aria-label="Contact status"><option value="">Any contact status</option><option value="with">Contact on file</option><option value="without">No contact on file</option></select>
+        <select id="data-source" class="input" aria-label="Source"><option value="">All records</option><option value="profile">Candidate profiles</option><option value="license">License records</option></select>
+        <div class="radius-control is-disabled" title="Distance from ZIP code"><div class="radius-label"><span>Distance</span><strong><b id="data-radius-value">25</b> mi</strong></div><div class="radius-track"><span>5 mi</span><input id="data-radius" type="range" min="5" max="250" step="5" value="25" disabled aria-label="Data distance in miles"><span>250 mi</span></div></div>
+      </div>
+      <div class="saved-row"><button class="btn ghost small" id="data-reset"><i class="fas fa-rotate-left"></i>Reset filters</button><span class="muted">Recovered source records await individual review. Distance search includes records with a ZIP within the selected radius.</span></div>
+      <div id="data-loading-status" class="provider-loading-status hidden" role="status" aria-live="polite"></div>
+      <div class="provider-directory-bulk"><span id="data-bulk-count" class="muted"></span><button class="btn small hidden" id="data-bulk-find-contact"><i class="fas fa-magnifying-glass"></i>Find contacts</button><button class="btn ghost small hidden" id="data-bulk-clear">Clear selection</button></div>
+      <div class="table-wrap"><table class="table"><thead><tr>
+        <th><input id="data-select-all" type="checkbox" aria-label="Select all data records on this page"></th><th>Name</th><th>Credential / profession</th><th>Specialty</th><th>Category</th><th>Location</th><th>Source</th><th>Resume</th><th>Contact</th>
+      </tr></thead><tbody id="data-grid"></tbody></table></div>
+      <div id="data-pager" class="pager"></div>
     </section>
 
     <section id="page-profile" class="page">

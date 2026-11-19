@@ -22,6 +22,7 @@ Table inventory (29):
 from .analytics import AnalyticsMarketSnapshot, AuditLog, MatchResult, MatchRun, PayPackage
 from .contact_lookup import ContactLookupJob
 from .provider_directory_contact_lookup import ProviderDirectoryContactLookupJob
+from .recovered_data_contact_lookup import RecoveredDataContactLookupJob
 from .auth import (
     EmailVerificationToken,
     OAuthAccount,
@@ -118,6 +119,7 @@ __all__ = [
     "ProfileContactBackfill",
     "ContactLookupJob",
     "ProviderDirectoryContactLookupJob",
+    "RecoveredDataContactLookupJob",
     # outreach
     "EmailTemplate", "OutreachCampaign", "OutreachMessage", "Suppression",
     "MERGE_FIELDS", "SEND_STATUSES",

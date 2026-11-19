@@ -7,6 +7,9 @@
     providerOffset:0, providerTotal:null, providerEstimate:null, providerEstimateIsLowerBound:false, directoryEstimate:null,
     providerHasNext:false, facetCategories:{},
     providerLastData:null, facetsLoaded:false, activeCounts:null,
+    dataFilters:{q:"",category:"",specialty:"",state_code:"",zip_code:"",radius_mi:"",resume:"",contact:"",source:""},
+    dataCursor:"", dataBack:[], dataRequest:0, dataAbort:null, dataFacetsLoaded:false,
+    dataUnlocked:new Map(), dataSelected:new Set(), dataLookupJobs:new Map(), dataLastItems:[], dataLookupPolling:new Set(),
     // Messaging + talent pools
     threads:[], activeThread:null, threadPoll:null, msgFilter:"",
     threadsReq:0, threadReq:0,
@@ -371,6 +374,7 @@
     if (id === "dashboard") loadDashboard();
     if (id === "jobs") loadJobs();
     if (id === "providers") { loadProviders(); loadSavedSearches(); }
+    if (id === "data") { loadData(); loadDataFacets(); }
     if (id === "ai") setTimeout(() => { const el = $("#ai-input"); if (el) el.focus(); }, 60);
     if (id === "jobai") setTimeout(() => { const el = $("#jai-input"); if (el) el.focus(); }, 60);
     if (id === "extension") loadExtensionPage();
@@ -4133,6 +4137,47 @@
       S.provider.state_code = $("#provider-state").value;
       providerFilterChanged();
     };
+    ["q","specialty","zip"].forEach(key => {
+      const el = $("#data-" + key);
+      el.addEventListener("input", debounce(() => {
+        if (key === "zip") el.value = el.value.replace(/\D/g, "").slice(0,5);
+        S.dataFilters[key === "zip" ? "zip_code" : key] = key === "zip" && el.value.length !== 5 ? "" : el.value.trim();
+        if (key === "zip") {
+          $("#data-radius").disabled = !S.dataFilters.zip_code;
+          $("#data-radius").closest(".radius-control").classList.toggle("is-disabled", !S.dataFilters.zip_code);
+          S.dataFilters.radius_mi = S.dataFilters.zip_code ? $("#data-radius").value : "";
+        }
+        if (key === "q" && el.value && [...el.value].filter(ch => /[\p{L}\p{N}]/u.test(ch)).length < 3
+            && !/^[A-Z][A-Z0-9+./-]{1,12}$/.test(el.value)) return;
+        if (key !== "zip" || !el.value || el.value.length === 5) dataFiltersChanged();
+      }, 350));
+    });
+    $("#data-radius").addEventListener("input", e => { $("#data-radius-value").textContent = e.target.value; });
+    $("#data-radius").addEventListener("change", e => {
+      S.dataFilters.radius_mi = e.target.value;
+      if (S.dataFilters.zip_code) dataFiltersChanged();
+    });
+    ["category","state","resume","contact","source"].forEach(key => {
+      $("#data-" + key).onchange = e => {
+        S.dataFilters[key === "state" ? "state_code" : key] = e.target.value;
+        dataFiltersChanged();
+      };
+    });
+    $("#data-reset").onclick = () => {
+      Object.keys(S.dataFilters).forEach(k => S.dataFilters[k] = "");
+      ["q","category","specialty","state","zip","resume","contact","source"].forEach(k => $("#data-" + k).value = "");
+      $("#data-radius").value = "25"; $("#data-radius").disabled = true;
+      $("#data-radius-value").textContent = "25";
+      $("#data-radius").closest(".radius-control").classList.add("is-disabled");
+      dataFiltersChanged();
+    };
+    $("#data-select-all").onchange = e => {
+      S.dataLastItems.forEach(p => e.target.checked ? S.dataSelected.add(p.source_record_key) : S.dataSelected.delete(p.source_record_key));
+      repaintDataRows();
+    };
+    $("#data-bulk-clear").onclick = () => { S.dataSelected.clear(); repaintDataRows(); };
+    $("#data-bulk-find-contact").onclick = () => findDataContacts(
+      [...S.dataSelected].filter(k => !["queued","processing","completed"].includes(S.dataLookupJobs.get(k)?.status)));
     const resetBtn = $("#search-reset");
     if (resetBtn) resetBtn.onclick = () => {
       S.provider = {q:"", specialty:"", zip:"", radius_mi:"25", state_code:""};
@@ -4155,6 +4200,11 @@
       const release = e.target.closest("[data-release]"); if (release) releaseContact(release.dataset.release);
       const lookup = e.target.closest("[data-lookup]"); if (lookup) lookupContact(lookup.dataset.lookup);
       const directoryLookup = e.target.closest("[data-directory-lookup]"); if (directoryLookup) lookupDirectoryContact(directoryLookup.dataset.directoryLookup);
+      const dataReveal = e.target.closest("[data-data-reveal]"); if (dataReveal) revealData(dataReveal.dataset.dataReveal);
+      const dataResume = e.target.closest("[data-data-resume]"); if (dataResume) viewDataResume(dataResume.dataset.dataResume);
+      const dataLookup = e.target.closest("[data-data-lookup]"); if (dataLookup) findDataContacts([dataLookup.dataset.dataLookup]);
+      const dataPick = e.target.closest("[data-data-pick]");
+      if (dataPick) { dataPick.checked ? S.dataSelected.add(dataPick.dataset.dataPick) : S.dataSelected.delete(dataPick.dataset.dataPick); renderDataBulkActions(); }
       const sub = e.target.closest("[data-submit]"); if (sub) submitCandidate(sub.dataset.submit);
       const message = e.target.closest("[data-message]"); if (message) messageCandidate(message.dataset.message);
       const pick = e.target.closest("[data-pick]");
@@ -6164,6 +6214,181 @@
     if (row) row.classList.toggle("is-selected", on);
     renderBulkBar();
     renderProviderBulkActions();
+  }
+  const DATA_COLS = 9;
+  async function loadDataFacets(){
+    if (S.dataFacetsLoaded || !isRecruiter()) return;
+    try {
+      const f = await get("/api/data-directory/facets");
+      S.dataFacetsLoaded = true;
+      $("#data-category").innerHTML = '<option value="">Any category</option>' +
+        (f.categories || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+      $("#data-state").innerHTML = '<option value="">Any state</option>' +
+        (f.states || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+      $("#data-category").value = S.dataFilters.category;
+      $("#data-state").value = S.dataFilters.state_code;
+    } catch(e) { /* Text filters and the first page remain usable. */ }
+  }
+  function dataRow(p){
+    const name = clean(p.display_name) || "Name unavailable";
+    const loc = [p.city, p.state_code, p.zip_code].filter(Boolean).join(", ");
+    const unlocked = S.dataUnlocked.get(p.provider_id);
+    const lookup = S.dataLookupJobs.get(p.source_record_key);
+    let contact;
+    if (unlocked) {
+      const lines = [unlocked.email ? `<a href="mailto:${esc(unlocked.email)}">${esc(unlocked.email)}</a>` : "",
+                     unlocked.phone ? `<a href="tel:${esc(unlocked.phone)}">${esc(unlocked.phone)}</a>` : ""].filter(Boolean);
+      contact = lines.length ? lines.join("<br>") : '<span class="cell-none">No contact on file</span>';
+    } else if (p.record_type === "profile" && (p.has_email || p.has_phone || p.has_resume)) {
+      contact = `<button class="reveal-btn" data-data-reveal="${esc(p.provider_id)}"><i class="fas fa-unlock-keyhole"></i>Reveal</button>`;
+    } else if (lookup && lookup.status === "completed") {
+      contact = [lookup.email ? `<a href="mailto:${esc(lookup.email)}">${esc(lookup.email)}</a>` : "",
+                 lookup.phone ? `<a href="tel:${esc(lookup.phone)}">${esc(lookup.phone)}</a>` : ""].filter(Boolean).join("<br>") || "—";
+    } else {
+      const pending = lookup && ["queued","processing"].includes(lookup.status);
+      const label = pending ? "Searching…" : lookup && ["failed","not_found"].includes(lookup.status) ? "Try again" : "Find contact";
+      contact = S.features.contact_lookup
+        ? `<button class="reveal-btn" data-data-lookup="${esc(p.source_record_key)}" ${pending ? "disabled" : ""}><i class="fas fa-magnifying-glass"></i>${label}</button>`
+        : '<span class="cell-none">No contact on file</span>';
+    }
+    const resume = p.has_resume
+      ? (unlocked || (lookup && lookup.status === "completed") || isAdmin()
+          ? `<button class="btn ghost small" data-data-resume="${esc(p.provider_id)}">View résumé</button>`
+          : `<span class="muted">Reveal to view</span>`)
+      : '<span class="cell-none">No résumé</span>';
+    return `<tr><td><input class="data-row-check" type="checkbox" data-data-pick="${esc(p.source_record_key)}" ${S.dataSelected.has(p.source_record_key) ? "checked" : ""} aria-label="Select ${esc(name)}"></td><td><div class="cell-name">${esc(name)}</div>${p.npi_number ? `<div class="cell-sub">NPI ${esc(p.npi_number)}</div>` : ""}</td>
+      <td>${esc(p.credential || p.profession || p.license_type) || "—"}</td>
+      <td>${esc(p.specialty) || "—"}</td><td>${esc(p.job_category) || "—"}</td>
+      <td>${esc(loc) || "—"}</td><td><span class="badge">${p.record_type === "license" ? "License" : "Profile"}</span></td>
+      <td>${resume}</td><td>${contact}</td></tr>`;
+  }
+  async function loadData(){
+    if (!isRecruiter()) return;
+    const seq = ++S.dataRequest;
+    if (S.dataAbort) S.dataAbort.abort();
+    S.dataAbort = new AbortController();
+    const status = $("#data-loading-status");
+    status.classList.remove("hidden", "is-error");
+    status.innerHTML = '<span class="spinner sm"></span><strong>Loading data…</strong><span>Showing the next page of matching records.</span>';
+    const params = new URLSearchParams({limit:"40"});
+    Object.entries(S.dataFilters).forEach(([key,value]) => { if (value) params.set(key,value); });
+    if (S.dataCursor) params.set("cursor", S.dataCursor);
+    try {
+      const d = await getWithSignal("/api/data-directory?" + params, S.dataAbort.signal);
+      if (seq !== S.dataRequest) return;
+      status.classList.add("hidden");
+      S.dataLastItems = d.items || [];
+      $("#data-grid").innerHTML = d.items.length ? d.items.map(dataRow).join("") :
+        emptyRow(DATA_COLS, "No records match these filters", "Try another specialty, category, state, or ZIP.", "fa-database");
+      $("#data-select-all").checked = d.items.length > 0 && d.items.every(p => S.dataSelected.has(p.source_record_key));
+      renderDataBulkActions();
+      if (d.items.length) restoreDataLookupStatuses(d.items);
+      $("#data-count").textContent = d.items.length ? `Page ${S.dataBack.length + 1} · ${d.items.length} records on this page` : "No matching records";
+      $("#data-pager").innerHTML = `<button class="btn small" id="data-prev" ${!S.dataBack.length ? "disabled" : ""}>Prev</button>
+        <span class="pager-label">Page ${S.dataBack.length + 1}</span>
+        <button class="btn small" id="data-next" ${!d.has_next ? "disabled" : ""}>Next</button>`;
+      $("#data-prev").onclick = () => { S.dataCursor = S.dataBack.pop() || ""; loadData(); document.querySelector(".main").scrollTo(0,0); };
+      $("#data-next").onclick = () => { S.dataBack.push(S.dataCursor); S.dataCursor = d.next_cursor; loadData(); document.querySelector(".main").scrollTo(0,0); };
+    } catch(e) {
+      if (seq !== S.dataRequest || e.name === "AbortError") return;
+      status.classList.remove("hidden"); status.classList.add("is-error");
+      status.innerHTML = `<i class="fas fa-triangle-exclamation"></i><strong>Could not load data.</strong><span>${esc(e.message || "Please retry.")}</span>`;
+      $("#data-grid").innerHTML = errorRow(DATA_COLS, "Could not load data");
+      $("#data-pager").innerHTML = '<button class="btn small" id="data-retry">Retry</button>';
+      $("#data-retry").onclick = loadData;
+    }
+  }
+  function dataFiltersChanged(){
+    S.dataCursor = ""; S.dataBack = [];
+    loadData();
+  }
+  async function revealData(id){
+    try {
+      const d = await post(`/api/data-directory/contact/${encodeURIComponent(id)}`, {});
+      S.dataUnlocked.set(id,d);
+      $$("#data-grid tr").forEach(row => {
+        const btn = row.querySelector(`[data-data-reveal="${id}"]`);
+        if (btn) {
+          const cell = btn.closest("td");
+          cell.innerHTML = [d.email ? `<a href="mailto:${esc(d.email)}">${esc(d.email)}</a>` : "",
+                            d.phone ? `<a href="tel:${esc(d.phone)}">${esc(d.phone)}</a>` : ""].filter(Boolean).join("<br>") || '<span class="cell-none">No contact on file</span>';
+          const resume = row.children[7];
+          if (d.has_resume && resume && resume.tagName === "TD") resume.innerHTML = `<button class="btn ghost small" data-data-resume="${esc(id)}">View résumé</button>`;
+        }
+      });
+      if (d.credits_remaining != null) refreshCredits();
+    } catch(e) { toast(e.message || "Could not reveal this record.", {kind:"err"}); }
+  }
+  async function viewDataResume(id){
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const d = await get(`/api/data-directory/resume/${encodeURIComponent(id)}`);
+      if (tab) tab.location.href = d.url; else window.location.href = d.url;
+    } catch(e) {
+      if (tab) tab.close();
+      toast(e.message || "Could not open résumé.", {kind:"err"});
+    }
+  }
+  function repaintDataRows(){
+    if (!S.dataLastItems.length) return;
+    $("#data-grid").innerHTML = S.dataLastItems.map(dataRow).join("");
+    const all = $("#data-select-all");
+    all.checked = S.dataLastItems.every(p => S.dataSelected.has(p.source_record_key));
+    renderDataBulkActions();
+  }
+  function renderDataBulkActions(){
+    const count = S.dataSelected.size;
+    $("#data-bulk-count").textContent = count ? `${count} selected` : "";
+    $("#data-bulk-clear").classList.toggle("hidden", !count);
+    const eligible = [...S.dataSelected].filter(k => !["queued","processing","completed"].includes(S.dataLookupJobs.get(k)?.status));
+    const button = $("#data-bulk-find-contact");
+    button.classList.toggle("hidden", !S.features.contact_lookup || !eligible.length);
+    button.innerHTML = `<i class="fas fa-magnifying-glass"></i>Find contacts (${eligible.length})`;
+  }
+  async function findDataContacts(keys){
+    keys = [...new Set(keys)];
+    if (!keys.length || keys.length > 50) return toast("Select between 1 and 50 records.", {kind:"err"});
+    keys.forEach(key => S.dataLookupJobs.set(key,{status:"queued"}));
+    repaintDataRows();
+    try {
+      const queued = await post("/api/data-directory/contacts/lookup", {record_keys:keys});
+      const jobs = queued.jobs || [];
+      jobs.forEach(job => S.dataLookupJobs.set(job.record_key,job));
+      repaintDataRows();
+      toast(`${jobs.length} contact search${jobs.length === 1 ? "" : "es"} added to the queue.`, {kind:"info"});
+      pollDataLookupJobs(jobs);
+    } catch(e) {
+      keys.forEach(key => S.dataLookupJobs.delete(key));
+      repaintDataRows();
+      toast(e.message || "Contact search could not start.", {kind:"err"});
+    }
+  }
+  async function restoreDataLookupStatuses(items){
+    try {
+      const keys = items.map(p => p.source_record_key).join(",");
+      const response = await get(`/api/data-directory/contacts/lookup/records?record_keys=${encodeURIComponent(keys)}`);
+      (response.jobs || []).forEach(job => S.dataLookupJobs.set(job.record_key,job));
+      repaintDataRows();
+      pollDataLookupJobs(response.jobs || []);
+    } catch(e) { /* A failed status refresh must not block the directory. */ }
+  }
+  async function pollDataLookupJobs(jobs){
+      const remaining = new Set(jobs.filter(j => ["queued","processing"].includes(j.status))
+        .map(j => j.job_id).filter(id => !S.dataLookupPolling.has(id)));
+      const claimed = [...remaining];
+      remaining.forEach(id => S.dataLookupPolling.add(id));
+      try { while (remaining.size){
+        await new Promise(resolve => setTimeout(resolve,2500));
+        let response;
+        try { response = await get(`/api/data-directory/contacts/lookup/status?job_ids=${encodeURIComponent([...remaining].join(","))}`); }
+        catch(e) { continue; }
+        (response.jobs || []).forEach(job => {
+          S.dataLookupJobs.set(job.record_key,job);
+          if (!["queued","processing"].includes(job.status)) remaining.delete(job.job_id);
+        });
+        repaintDataRows();
+      }} finally { claimed.forEach(id => S.dataLookupPolling.delete(id)); }
+      refreshCredits();
   }
   function eligibleDirectoryLookupNpis(){
     return [...S.selected].filter(id => {
