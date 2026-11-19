@@ -25,6 +25,10 @@ class NpiAiSearchTests(unittest.TestCase):
         self.assertEqual(filters["specialty_text"], "critical care")
         self.assertIn("years of experience", ignored)
 
+    def test_resume_request_is_disclosed_as_unsupported(self):
+        _filters, ignored = _copilot_directory_filters("ICU nurses with resumes")
+        self.assertIn("resume availability", ignored)
+
     def test_state_code_does_not_pollute_specialty_search(self):
         filters, _ = _copilot_directory_filters("hematology in NM")
         self.assertEqual(filters["q"], "hematology")

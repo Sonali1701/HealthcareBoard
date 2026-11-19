@@ -263,6 +263,8 @@ def _copilot_directory_filters(message: str, context: dict | None = None) -> tup
         unsupported.append("years of experience")
     if parsed.get("contact_available"):
         unsupported.append("contact availability")
+    if parsed.get("resume_status"):
+        unsupported.append("resume availability")
     if parsed.get("licensed_state") or parsed.get("compact"):
         unsupported.append("license eligibility")
     if parsed.get("travel_experience") or parsed.get("worked_at"):

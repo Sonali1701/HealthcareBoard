@@ -791,6 +791,9 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em}
 .ai-answer{display:flex;align-items:flex-start;gap:10px;color:var(--ink);font-size:15px;line-height:1.5}
 .ai-answer .ai-spark{color:var(--accent);margin-top:3px;flex:0 0 auto}
 .ai-answer-body{flex:1}
+.ai-source{display:flex;flex-direction:column;gap:10px;min-width:0}
+.ai-source h3{margin:0;color:var(--ink);font-size:16px}
+.ai-source p{margin:0;font-size:13px}
 .ai-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px}
 .ai-card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:14px;
   box-shadow:var(--shadow);display:flex;flex-direction:column;gap:11px;transition:box-shadow .15s,border-color .15s}

@@ -9,7 +9,7 @@
     providerLastData:null, facetsLoaded:false, activeCounts:null,
     dataFilters:{q:"",category:"",specialty:"",state_code:"",zip_code:"",radius_mi:"",resume:"",contact:"",source:""},
     dataCursor:"", dataBack:[], dataRequest:0, dataAbort:null, dataFacetsLoaded:false,
-    dataUnlocked:new Map(), dataSelected:new Set(), dataLookupJobs:new Map(), dataLastItems:[], dataLookupPolling:new Set(),
+    dataUnlocked:new Map(), dataSelected:new Set(), dataLookupJobs:new Map(), dataLastItems:[], dataLookupPolling:new Set(), aiDataCards:new Map(),
     // Messaging + talent pools
     threads:[], activeThread:null, threadPoll:null, msgFilter:"",
     threadsReq:0, threadReq:0,
@@ -3445,6 +3445,14 @@
     return `<div class="table-wrap"><table class="table"><thead>${AI_TABLE_HEAD}</thead>`
       + `<tbody>${items.map(providerRow).join("")}</tbody></table></div>`;
   }
+  const AI_DATA_TABLE_HEAD =
+    '<tr><th></th><th>Name</th><th>Credential / profession</th><th>Specialty</th>'
+    + '<th>Category</th><th>Location</th><th>Source</th><th>Resume</th><th>Contact</th></tr>';
+  function aiDataResultsTable(items){
+    items.forEach(p => S.aiDataCards.set(p.source_record_key, p));
+    return `<div class="table-wrap"><table class="table"><thead>${AI_DATA_TABLE_HEAD}</thead>`
+      + `<tbody>${items.map(dataRow).join("")}</tbody></table></div>`;
+  }
   // Re-render any AI result row for a profile whose contact was just revealed.
   function refreshAiCard(id){
     const p = S.providerCards.get(id);
@@ -3476,38 +3484,56 @@
     thread.appendChild(turn);
     turn.scrollIntoView({behavior:"smooth", block:"start"});
     const body = turn.querySelector(".ai-answer-body");
-    try {
-      // Send the previous turn's filters so a follow-up refines instead of
-      // restarting ("RN nurses" → then "only in California").
-      const r = await post("/api/provider-directory/copilot", {message, context: S.aiContext || null});
-      S.aiContext = r.filters || {};   // carry forward for the next refinement
-      $("#ai-input").placeholder = "Refine your search — e.g. only in California, with 10+ years";
-      body.textContent = r.answer || "Here's what I found.";
-      const items = r.items || [];
-      if (items.length){
-        const results = document.createElement("div");
-        results.className = "ai-results";
-        results.innerHTML = aiResultsTable(items);
-        turn.appendChild(results);
-        if (r.has_next && !r.filters?.specialty_text){
-          const more = document.createElement("button");
-          more.className = "ai-viewall";
-          more.innerHTML = '<i class="fas fa-table-list"></i>View more in the Providers directory';
-          more.onclick = () => copilotApplyToDirectory(r.filters || {});
-          turn.appendChild(more);
+    const previous = S.aiContext || {};
+    S.aiContext = {providers:previous.providers || {}, data:previous.data || {}};
+    const searchSource = async (label, endpoint, context, renderTable, applyMore) => {
+      const section = document.createElement("section");
+      section.className = "ai-source";
+      section.innerHTML = `<h3>${label}</h3><p class="muted">Searching…</p>`;
+      turn.appendChild(section);
+      try {
+        const r = await post(endpoint, {message, context});
+        S.aiContext[label.toLowerCase()] = r.filters || {};
+        section.querySelector("p").textContent = r.answer || "Search complete.";
+        const items = r.items || [];
+        if (items.length){
+          const results = document.createElement("div");
+          results.className = "ai-results";
+          results.innerHTML = renderTable(items);
+          section.appendChild(results);
+          if (label === "Data") restoreDataLookupStatuses(items);
+          if (r.has_next && (label !== "Providers" || !r.filters?.specialty_text)
+              && !(label === "Data" && (r.filters?.min_experience != null || r.filters?.max_experience != null))){
+            const more = document.createElement("button");
+            more.className = "ai-viewall";
+            more.textContent = `View more in ${label}`;
+            more.onclick = () => applyMore(r.filters || {});
+            section.appendChild(more);
+          }
         }
+        return true;
+      } catch(e) {
+        section.querySelector("p").textContent = e.status === 403
+          ? `${label} is available to recruiter accounts.`
+          : `${label} search is temporarily unavailable. Try again.`;
+        return false;
       }
-    } catch(e) {
-      body.textContent = e.status === 403
-        ? "AI Search is available to recruiter accounts."
-        : "Sorry — I couldn't complete that search. Please try again.";
-    } finally {
-      S.aiBusy = false;
-      $("#ai-input").focus();
-    }
+    };
+    const results = await Promise.all([
+      searchSource("Providers", "/api/provider-directory/copilot", previous.providers || {},
+                   aiResultsTable, copilotApplyToDirectory),
+      searchSource("Data", "/api/data-directory/copilot", previous.data || {},
+                   aiDataResultsTable, copilotApplyToData),
+    ]);
+    body.textContent = results.some(Boolean) ? "Results from Providers and Data" :
+      "Both searches are temporarily unavailable. Please try again.";
+    $("#ai-input").placeholder = "Refine your search — e.g. only in California, with 10+ years";
+    S.aiBusy = false;
+    $("#ai-input").focus();
   }
   function aiNewSearch(){
     S.aiContext = null;
+    S.aiDataCards.clear();
     $("#ai-thread").innerHTML = "";
     $("#page-ai").classList.remove("has-results");   // back to the centered hero
     $("#ai-input").value = "";
@@ -3633,6 +3659,19 @@
     showPage("providers");   // makes the page active + loads facets + loadProviders
     S.activeCounts = S.facetCategories;
     paintCounts();
+  }
+  function copilotApplyToData(filters){
+    const keys = ["q", "category", "specialty", "state_code", "zip_code", "radius_mi",
+                  "resume", "contact", "source"];
+    S.dataFilters = Object.fromEntries(keys.map(key => [key, filters[key] == null ? "" : String(filters[key])]));
+    S.dataCursor = ""; S.dataBack = [];
+    for (const [key, selector] of Object.entries({q:"#data-q", category:"#data-category",
+        specialty:"#data-specialty", state_code:"#data-state", zip_code:"#data-zip",
+        resume:"#data-resume", contact:"#data-contact", source:"#data-source"})){
+      const control = $(selector);
+      if (control) control.value = S.dataFilters[key];
+    }
+    showPage("data");
   }
 
   // --- Get Extension page -------------------------------------------------
@@ -6249,7 +6288,7 @@
           ? `<button class="btn ghost small" data-data-resume="${esc(p.provider_id)}">View résumé</button>`
           : `<span class="muted">Reveal to view</span>`)
       : '<span class="cell-none">No résumé</span>';
-    return `<tr><td><input class="data-row-check" type="checkbox" data-data-pick="${esc(p.source_record_key)}" ${S.dataSelected.has(p.source_record_key) ? "checked" : ""} aria-label="Select ${esc(name)}"></td><td><div class="cell-name">${esc(name)}</div>${p.npi_number ? `<div class="cell-sub">NPI ${esc(p.npi_number)}</div>` : ""}</td>
+    return `<tr data-data-key="${esc(p.source_record_key)}"><td><input class="data-row-check" type="checkbox" data-data-pick="${esc(p.source_record_key)}" ${S.dataSelected.has(p.source_record_key) ? "checked" : ""} aria-label="Select ${esc(name)}"></td><td><div class="cell-name">${esc(name)}</div>${p.npi_number ? `<div class="cell-sub">NPI ${esc(p.npi_number)}</div>` : ""}</td>
       <td>${esc(p.credential || p.profession || p.license_type) || "—"}</td>
       <td>${esc(p.specialty) || "—"}</td><td>${esc(p.job_category) || "—"}</td>
       <td>${esc(loc) || "—"}</td><td><span class="badge">${p.record_type === "license" ? "License" : "Profile"}</span></td>
@@ -6309,6 +6348,7 @@
           if (d.has_resume && resume && resume.tagName === "TD") resume.innerHTML = `<button class="btn ghost small" data-data-resume="${esc(id)}">View résumé</button>`;
         }
       });
+      refreshAiDataRows();
       if (d.credits_remaining != null) refreshCredits();
     } catch(e) { toast(e.message || "Could not reveal this record.", {kind:"err"}); }
   }
@@ -6322,12 +6362,23 @@
       toast(e.message || "Could not open résumé.", {kind:"err"});
     }
   }
+  function refreshAiDataRows(){
+    $$("#ai-thread tr[data-data-key]").forEach(row => {
+      const item = S.aiDataCards.get(row.dataset.dataKey);
+      if (!item) return;
+      const body = document.createElement("tbody");
+      body.innerHTML = dataRow(item);
+      row.replaceWith(body.firstElementChild);
+    });
+  }
   function repaintDataRows(){
-    if (!S.dataLastItems.length) return;
-    $("#data-grid").innerHTML = S.dataLastItems.map(dataRow).join("");
-    const all = $("#data-select-all");
-    all.checked = S.dataLastItems.every(p => S.dataSelected.has(p.source_record_key));
-    renderDataBulkActions();
+    if (S.dataLastItems.length){
+      $("#data-grid").innerHTML = S.dataLastItems.map(dataRow).join("");
+      const all = $("#data-select-all");
+      all.checked = S.dataLastItems.every(p => S.dataSelected.has(p.source_record_key));
+      renderDataBulkActions();
+    }
+    refreshAiDataRows();
   }
   function renderDataBulkActions(){
     const count = S.dataSelected.size;

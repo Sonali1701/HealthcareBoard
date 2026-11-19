@@ -148,7 +148,8 @@ def _authorize(user: CurrentUser) -> None:
         raise HTTPException(403, "Data is available to recruiters only")
 
 
-def _conditions(q, category, specialty, state_code, zip_code, radius_mi, resume, contact, source):
+def _conditions(q, category, specialty, state_code, zip_code, radius_mi, resume, contact, source,
+                min_experience=None, max_experience=None):
     # Rejected records have source evidence that makes them unsuitable for users.
     clauses = ["review_status <> 'rejected'"]
     params = {}
@@ -177,6 +178,12 @@ def _conditions(q, category, specialty, state_code, zip_code, radius_mi, resume,
     if source:
         clauses.append("record_type = :source")
         params["source"] = source
+    if min_experience is not None:
+        clauses.append("years_experience >= :min_experience")
+        params["min_experience"] = min_experience
+    if max_experience is not None:
+        clauses.append("years_experience <= :max_experience")
+        params["max_experience"] = max_experience
     return clauses, params
 
 
@@ -192,6 +199,8 @@ def search_data(
     resume: str = Query("", pattern="^(|with|without)$"),
     contact: str = Query("", pattern="^(|with|without)$"),
     source: str = Query("", pattern="^(|profile|license)$"),
+    min_experience: int | None = Query(None, ge=0, le=80),
+    max_experience: int | None = Query(None, ge=0, le=80),
     cursor: str = Query("", max_length=50),
     limit: int = Query(40, ge=1, le=60),
 ):
@@ -208,7 +217,8 @@ def search_data(
     if cursor and not re.fullmatch(r"(?:p:[0-9a-f-]{36}|l:[0-9]+)", cursor):
         raise HTTPException(422, "Invalid cursor")
     clauses, params = _conditions(q.strip(), category.strip(), specialty.strip(),
-                                  state_code, zip_code, radius_mi, resume, contact, source)
+                                  state_code, zip_code, radius_mi, resume, contact, source,
+                                  min_experience, max_experience)
     # Scan one indexed primary-key range at a time. No full-table COUNT or
     # OFFSET sort is required for the initial page or subsequent pages.
     rows = []
@@ -270,6 +280,110 @@ def search_data(
     next_cursor = (("p:" + last["provider_id"]) if last and last["record_type"] == "profile"
                    else ("l:" + str(last["license_record_id"])) if last else None)
     return {"items": page, "has_next": has_next, "next_cursor": next_cursor}
+
+
+class DataCopilotQuery(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    context: dict | None = None
+
+
+_AI_DATA_ROLES = {
+    "rn": "Registered Nurse", "registered nurses": "Registered Nurse",
+    "np": "Nurse Practitioner", "nurse practitioners": "Nurse Practitioner",
+    "fnp": "Family Nurse Practitioner",
+    "pt": "Physical Therapist", "physical therapists": "Physical Therapist",
+    "ot": "Occupational Therapist", "occupational therapists": "Occupational Therapist",
+    "lpn": "Licensed Practical Nurse", "lvn": "Licensed Vocational Nurse",
+    "pa": "Physician Assistant", "crna": "Nurse Anesthetist",
+}
+
+
+def _copilot_data_filters(message: str, context: dict | None = None) -> tuple[dict, list[str]]:
+    """Translate a natural-language request into filters supported by Data."""
+    from .profiles import _copilot_rule_filters
+    from .provider_directory import _copilot_directory_filters
+
+    prior = context if isinstance(context, dict) else {}
+    if re.search(r"\b(new search|start over|reset|clear filters)\b", message, re.I):
+        prior = {}
+    allowed = ("q", "category", "specialty", "state_code", "zip_code", "radius_mi",
+               "resume", "contact", "min_experience", "max_experience")
+    filters = {key: prior[key] for key in allowed if prior.get(key) is not None and prior.get(key) != ""}
+    parsed = _copilot_rule_filters(message)
+    common, _ = _copilot_directory_filters(message, {
+        "q": filters.get("q"), "state_code": filters.get("state_code"),
+        "zip": filters.get("zip_code"), "radius_mi": filters.get("radius_mi"),
+        "specialty_text": filters.get("specialty"),
+    })
+    if common.get("q"):
+        query = str(common["q"]).strip()
+        filters["q"] = _AI_DATA_ROLES.get(query.casefold(), query)
+    if parsed.get("npi_number"):
+        filters["q"] = parsed["npi_number"]
+    if parsed.get("category") in _CATEGORIES:
+        filters["category"] = parsed["category"]
+    for source_key, target_key in (("state_code", "state_code"), ("zip", "zip_code"),
+                                   ("radius_mi", "radius_mi")):
+        if common.get(source_key):
+            filters[target_key] = common[source_key]
+    if common.get("specialty_text"):
+        specialty = common["specialty_text"]
+        # Source records commonly use ICU/ER/PACU rather than the NPI wording.
+        if re.search(r"\bicu\b", message, re.I):
+            specialty = "ICU"
+        elif re.search(r"\bpacu\b", message, re.I):
+            specialty = "PACU"
+        elif re.search(r"\ber\b", message, re.I):
+            specialty = "Emergency"
+        filters["specialty"] = specialty
+    if parsed.get("resume_status"):
+        filters["resume"] = "with" if parsed["resume_status"] == "with_resume" else "without"
+    if parsed.get("contact_available"):
+        filters["contact"] = "with"
+    for key in ("min_experience", "max_experience"):
+        if parsed.get(key) is not None:
+            filters[key] = parsed[key]
+    notes = []
+    if parsed.get("licensed_state") or parsed.get("compact"):
+        notes.append("license eligibility")
+    if parsed.get("travel_experience") or parsed.get("worked_at"):
+        notes.append("work history")
+    if parsed.get("contact_available") in {"both", "email", "phone"}:
+        notes.append("specific email or phone availability")
+    if parsed.get("city") and not filters.get("zip_code"):
+        notes.append("city distance (enter a ZIP for radius search)")
+    if not filters.get("zip_code"):
+        filters.pop("radius_mi", None)
+    return filters, notes
+
+
+@router.post("/copilot")
+def copilot_data(body: DataCopilotQuery, user: CurrentUser):
+    _authorize(user)
+    filters, unsupported = _copilot_data_filters(body.message, body.context)
+    if not filters:
+        return {"answer": "Try a profession, specialty, state, or ZIP code.",
+                "filters": {}, "items": [], "total": 0, "has_next": False}
+    page = search_data(
+        user=user, q=str(filters.get("q") or "")[:120],
+        category=str(filters.get("category") or ""),
+        specialty=str(filters.get("specialty") or ""),
+        state_code=str(filters.get("state_code") or ""),
+        zip_code=str(filters.get("zip_code") or ""),
+        radius_mi=filters.get("radius_mi"),
+        resume=str(filters.get("resume") or ""),
+        contact=str(filters.get("contact") or ""),
+        source="", min_experience=filters.get("min_experience"),
+        max_experience=filters.get("max_experience"), cursor="", limit=12,
+    )
+    items = page["items"]
+    note = (" I could not filter by " + ", ".join(unsupported) +
+            " because these fields are not verified in Data.") if unsupported else ""
+    answer = (f"Showing {len(items)} matching Data records" +
+              (" (more available)." if page["has_next"] else ".") + note) if items else (
+                  "No Data records matched those filters." + note)
+    return {"answer": answer, "filters": filters, "items": items,
+            "total": len(items), "has_next": page["has_next"]}
 
 
 @router.post("/contact/{provider_id}")
