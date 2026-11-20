@@ -3148,7 +3148,7 @@
     } catch(e) { toast(e.message || "The file could not be uploaded.",
                        {title:"Upload failed", kind:"err"}); }
   }
-  function renderResume(r){
+  function renderResume(r, options = {}){
     const sec = r.sections || {};
     const ini = (r.name || "?").split(/\s+/).map(w => w[0] || "").join("").slice(0, 2).toUpperCase();
     const lines = arr => (arr && arr.length) ? `<div class="rz-lines">${arr.map(x => `<p>${esc(x)}</p>`).join("")}</div>` : `<div class="rz-empty">Not listed on this resume.</div>`;
@@ -3213,10 +3213,10 @@
               : "")}
         <span class="rz-lock"><i class="fas fa-${r.withheld ? "user-secret" : "lock"}"></i> ${r.withheld ? "Name withheld" : "View only"}</span>
       </div>
-      <div class="rz-ai" id="rz-ai-summary">
+      ${options.showAi === false ? "" : `<div class="rz-ai" id="rz-ai-summary">
         <div class="rz-ai-head"><i class="fas fa-wand-magic-sparkles"></i>AI Summary</div>
         <div class="rz-ai-body"><span class="copilot-dots"><i></i><i></i><i></i></span> Generating a recruiter briefing…</div>
-      </div>
+      </div>`}
       <div class="rz-tabs">${sections.map((t, i) => `<button class="rz-tab${i === 0 ? " active" : ""}" data-rz="${t[0]}">${t[1]}</button>`).join("")}</div>
       <div class="rz-doc">
         ${sections.map(t => `<section class="rz-sec" id="rz-${t[0]}"><h4>${t[1]}</h4>${t[2]}</section>`).join("")}
@@ -3669,9 +3669,16 @@
         specialty:"#data-specialty", state_code:"#data-state", zip_code:"#data-zip",
         resume:"#data-resume", contact:"#data-contact", source:"#data-source"})){
       const control = $(selector);
-      if (control) control.value = S.dataFilters[key];
+      if (control) {
+        if (key === "specialty" && S.dataFilters[key] &&
+            ![...control.options].some(option => option.value === S.dataFilters[key])) {
+          control.add(new Option(S.dataFilters[key], S.dataFilters[key]));
+        }
+        control.value = S.dataFilters[key];
+      }
     }
     showPage("data");
+    loadDataSpecialties();
   }
 
   // --- Get Extension page -------------------------------------------------
@@ -4169,7 +4176,7 @@
       S.provider.state_code = $("#provider-state").value;
       providerFilterChanged();
     };
-    ["q","specialty","zip"].forEach(key => {
+    ["q","zip"].forEach(key => {
       const el = $("#data-" + key);
       el.addEventListener("input", debounce(() => {
         if (key === "zip") el.value = el.value.replace(/\D/g, "").slice(0,5);
@@ -4189,9 +4196,13 @@
       S.dataFilters.radius_mi = e.target.value;
       if (S.dataFilters.zip_code) dataFiltersChanged();
     });
-    ["category","state","resume","contact","source"].forEach(key => {
+    ["category","specialty","state","resume","contact","source"].forEach(key => {
       $("#data-" + key).onchange = e => {
         S.dataFilters[key === "state" ? "state_code" : key] = e.target.value;
+        if (key === "category") {
+          S.dataFilters.specialty = "";
+          loadDataSpecialties();
+        }
         dataFiltersChanged();
       };
     });
@@ -6249,7 +6260,8 @@
   }
   const DATA_COLS = 9;
   async function loadDataFacets(){
-    if (S.dataFacetsLoaded || !isRecruiter()) return;
+    if (!isRecruiter()) return;
+    if (S.dataFacetsLoaded) { loadDataSpecialties(); return; }
     try {
       const f = await get("/api/data-directory/facets");
       S.dataFacetsLoaded = true;
@@ -6259,7 +6271,27 @@
         (f.states || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
       $("#data-category").value = S.dataFilters.category;
       $("#data-state").value = S.dataFilters.state_code;
+      loadDataSpecialties();
     } catch(e) { /* Text filters and the first page remain usable. */ }
+  }
+  async function loadDataSpecialties(){
+    const category = S.dataFilters.category || "";
+    const selected = S.dataFilters.specialty || "";
+    const select = $("#data-specialty");
+    select.innerHTML = '<option value="">Loading specialties...</option>';
+    try {
+      const result = await get("/api/data-directory/specialties?category=" + encodeURIComponent(category));
+      if (category !== (S.dataFilters.category || "")) return;
+      const values = result.specialties || [];
+      if (selected && !values.includes(selected)) values.push(selected);
+      values.sort((a,b) => a.localeCompare(b));
+      select.innerHTML = '<option value="">Any specialty</option>' + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+      select.value = selected;
+    } catch(e) {
+      select.innerHTML = '<option value="">Any specialty</option>' +
+        (selected ? `<option value="${esc(selected)}">${esc(selected)}</option>` : "");
+      select.value = selected;
+    }
   }
   function dataRow(p){
     const name = clean(p.display_name) || "Name unavailable";
@@ -6353,13 +6385,23 @@
     } catch(e) { toast(e.message || "Could not reveal this record.", {kind:"err"}); }
   }
   async function viewDataResume(id){
-    const tab = window.open("about:blank", "_blank");
+    $("#modal-root").innerHTML = `<div class="modal"><div class="modal-card resume-modal"><div class="modal-head"><strong>Resume</strong><button class="icon-btn" data-close-modal><i class="fas fa-xmark"></i></button></div><div class="modal-body">${loading("Loading resume...")}</div></div></div>`;
     try {
       const d = await get(`/api/data-directory/resume/${encodeURIComponent(id)}`);
-      if (tab) tab.location.href = d.url; else window.location.href = d.url;
+      $("#modal-root .modal-head strong").textContent = `${d.name || "Provider"} — Resume`;
+      $("#modal-root .modal-body").innerHTML = renderResume(d, {showAi:false});
+      if (d.original_url) {
+        const original = document.createElement("a");
+        original.className = "btn ghost small";
+        original.textContent = "Open original";
+        original.href = d.original_url;
+        original.target = "_blank";
+        original.rel = "noopener noreferrer";
+        $("#modal-root .modal-head").insertBefore(original, $("#modal-root [data-close-modal]"));
+      }
+      wireResumeNav();
     } catch(e) {
-      if (tab) tab.close();
-      toast(e.message || "Could not open résumé.", {kind:"err"});
+      $("#modal-root .modal-body").innerHTML = `<div style="padding:24px">${esc(e.message || "Could not load resume.")}</div>`;
     }
   }
   function refreshAiDataRows(){

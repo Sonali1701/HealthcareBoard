@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import time
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -37,12 +38,37 @@ _CATEGORIES = (
 _STATES = tuple("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI "
                 "MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT "
                 "VA WA WV WI WY".split())
+_SPECIALTY_CACHE: dict[str, tuple[float, list[str]]] = {}
 
 
 @router.get("/facets")
 def data_facets(user: CurrentUser):
     _authorize(user)
     return {"categories": _CATEGORIES, "states": _STATES}
+
+
+@router.get("/specialties")
+def data_specialties(user: CurrentUser, category: str = Query("", max_length=120)):
+    _authorize(user)
+    if category and category not in _CATEGORIES:
+        raise HTTPException(422, "Unknown category")
+    cached = _SPECIALTY_CACHE.get(category)
+    if cached and cached[0] > time.monotonic():
+        return {"specialties": cached[1]}
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SET LOCAL statement_timeout = '20000ms'"))
+            values = conn.execute(text('''SELECT specialty FROM public."New_provider_unified"
+                WHERE review_status <> 'rejected' AND specialty IS NOT NULL
+                  AND btrim(specialty) <> ''
+                  AND (:category = '' OR job_category = :category)
+                GROUP BY specialty ORDER BY count(*) DESC, specialty LIMIT 250'''),
+                {"category": category}).scalars().all()
+    except SQLAlchemyError as exc:
+        raise HTTPException(503, "Specialties are temporarily unavailable") from exc
+    result = sorted(values, key=str.casefold)
+    _SPECIALTY_CACHE[category] = (time.monotonic() + 600, result)
+    return {"specialties": result}
 
 
 class LookupRequest(BaseModel):
@@ -420,7 +446,12 @@ def data_resume(provider_id: str, user: CurrentUser, db: DbSession):
     _authorize(user)
     if not re.fullmatch(r"[0-9a-f-]{36}", provider_id):
         raise HTTPException(404, "Record not found")
-    row = db.execute(text('''SELECT resume_url FROM public."New_provider"
+    row = db.execute(text('''SELECT resume_url, first_name, last_name, credential,
+                                  headline, specialty, job_category, years_experience,
+                                  city, state_code, zip_code, npi_number, work_authorization,
+                                  resume_sections, work_history, education, skills,
+                                  certifications, licenses, extracted_text
+                           FROM public."New_provider"
                              WHERE provider_id = :id'''), {"id": provider_id}).mappings().first()
     if not row or not row["resume_url"]:
         raise HTTPException(404, "No resume on file")
@@ -439,4 +470,58 @@ def data_resume(provider_id: str, user: CurrentUser, db: DbSession):
     db.add(AuditLog(actor_user_id=user.user_id, action="recovered_data_resume_opened",
                     entity_type="recovered_profile", entity_id=provider_id))
     db.commit()
-    return {"url": url}
+    def resume_line(item):
+        if isinstance(item, dict):
+            return " · ".join(str(value).strip() for value in item.values()
+                              if isinstance(value, (str, int, float)) and str(value).strip())
+        return str(item).strip()
+
+    sections = {}
+    section_names = {
+        "summary": "Professional Summary", "professional_summary": "Professional Summary",
+        "experience": "Experience", "work_experience": "Experience",
+        "education": "Education & Training", "training": "Education & Training",
+        "skills": "Skills", "languages": "Languages",
+        "certifications": "Certifications & Licensure", "licenses": "Certifications & Licensure",
+    }
+    for key, value in (row["resume_sections"] or {}).items():
+        label = section_names.get(key.casefold().replace(" ", "_"), key)
+        lines = value if isinstance(value, list) else [value]
+        sections.setdefault(label, []).extend(line for item in lines
+                                               if (line := resume_line(item)))
+    if not any(sections.values()) and row["extracted_text"]:
+        sections["Professional Summary"] = [line.strip() for line in row["extracted_text"].splitlines()
+                                             if line.strip()][:120]
+    work = [({"title": item.get("title") or item.get("job_title"),
+              "employer": item.get("employer") or item.get("employer_name"),
+              "location": item.get("location"), "start": item.get("start") or item.get("start_date"),
+              "end": item.get("end") or item.get("end_date")}
+             if isinstance(item, dict) else {"title": resume_line(item)})
+            for item in (row["work_history"] or [])]
+    education = [({"degree": item.get("degree") or item.get("qualification"),
+                  "field": item.get("field"),
+                  "institution": item.get("institution") or item.get("school"),
+                  "year": item.get("year")}
+                 if isinstance(item, dict) else {"degree": resume_line(item)})
+                 for item in (row["education"] or [])]
+    skills = [resume_line(item) for item in (row["skills"] or []) if resume_line(item)]
+    certifications = [resume_line(item) for item in (row["certifications"] or [])
+                      if resume_line(item)]
+    if certifications:
+        sections.setdefault("Certifications & Licensure", []).extend(certifications)
+    source_licenses = [resume_line(item) for item in (row["licenses"] or [])
+                       if resume_line(item)]
+    if source_licenses:
+        sections.setdefault("Certifications & Licensure", []).extend(source_licenses)
+    location = ", ".join(str(row[field]) for field in ("city", "state_code", "zip_code") if row[field])
+    return {
+        "name": " ".join(part for part in (row["first_name"], row["last_name"]) if part) or "Provider",
+        "role": row["headline"] or row["specialty"] or row["job_category"],
+        "location": location, "credential": row["credential"],
+        "years_experience": row["years_experience"], "npi_number": row["npi_number"],
+        "work_authorization": row["work_authorization"],
+        "sections": sections, "work_history": work, "education": education,
+        "skills": skills, "licenses": [],
+        "can_download": False, "has_resume_file": False, "withheld": False,
+        "original_url": url,
+    }
