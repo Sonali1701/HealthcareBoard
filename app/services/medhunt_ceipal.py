@@ -379,8 +379,11 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict,
     name_parts = " ".join(str(candidate.get("name") or "").split()).split()
     if not name_parts:
         raise MedhuntCeipalError("Candidate name is required by Ceipal.")
-    real_email = next((value for value in _values(candidate.get("emails")) if _email_key(value)), "")
-    email = real_email or "no email"
+    email = next((value for value in _values(candidate.get("emails")) if _email_key(value)), "")
+    if not email:
+        raise MedhuntCeipalError(
+            "Candidate has no email address. Add an email before uploading to Ceipal."
+        )
     phone = next((value for value in _values(candidate.get("wireless_phones")) if _phone_key(value)), "")
     if not phone:
         phone = next((value for value in _values(candidate.get("phones")) if _phone_key(value)), "")
@@ -450,10 +453,6 @@ def _create_applicant(client: httpx.Client, token: str, candidate: dict,
         if applicant_id:
             return applicant_id
         if response.status_code == 201 and str(body.get("success")) == "1":
-            if not real_email:
-                # CEIPAL acknowledged creation. There is no unique email to
-                # read back, so keep its successful acknowledgement as the result.
-                return ""
             # The live endpoint acknowledges creation without an applicant ID.
             # Read by exact email to confirm the write and obtain the ID.
             existing = _find_existing_applicant(client, token, {"emails": [email]}, configuration)
@@ -470,16 +469,14 @@ def upload_candidate(candidate: dict, configuration: dict | None = None) -> dict
         raise MedhuntCeipalError("Ceipal applicant integration is not configured.")
     with httpx.Client(timeout=45.0) as client, _LOCK:
         token = _token(client, configuration)
-        existing = (_find_existing_applicant(client, token, candidate, configuration)
-                    if any(_email_key(value) for value in _values(candidate.get("emails")))
-                    else None)
+        existing = _find_existing_applicant(client, token, candidate, configuration)
         if existing:
             return existing
         applicant_id = _create_applicant(client, token, candidate, configuration)
         return {
             "state": "uploaded_to_ceipal",
             "blocked": False,
-            "checked": bool(any(_email_key(value) for value in _values(candidate.get("emails")))),
+            "checked": True,
             "applicant_id": applicant_id,
             "resume_submitted": bool(candidate.get("resume_content_base64")),
         }

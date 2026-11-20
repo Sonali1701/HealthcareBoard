@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import io
+import logging
 import re
 import secrets
 import zipfile
@@ -1179,6 +1180,9 @@ def medhunt_ceipal_candidate(body: MedhuntCeipalCandidate, request: Request, db:
         record_result("failed", error=str(exc))
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
+        logging.getLogger("halo.ceipal").exception(
+            "Unexpected Ceipal processing error for Medhunt candidate %s", body.candidate_id,
+        )
         record_result("failed", error="Ceipal candidate processing is temporarily unavailable")
         raise HTTPException(503, "Ceipal candidate processing is temporarily unavailable") from exc
     record_result(str(result.get("state") or "uploaded_to_ceipal"), result=result)
