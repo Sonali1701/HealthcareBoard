@@ -93,3 +93,17 @@ services:
         value: "100"
       - key: CONTACT_BACKFILL_NOT_FOUND_COOLDOWN_DAYS
         value: "30"
+
+  - type: cron
+    name: healthboard-resume-cleanup
+    runtime: docker
+    schedule: "*/5 * * * *"
+    dockerCommand: python -m scripts.run_resume_cleanup_cron
+    envVars:
+      # Set this to the Neon neondb connection string in Render.
+      - key: DATABASE_URL
+        sync: false
+      - key: RESUME_CLEANUP_BATCH_SIZE
+        value: "500"
+      - key: RESUME_CLEANUP_MAX_ROWS
+        value: "50000"
