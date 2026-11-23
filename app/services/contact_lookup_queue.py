@@ -11,19 +11,84 @@ import asyncio
 import logging
 from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from ..config import settings
 from ..database import SessionLocal, utcnow
 from ..models import (AuditLog, ContactLookupJob, Profile,
                       ProviderDirectoryContactLookupJob, RecoveredDataContactLookupJob, User)
-from . import quick_sourcer
+from . import nexus_contact_delivery, quick_sourcer
 
 logger = logging.getLogger("healthboard.contact_lookup_queue")
 LOOKUP_ACTION = "provider_contact_lookup"
 RELEASE_ACTION = "provider_contact_released"
 POLL_SECONDS = 0.75
 STALE_AFTER = timedelta(minutes=5)
+
+
+def _queue_found_contact(db, user: User, source_key: str, name: str,
+                         location: str, match) -> None:
+    """Capture verified source details for the existing durable Nexus worker."""
+    if not getattr(user, "medhunt_nexus_enabled", False):
+        return
+    parts = name.split()
+    place = [part.strip() for part in (location or "").split(",")]
+    identity = {
+        "first_name": parts[0] if parts else "",
+        "last_name": parts[-1] if len(parts) > 1 else "",
+        "email": match.email or "", "phone": match.phone or "",
+        "city": place[0] if place else "",
+        "state": place[1] if len(place) > 1 else "",
+    }
+    try:
+        if source_key.startswith("npi:"):
+            from ..routers.provider_directory import _engine_or_503
+            with _engine_or_503().connect() as conn:
+                source = conn.execute(text("""
+                    SELECT first_name, last_name, credential, specialty,
+                           city, state_code, zip_code
+                    FROM provider_directory WHERE npi = :npi
+                """), {"npi": source_key[4:]}).mappings().first()
+            identity["npi"] = source_key[4:]
+            if source:
+                identity.update(
+                    first_name=source["first_name"] or identity["first_name"],
+                    last_name=source["last_name"] or identity["last_name"],
+                    profession=source["credential"] or "",
+                    specialty=source["specialty"] or "",
+                    city=source["city"] or identity["city"],
+                    state=source["state_code"] or identity["state"],
+                    zip=source["zip_code"] or "",
+                )
+        else:
+            # A stale or unavailable view must not abort the lookup transaction.
+            with db.begin_nested():
+                source = db.execute(text('''
+                    SELECT first_name, last_name, credential, profession, specialty,
+                           job_category, city, state_code, zip_code, npi_number, resume_url
+                    FROM public."New_provider_unified"
+                    WHERE source_record_key = :key LIMIT 1
+                '''), {"key": source_key}).mappings().first()
+            if source:
+                identity.update(
+                    first_name=source["first_name"] or identity["first_name"],
+                    last_name=source["last_name"] or identity["last_name"],
+                    profession=source["profession"] or source["credential"] or source["job_category"] or "",
+                    specialty=source["specialty"] or "",
+                    city=source["city"] or identity["city"],
+                    state=source["state_code"] or identity["state"],
+                    zip=source["zip_code"] or "",
+                    npi=source["npi_number"] or "",
+                    resume_url=source["resume_url"] or "",
+                )
+    except Exception:
+        logger.warning("Could not load source details for Nexus contact delivery (%s)",
+                       source_key, exc_info=True)
+    try:
+        nexus_contact_delivery.enqueue_identity(db, user, source_key, identity)
+    except Exception:
+        # The contact lookup and credit charge must still complete if Nexus is down.
+        logger.exception("Could not queue Nexus delivery for found contact (%s)", source_key)
 
 
 def _claim_one() -> str | None:
@@ -160,6 +225,12 @@ def _store_match(job_id: str, name: str, location: str, match) -> None:
         job.credits_charged = int(charged.get("cost", 0) or 0)
         job.credits_remaining = charged.get("balance")
         job.updated_at = utcnow()
+
+        # Use the saved profile after the newly found contact has been applied.
+        try:
+            nexus_contact_delivery.enqueue(db, user, profile)
+        except Exception:
+            logger.exception("Could not queue Nexus delivery for profile %s", profile.profile_id)
 
 
 def _store_failure(job_id: str, detail: str) -> None:
@@ -337,6 +408,7 @@ def _directory_match(job_id: str, name: str, location: str, npi: str, match) -> 
                   "candidate_id": match.candidate_id, "source": match.source,
                   "email_found": bool(match.email), "phone_found": bool(match.phone)},
         ))
+        _queue_found_contact(db, user, f"npi:{npi}", name, location, match)
 
 
 async def _run_directory_one(job_id: str) -> None:
@@ -433,6 +505,8 @@ def _recovered_finish(job_id: str, match=None, detail: str | None = None) -> Non
             job.phone = match.phone
             job.credits_charged = int(charged.get("cost", 0) or 0)
             job.credits_remaining = charged.get("balance")
+            _queue_found_contact(db, user, job.source_record_key,
+                                 job.lookup_name, job.lookup_location or "", match)
         job.source = match.source if match else None
         job.updated_at = utcnow()
         db.add(AuditLog(actor_user_id=user.user_id,

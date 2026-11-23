@@ -94,6 +94,49 @@ def enqueue(db, user: User, profile: Profile) -> bool:
     return bool(enqueue_many(db, user, [profile]))
 
 
+def enqueue_identity(db, user: User, source_key: str, identity: Mapping[str, Any]) -> bool:
+    """Queue a found directory contact once per Nexus tenant and source record."""
+    if not getattr(user, "medhunt_nexus_enabled", False):
+        return False
+    if not source_key or not (identity.get("email") or identity.get("phone")):
+        return False
+    if not identity.get("first_name") or not identity.get("last_name"):
+        return False
+    try:
+        target = ats_connections.for_user(db, user.user_id, "nexus")
+    except Exception:
+        logger.warning("Nexus delivery was not queued: user connection is ambiguous", exc_info=True)
+        return False
+    if not target:
+        return False
+    employer, integration = target
+    exists = db.scalar(select(NexusContactDelivery.delivery_id).where(
+        NexusContactDelivery.integration_id == integration.integration_id,
+        NexusContactDelivery.source_key == source_key,
+    ))
+    if exists:
+        return False
+    payload = {key: str(identity.get(key) or "").strip() for key in (
+        "first_name", "last_name", "email", "phone", "npi", "city", "state",
+        "zip", "profession", "specialty", "resume_url",
+    )}
+    try:
+        with db.begin_nested():
+            db.add(NexusContactDelivery(
+                integration_id=integration.integration_id,
+                employer_id=employer.employer_id,
+                source_key=source_key,
+                actor_user_id=user.user_id,
+                payload=payload,
+                next_attempt_at=utcnow(),
+            ))
+            db.flush()
+        return True
+    except IntegrityError:
+        # A concurrent lookup queued this record for the same Nexus tenant.
+        return False
+
+
 class NexusClient:
     def __init__(self, values: Mapping[str, Any]):
         self.values = values

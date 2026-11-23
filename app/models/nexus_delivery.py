@@ -14,6 +14,7 @@ class NexusContactDelivery(Base):
     __tablename__ = "nexus_contact_deliveries"
     __table_args__ = (
         UniqueConstraint("integration_id", "profile_id", name="uq_nexus_delivery_profile"),
+        UniqueConstraint("integration_id", "source_key", name="uq_nexus_delivery_source"),
         Index("ix_nexus_delivery_ready", "status", "next_attempt_at"),
     )
 
@@ -23,6 +24,7 @@ class NexusContactDelivery(Base):
     profile_id: Mapped[Optional[str]] = uuid_fk(
         "profiles.profile_id", nullable=True, ondelete="SET NULL"
     )
+    source_key: Mapped[Optional[str]] = mapped_column(String(80))
     actor_user_id: Mapped[Optional[str]] = uuid_fk(
         "users.user_id", nullable=True, ondelete="SET NULL"
     )
