@@ -28,6 +28,17 @@ _FIELDS = """record_type, source_record_key, provider_id, license_record_id,
     resume_url IS NOT NULL AS has_resume, email IS NOT NULL AS has_email,
     phone IS NOT NULL AS has_phone, license_type, license_status, review_status"""
 
+# These screen results have direct evidence that identity or role could be
+# misleading. Missing résumé, location, category, or specialty alone does not
+# withhold a record; those values remain blank rather than being invented.
+_UNSAFE_SCREEN = """NOT EXISTS (
+    SELECT 1 FROM public."New_provider_resume_screen" AS screen
+    WHERE screen.provider_id = {alias}.provider_id
+      AND screen.flags ?| ARRAY['missing_name', 'malformed_name',
+          'credential_as_surname', 'nonclinical_technical_header',
+          'header_category_conflict']::text[]
+)"""
+
 
 _CATEGORIES = (
     "APP", "Allied", "Allied Health & Technicians", "Chiropractic", "Dental",
@@ -97,9 +108,11 @@ def enqueue_data_lookups(body: LookupRequest, user: CurrentUser, db: DbSession):
     license_ids = [int(k[8:]) for k in keys if k.startswith("license:")]
     records = {}
     if profile_ids:
-        query = text('''SELECT provider_id::text AS id, first_name, last_name,
+        query = text(f'''SELECT provider_id::text AS id, first_name, last_name,
                                NULL::text AS full_name, city, state_code
-                        FROM public."New_provider" WHERE provider_id IN :ids''').bindparams(
+                        FROM public."New_provider" AS p
+                        WHERE provider_id IN :ids AND review_status <> 'rejected'
+                          AND {_UNSAFE_SCREEN.format(alias='p')}''').bindparams(
             bindparam("ids", expanding=True))
         for r in db.execute(query, {"ids": profile_ids}).mappings():
             records["profile:" + r["id"]] = r
@@ -177,7 +190,8 @@ def _authorize(user: CurrentUser) -> None:
 def _conditions(q, category, specialty, state_code, zip_code, radius_mi, resume, contact, source,
                 min_experience=None, max_experience=None):
     # Rejected records have source evidence that makes them unsuitable for users.
-    clauses = ["review_status <> 'rejected'"]
+    clauses = ["review_status <> 'rejected'",
+               f"(record_type <> 'profile' OR {_UNSAFE_SCREEN.format(alias='u')})"]
     params = {}
     if category:
         clauses.append("job_category = :category")
@@ -288,7 +302,7 @@ def search_data(
                 if cursor and cursor[0] == code:
                     filters.append(f"{pk} > CAST(:after AS {'uuid' if code == 'p' else 'bigint'})")
                     local["after"] = cursor[2:]
-                sql = f'''SELECT {_FIELDS} FROM public."New_provider_unified"
+                sql = f'''SELECT {_FIELDS} FROM public."New_provider_unified" AS u
                     WHERE {" AND ".join(filters)} ORDER BY {pk} LIMIT :take'''
                 rows.extend(dict(r) for r in conn.execute(text(sql), local).mappings())
                 if len(rows) >= limit + 1:
@@ -417,8 +431,10 @@ def data_contact(provider_id: str, request: Request, user: CurrentUser, db: DbSe
     _authorize(user)
     if not re.fullmatch(r"[0-9a-f-]{36}", provider_id):
         raise HTTPException(404, "Record not found")
-    row = db.execute(text('''SELECT email, phone, resume_url FROM public."New_provider"
-                             WHERE provider_id = :id'''), {"id": provider_id}).mappings().first()
+    row = db.execute(text(f'''SELECT email, phone, resume_url FROM public."New_provider" AS p
+                             WHERE provider_id = :id AND review_status <> 'rejected'
+                               AND {_UNSAFE_SCREEN.format(alias='p')}'''),
+                     {"id": provider_id}).mappings().first()
     if not row:
         raise HTTPException(404, "Record not found")
     if not (row["email"] or row["phone"] or row["resume_url"]):
@@ -446,13 +462,15 @@ def data_resume(provider_id: str, user: CurrentUser, db: DbSession):
     _authorize(user)
     if not re.fullmatch(r"[0-9a-f-]{36}", provider_id):
         raise HTTPException(404, "Record not found")
-    row = db.execute(text('''SELECT resume_url, first_name, last_name, credential,
+    row = db.execute(text(f'''SELECT resume_url, first_name, last_name, credential,
                                   headline, specialty, job_category, years_experience,
                                   city, state_code, zip_code, npi_number, work_authorization,
                                   resume_sections, work_history, education, skills,
                                   certifications, licenses, extracted_text
-                           FROM public."New_provider"
-                             WHERE provider_id = :id'''), {"id": provider_id}).mappings().first()
+                           FROM public."New_provider" AS p
+                             WHERE provider_id = :id AND review_status <> 'rejected'
+                               AND {_UNSAFE_SCREEN.format(alias='p')}'''),
+                     {"id": provider_id}).mappings().first()
     if not row or not row["resume_url"]:
         raise HTTPException(404, "No resume on file")
     # The same paid entitlement covers the résumé and contact. An admin may

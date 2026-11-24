@@ -71,7 +71,7 @@ def process_batch(db, batch_size: int) -> dict:
             db.commit()
             return {"complete": True, "scanned": scanned, "corrected": corrected, "flagged": flagged}
         screens = []
-        changed = 0
+        proposals = []
         for row in rows:
             (pid, kind, first, last_name, credential, specialty, category, city,
              state, header, parse_status, review_status, sha) = row
@@ -79,24 +79,46 @@ def process_batch(db, batch_size: int) -> dict:
                 fixed = proposal(first, last_name, category, header)
                 if fixed:
                     surname, role = fixed
-                    with db.cursor() as update:
-                        update.execute('''UPDATE public."New_provider" SET last_name=%s,credential=%s,
-                            quality_flags=CASE WHEN 'resume_header_name_corrected'=ANY(quality_flags)
-                                THEN quality_flags ELSE array_append(quality_flags,'resume_header_name_corrected') END,
-                            updated_at=now()
-                            WHERE provider_id=%s::uuid AND last_name=%s
-                              AND file_sha256 IS NOT DISTINCT FROM %s
-                              AND parse_status='parsed' AND review_status <> 'rejected'
-                            RETURNING provider_id''', (surname, role, pid, last_name, sha))
-                        if update.fetchone():
-                            update.execute('''INSERT INTO public."New_provider_resume_name_cleanup_audit"
-                                (provider_id,cleanup_version,previous_name,corrected_name,
-                                 previous_credential,corrected_credential,source_sha256)
-                                VALUES (%s::uuid,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING''',
-                                (pid, VERSION, f"{first} {last_name}", f"{first} {surname}",
-                                 credential, role, sha))
-                            last_name, credential = surname, role
-                            changed += 1
+                    proposals.append({"pid": pid, "first": first, "last": last_name,
+                                      "credential": credential, "surname": surname,
+                                      "role": role, "sha": sha})
+        changed_ids = set()
+        if proposals:
+            # A single guarded update replaces hundreds of network round trips.
+            cur.execute('''WITH proposed AS (
+                SELECT * FROM jsonb_to_recordset(%s::jsonb)
+                AS x(pid uuid, first text, last text, credential text,
+                     surname text, role text, sha text))
+                UPDATE public."New_provider" AS p
+                SET last_name=x.surname, credential=x.role,
+                    quality_flags=CASE WHEN 'resume_header_name_corrected'=ANY(p.quality_flags)
+                        THEN p.quality_flags ELSE array_append(p.quality_flags,'resume_header_name_corrected') END,
+                    updated_at=now()
+                FROM proposed AS x
+                WHERE p.provider_id=x.pid AND p.last_name=x.last
+                  AND p.file_sha256 IS NOT DISTINCT FROM x.sha
+                  AND p.parse_status='parsed' AND p.review_status <> 'rejected'
+                RETURNING p.provider_id::text''', (json.dumps(proposals),))
+            changed_ids = {pid for (pid,) in cur.fetchall()}
+            if changed_ids:
+                cur.execute('''INSERT INTO public."New_provider_resume_name_cleanup_audit"
+                    (provider_id,cleanup_version,previous_name,corrected_name,
+                     previous_credential,corrected_credential,source_sha256)
+                    SELECT x.pid,%s,concat_ws(' ',x.first,x.last),
+                           concat_ws(' ',x.first,x.surname),x.credential,x.role,x.sha
+                    FROM jsonb_to_recordset(%s::jsonb)
+                    AS x(pid uuid, first text, last text, credential text,
+                         surname text, role text, sha text)
+                    WHERE x.pid=ANY(%s::uuid[]) ON CONFLICT DO NOTHING''',
+                    (VERSION, json.dumps(proposals), list(changed_ids)))
+        changed = len(changed_ids)
+        corrected_by_id = {item["pid"]: item for item in proposals if item["pid"] in changed_ids}
+        for row in rows:
+            (pid, kind, first, last_name, credential, specialty, category, city,
+             state, header, parse_status, review_status, sha) = row
+            if pid in corrected_by_id:
+                last_name = corrected_by_id[pid]["surname"]
+                credential = corrected_by_id[pid]["role"]
             flags = reasons((pid, kind, first, last_name, credential, specialty, category,
                              city, state, header, parse_status, review_status))
             if flags:
@@ -119,7 +141,7 @@ def process_batch(db, batch_size: int) -> dict:
 
 
 def main() -> None:
-    batch_size = max(1, min(1000, int(os.getenv("RESUME_CLEANUP_BATCH_SIZE", "500"))))
+    batch_size = max(1, min(5000, int(os.getenv("RESUME_CLEANUP_BATCH_SIZE", "1000"))))
     max_rows = max(batch_size, int(os.getenv("RESUME_CLEANUP_MAX_ROWS", "50000")))
     url = database_url()
     with psycopg.connect(url, connect_timeout=20) as db:
