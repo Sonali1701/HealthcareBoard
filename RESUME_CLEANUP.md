@@ -21,9 +21,14 @@ Deploying the web service alone does not create the cron service.
   parsed source document confirms the first name, surname, and healthcare
   credential, and the credential agrees with the existing category.
 - Stores all unresolved screening flags by provider ID for later review.
-- Never deletes, reveals, or hides a profile, and never invents missing fields.
+- The Data tab withholds profiles flagged for missing or malformed names,
+  credential-as-surname, nonclinical technical headers, or a header/category
+  conflict. Missing specialty, category, location, or résumé alone does not
+  withhold a record.
+- Never deletes a profile or invents missing fields.
 
-The job processes up to 50,000 rows per run in 500-row transactions. Render
+The job processes up to 50,000 rows per run in 1,000-row transactions by
+default. It batches the guarded name corrections in each transaction. Render
 ensures only one run of this cron service runs at a time. If interrupted, its
 Neon checkpoint resumes from the last committed transaction.
 
