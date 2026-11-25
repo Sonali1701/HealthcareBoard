@@ -257,6 +257,19 @@ EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}")
 YEARS_RE = re.compile(r"(\d{1,2})\+?\s*(?:years|yrs?)\b", re.IGNORECASE)
 NPI_RE = re.compile(r"\bNPI[:#\s]*([0-9]{10})\b", re.IGNORECASE)
+
+
+def _phone_match_excluding_npi(text: str):
+    """Find a phone-shaped value without misclassifying an NPI as contact data."""
+    npi_spans = [(match.start(1), match.end(1)) for match in NPI_RE.finditer(text)]
+    for phone_match in PHONE_RE.finditer(text):
+        if any(phone_match.start() < end and phone_match.end() > start
+               for start, end in npi_spans):
+            continue
+        return phone_match
+    return None
+
+
 STATE_CODE_RE = "|".join(US_STATES)
 STATE_NAME_RE = "|".join(re.escape(name) for name in US_STATES.values())
 CITY_STATE_RE = re.compile(
@@ -638,7 +651,7 @@ def format_resume_fields(fields: dict, text: str, path: Path) -> dict:
         out["last_name"] = (_title_name(out.get("last_name")) or "Provider")[:100]
 
     email_m = EMAIL_RE.search(text)
-    phone_m = PHONE_RE.search(text)
+    phone_m = _phone_match_excluding_npi(text)
     if email_m:
         out["email"] = email_m.group(0)[:255]
     if phone_m:
@@ -826,7 +839,7 @@ def parse_resume(text: str, path: Path) -> dict:
     first, last = _guess_name(text, path)
 
     email_m = EMAIL_RE.search(text)
-    phone_m = PHONE_RE.search(text)
+    phone_m = _phone_match_excluding_npi(text)
     years_m = YEARS_RE.search(text)
     npi_m = NPI_RE.search(text)
 
